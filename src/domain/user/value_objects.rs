@@ -1,6 +1,7 @@
 // src/domain/user/value_objects.rs
 use crate::domain::errors::{DomainError, DomainResult};
 use serde::{Deserialize, Serialize};
+use sqlx::Type;
 use std::{collections::HashSet, fmt, str::FromStr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -41,7 +42,8 @@ impl Capability {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash, Type)]
+#[sqlx(type_name = "user_role", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Admin,

@@ -112,7 +112,8 @@ impl ArticleCommandService {
             body,
             publish,
         } = command;
-        let mut update = ArticleUpdate::new(id, article.updated_at);
+        let original_updated_at = article.updated_at;
+        let mut update = ArticleUpdate::new(id, original_updated_at);
 
         let title_opt = match title {
             Some(value) => Some(ArticleTitle::new(value)?),
@@ -129,6 +130,7 @@ impl ArticleCommandService {
             let new_body = body_opt.clone().unwrap_or_else(|| article.body.clone());
             article.set_content(new_title.clone(), new_body.clone(), now)?;
             update = update.with_title(new_title).with_body(new_body);
+            update.set_updated_at(article.updated_at);
 
             if let Some(title) = &title_opt {
                 let slug = self
@@ -137,6 +139,7 @@ impl ArticleCommandService {
                     .await?;
                 article.set_slug(slug.clone(), now);
                 update = update.with_slug(slug);
+                update.set_updated_at(article.updated_at);
             }
         }
 
@@ -150,7 +153,7 @@ impl ArticleCommandService {
                     article.unpublish(now);
                 }
                 update = update.with_publish_state(article.published, article.published_at);
-                update.updated_at = article.updated_at;
+                update.set_updated_at(article.updated_at);
             }
         }
 
@@ -189,11 +192,13 @@ impl ArticleCommandService {
     ) -> ApplicationResult<ArticleDto> {
         ensure_capability(actor, "articles", "publish")?;
         let id = ArticleId::new(command.id)?;
+        let original_updated_at;
         let mut article = self
             .read_repo
             .find_by_id(id)
             .await?
             .ok_or_else(|| ApplicationError::not_found("article not found"))?;
+        original_updated_at = article.updated_at;
 
         if article.published == command.publish {
             return Ok(article.into());
@@ -206,8 +211,9 @@ impl ArticleCommandService {
             article.unpublish(now);
         }
 
-        let update = ArticleUpdate::new(id, article.updated_at)
+        let mut update = ArticleUpdate::new(id, original_updated_at)
             .with_publish_state(article.published, article.published_at);
+        update.set_updated_at(article.updated_at);
         let updated = self.write_repo.update(update).await?;
         Ok(updated.into())
     }

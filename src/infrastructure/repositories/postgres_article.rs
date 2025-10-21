@@ -1,4 +1,5 @@
 // src/infrastructure/repositories/postgres_article.rs
+use super::map_sqlx;
 use crate::domain::article::{
     Article, ArticleBody, ArticleId, ArticleReadRepository, ArticleSlug, ArticleTitle,
     ArticleUpdate, ArticleWriteRepository, NewArticle,
@@ -8,30 +9,25 @@ use crate::domain::user::UserId;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
-use std::sync::Arc;
-
-fn map_error(err: sqlx::Error) -> DomainError {
-    DomainError::Persistence(err.to_string())
-}
 
 #[derive(Clone)]
 pub struct PostgresArticleWriteRepository {
-    pool: Arc<PgPool>,
+    pool: PgPool,
 }
 
 impl PostgresArticleWriteRepository {
-    pub fn new(pool: Arc<PgPool>) -> Self {
+    pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 }
 
 #[derive(Clone)]
 pub struct PostgresArticleReadRepository {
-    pool: Arc<PgPool>,
+    pool: PgPool,
 }
 
 impl PostgresArticleReadRepository {
-    pub fn new(pool: Arc<PgPool>) -> Self {
+    pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 }
@@ -94,9 +90,9 @@ impl ArticleWriteRepository for PostgresArticleWriteRepository {
         .bind(i64::from(author_id))
         .bind(created_at)
         .bind(updated_at)
-        .fetch_one(&*self.pool)
+        .fetch_one(&self.pool)
         .await
-        .map_err(map_error)?;
+        .map_err(map_sqlx)?;
 
         Article::try_from(row)
     }
@@ -108,6 +104,7 @@ impl ArticleWriteRepository for PostgresArticleWriteRepository {
             slug,
             body,
             publish_state,
+            original_updated_at,
             updated_at,
         } = update;
 
@@ -142,25 +139,33 @@ impl ArticleWriteRepository for PostgresArticleWriteRepository {
 
         builder.push(" WHERE id = ");
         builder.push_bind(i64::from(id));
+        builder.push(" AND updated_at = ");
+        builder.push_bind(original_updated_at);
         builder.push(
             " RETURNING id, title, slug, body, published, published_at, author_id, created_at, updated_at",
         );
 
-        let row = builder
+        let maybe_row = builder
             .build_query_as::<ArticleRow>()
-            .fetch_one(&*self.pool)
+            .fetch_optional(&self.pool)
             .await
-            .map_err(map_error)?;
+            .map_err(map_sqlx)?;
+
+        let row = maybe_row
+            .ok_or_else(|| DomainError::Conflict("article update conflict, please retry".into()))?;
 
         Article::try_from(row)
     }
 
     async fn delete(&self, id: ArticleId) -> DomainResult<()> {
-        sqlx::query("DELETE FROM articles WHERE id = $1")
+        let result = sqlx::query("DELETE FROM articles WHERE id = $1")
             .bind(i64::from(id))
-            .execute(&*self.pool)
+            .execute(&self.pool)
             .await
-            .map_err(map_error)?;
+            .map_err(map_sqlx)?;
+        if result.rows_affected() == 0 {
+            return Err(DomainError::NotFound("article not found".into()));
+        }
         Ok(())
     }
 }
@@ -173,9 +178,9 @@ impl ArticleReadRepository for PostgresArticleReadRepository {
              FROM articles WHERE id = $1",
         )
         .bind(i64::from(id))
-        .fetch_optional(&*self.pool)
+        .fetch_optional(&self.pool)
         .await
-        .map_err(map_error)?;
+        .map_err(map_sqlx)?;
 
         row.map(Article::try_from).transpose()
     }
@@ -186,9 +191,9 @@ impl ArticleReadRepository for PostgresArticleReadRepository {
              FROM articles WHERE slug = $1",
         )
         .bind(slug.as_str())
-        .fetch_optional(&*self.pool)
+        .fetch_optional(&self.pool)
         .await
-        .map_err(map_error)?;
+        .map_err(map_sqlx)?;
 
         row.map(Article::try_from).transpose()
     }
@@ -200,8 +205,9 @@ impl ArticleReadRepository for PostgresArticleReadRepository {
         page_size: u32,
         search: Option<&str>,
     ) -> DomainResult<(Vec<Article>, u64)> {
+        const MAX_PAGE_SIZE: u32 = 100;
         let page = page.max(1);
-        let page_size = page_size.max(1);
+        let page_size = page_size.clamp(1, MAX_PAGE_SIZE);
         let offset = ((page - 1) as i64) * page_size as i64;
         let search_pattern = search
             .map(|s| s.trim())
@@ -244,9 +250,9 @@ impl ArticleReadRepository for PostgresArticleReadRepository {
 
         let rows = list_builder
             .build_query_as::<ArticleRow>()
-            .fetch_all(&*self.pool)
+            .fetch_all(&self.pool)
             .await
-            .map_err(map_error)?;
+            .map_err(map_sqlx)?;
 
         let mut count_builder: QueryBuilder<Postgres> =
             QueryBuilder::new("SELECT COUNT(1) as count FROM articles");
@@ -258,9 +264,9 @@ impl ArticleReadRepository for PostgresArticleReadRepository {
 
         let total: i64 = count_builder
             .build_query_scalar()
-            .fetch_one(&*self.pool)
+            .fetch_one(&self.pool)
             .await
-            .map_err(map_error)?;
+            .map_err(map_sqlx)?;
 
         let articles = rows
             .into_iter()

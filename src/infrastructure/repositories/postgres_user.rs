@@ -1,24 +1,19 @@
 // src/infrastructure/repositories/postgres_user.rs
+use super::map_sqlx;
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::user::{NewUser, PasswordHash, Role, User, UserId, UserRepository, Username};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool};
-use std::str::FromStr;
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct PostgresUserRepository {
-    pool: Arc<PgPool>,
+    pool: PgPool,
 }
 
 impl PostgresUserRepository {
-    pub fn new(pool: Arc<PgPool>) -> Self {
+    pub fn new(pool: PgPool) -> Self {
         Self { pool }
-    }
-
-    fn map_error(err: sqlx::Error) -> DomainError {
-        DomainError::Persistence(err.to_string())
     }
 }
 
@@ -27,7 +22,7 @@ struct UserRow {
     id: i64,
     username: String,
     password_hash: String,
-    role: String,
+    role: Role,
     is_active: bool,
     created_at: DateTime<Utc>,
 }
@@ -40,7 +35,7 @@ impl TryFrom<UserRow> for User {
             id: UserId::new(row.id)?,
             username: Username::new(row.username)?,
             password_hash: PasswordHash::new(row.password_hash)?,
-            role: Role::from_str(&row.role)?,
+            role: row.role,
             is_active: row.is_active,
             created_at: row.created_at,
         })
@@ -51,10 +46,10 @@ impl TryFrom<UserRow> for User {
 impl UserRepository for PostgresUserRepository {
     async fn count(&self) -> DomainResult<u64> {
         sqlx::query_scalar::<_, i64>("SELECT COUNT(1) FROM users")
-            .fetch_one(&*self.pool)
+            .fetch_one(&self.pool)
             .await
             .map(|count| count as u64)
-            .map_err(Self::map_error)
+            .map_err(map_sqlx)
     }
 
     async fn insert(&self, new_user: NewUser) -> DomainResult<User> {
@@ -69,16 +64,16 @@ impl UserRepository for PostgresUserRepository {
         let row = sqlx::query_as::<_, UserRow>(
             "INSERT INTO users (username, password_hash, role, is_active, created_at)
              VALUES ($1, $2, $3, $4, $5)
-             RETURNING id, username, password_hash, role, is_active, created_at",
+            RETURNING id, username, password_hash, role, is_active, created_at",
         )
         .bind(username.as_str())
         .bind(password_hash.as_str())
-        .bind(role.as_str())
+        .bind(role)
         .bind(is_active)
         .bind(created_at)
-        .fetch_one(&*self.pool)
+        .fetch_one(&self.pool)
         .await
-        .map_err(Self::map_error)?;
+        .map_err(map_sqlx)?;
 
         User::try_from(row)
     }
@@ -89,9 +84,9 @@ impl UserRepository for PostgresUserRepository {
              FROM users WHERE username = $1",
         )
         .bind(username.as_str())
-        .fetch_optional(&*self.pool)
+        .fetch_optional(&self.pool)
         .await
-        .map_err(Self::map_error)?;
+        .map_err(map_sqlx)?;
 
         row.map(User::try_from).transpose()
     }
@@ -102,9 +97,9 @@ impl UserRepository for PostgresUserRepository {
              FROM users WHERE id = $1",
         )
         .bind(i64::from(id))
-        .fetch_optional(&*self.pool)
+        .fetch_optional(&self.pool)
         .await
-        .map_err(Self::map_error)?;
+        .map_err(map_sqlx)?;
 
         row.map(User::try_from).transpose()
     }

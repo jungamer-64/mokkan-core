@@ -1,5 +1,5 @@
 // src/application/queries/users.rs
-se crate::{
+use crate::{
     application::{
         dto::{AuthenticatedUser, UserProfileDto},
         error::{ApplicationError, ApplicationResult},

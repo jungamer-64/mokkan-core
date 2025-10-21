@@ -130,18 +130,20 @@ pub struct ArticleUpdate {
     pub slug: Option<ArticleSlug>,
     pub body: Option<ArticleBody>,
     pub publish_state: Option<PublishStateUpdate>,
+    pub original_updated_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 impl ArticleUpdate {
-    pub fn new(id: ArticleId, updated_at: DateTime<Utc>) -> Self {
+    pub fn new(id: ArticleId, original_updated_at: DateTime<Utc>) -> Self {
         Self {
             id,
             title: None,
             slug: None,
             body: None,
             publish_state: None,
-            updated_at,
+            original_updated_at,
+            updated_at: original_updated_at,
         }
     }
 
@@ -170,5 +172,9 @@ impl ArticleUpdate {
             published_at,
         });
         self
+    }
+
+    pub fn set_updated_at(&mut self, updated_at: DateTime<Utc>) {
+        self.updated_at = updated_at;
     }
 }

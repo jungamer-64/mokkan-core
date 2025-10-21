@@ -51,14 +51,12 @@ async fn bootstrap() -> Result<()> {
 
     let pool = database::init_pool(config.database_url()).await?;
     database::run_migrations(&pool).await?;
-    let pool = Arc::new(pool);
 
-    let user_repo: Arc<dyn UserRepository> =
-        Arc::new(PostgresUserRepository::new(Arc::clone(&pool)));
+    let user_repo: Arc<dyn UserRepository> = Arc::new(PostgresUserRepository::new(pool.clone()));
     let article_write_repo: Arc<dyn ArticleWriteRepository> =
-        Arc::new(PostgresArticleWriteRepository::new(Arc::clone(&pool)));
+        Arc::new(PostgresArticleWriteRepository::new(pool.clone()));
     let article_read_repo: Arc<dyn ArticleReadRepository> =
-        Arc::new(PostgresArticleReadRepository::new(Arc::clone(&pool)));
+        Arc::new(PostgresArticleReadRepository::new(pool.clone()));
 
     let password_hasher: Arc<dyn PasswordHasher> = Arc::new(Argon2PasswordHasher::default());
     let token_manager_impl =
