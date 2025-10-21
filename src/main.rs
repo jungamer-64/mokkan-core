@@ -1,24 +1,20 @@
 // src/main.rs
-mod application;
-mod config;
-mod domain;
-mod infrastructure;
-mod presentation;
-
-use crate::application::ports::util::SlugGenerator;
-use crate::application::{
+use anyhow::Result;
+use axum::{ServiceExt, body::Body};
+use mokkan_core::application::ports::util::SlugGenerator;
+use mokkan_core::application::{
     ports::{
         security::{PasswordHasher, TokenManager},
         time::Clock,
     },
     services::ApplicationServices,
 };
-use crate::config::AppConfig;
-use crate::domain::{
+use mokkan_core::config::AppConfig;
+use mokkan_core::domain::{
     article::{ArticleReadRepository, ArticleRevisionRepository, ArticleWriteRepository},
     user::UserRepository,
 };
-use crate::infrastructure::{
+use mokkan_core::infrastructure::{
     database,
     repositories::{
         PostgresArticleReadRepository, PostgresArticleRevisionRepository,
@@ -28,15 +24,25 @@ use crate::infrastructure::{
     time::SystemClock,
     util::DefaultSlugGenerator,
 };
-use crate::presentation::http::{routes::build_router, state::HttpState};
-use anyhow::Result;
-use axum::{ServiceExt, body::Body};
-use std::{net::SocketAddr, sync::Arc};
+use mokkan_core::presentation::http::{routes::build_router, state::HttpState};
+use std::{env, net::SocketAddr, sync::Arc};
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() {
+    if env::args().nth(1).as_deref() == Some("openapi-snapshot") {
+        dotenvy::dotenv().ok();
+        if let Err(err) = mokkan_core::presentation::http::openapi::write_openapi_snapshot() {
+            eprintln!("failed to write OpenAPI snapshot: {err}");
+            std::process::exit(1);
+        }
+        let output_path = env::var("OPENAPI_SNAPSHOT_PATH")
+            .unwrap_or_else(|_| "backend/spec/openapi.json".to_string());
+        println!("OpenAPI snapshot written to {output_path}");
+        return;
+    }
+
     if let Err(err) = bootstrap().await {
         tracing::error!(error = %err, "fatal error");
         eprintln!("fatal error: {err}");
@@ -84,7 +90,7 @@ async fn bootstrap() -> Result<()> {
     };
 
     let app = build_router(state);
-    if let Err(err) = crate::presentation::http::openapi::write_openapi_snapshot() {
+    if let Err(err) = mokkan_core::presentation::http::openapi::write_openapi_snapshot() {
         tracing::warn!(error = %err, "failed to write OpenAPI snapshot");
     }
     let service = app.into_service::<Body>().into_make_service();

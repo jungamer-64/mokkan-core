@@ -72,6 +72,7 @@ pub fn build_router(state: HttpState) -> Router {
     responses(
         (status = 200, description = "Service health check.", body = crate::presentation::http::openapi::StatusResponse)
     ),
+    security([]),
     tag = "System"
 )]
 pub async fn health() -> axum::Json<StatusResponse> {

@@ -64,6 +64,7 @@ pub struct PublishRequest {
         (status = 400, description = "Invalid query parameters.", body = crate::presentation::http::error::ErrorResponse),
         (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
     ),
+    security([]),
     tag = "Articles"
 )]
 pub async fn list_articles(
@@ -122,6 +123,7 @@ pub async fn list_articles(
         (status = 404, description = "Article not found.", body = crate::presentation::http::error::ErrorResponse),
         (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
     ),
+    security([]),
     tag = "Articles"
 )]
 pub async fn get_article_by_slug(

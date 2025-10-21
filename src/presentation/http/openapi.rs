@@ -1,13 +1,15 @@
 // src/presentation/http/openapi.rs
 use crate::application::dto::{ArticleDto, CursorPage, UserDto};
-use axum::{Router, routing::get};
+use axum::{Router, response::Redirect, routing::get};
 use serde::{Deserialize, Serialize};
+use std::{collections::HashSet, env, fs::File, io::BufWriter, path::Path};
 use utoipa::openapi::{
     Components,
     security::{Http, HttpAuthScheme, SecurityScheme},
     server::Server,
 };
 use utoipa::{Modify, OpenApi, ToSchema};
+use utoipa_redoc::{Redoc, Servable};
 use utoipa_swagger_ui::SwaggerUi;
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -101,8 +103,38 @@ impl Modify for ApiDocCustomizer {
         components.add_security_scheme("bearerAuth", SecurityScheme::Http(http));
 
         let servers = openapi.servers.get_or_insert_with(Vec::new);
-        if servers.is_empty() {
-            servers.push(Server::new("http://localhost:3000"));
+        servers.clear();
+
+        let mut urls: Vec<String> = env::var("PUBLIC_API_URLS")
+            .ok()
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|segment| !segment.is_empty())
+                    .map(|segment| segment.trim_end_matches('/').to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if urls.is_empty() {
+            if let Ok(url) = env::var("PUBLIC_API_URL") {
+                let sanitized = url.trim().trim_end_matches('/').to_string();
+                if !sanitized.is_empty() {
+                    urls.push(sanitized);
+                }
+            }
+        }
+
+        if !urls.iter().any(|url| url == "http://localhost:3000") {
+            urls.push("http://localhost:3000".to_string());
+        }
+
+        let mut seen = HashSet::new();
+        for url in urls {
+            if seen.insert(url.clone()) {
+                servers.push(Server::new(url));
+            }
         }
     }
 }
@@ -113,16 +145,26 @@ pub async fn serve_openapi() -> axum::Json<utoipa::openapi::OpenApi> {
 
 pub fn docs_router() -> Router {
     let openapi = ApiDoc::openapi();
+    let swagger = SwaggerUi::new("/docs").url("/openapi.json", openapi.clone());
+    let redoc = Redoc::with_url("/redoc", openapi);
     Router::new()
         .route("/openapi.json", get(serve_openapi))
-        .merge(SwaggerUi::new("/docs").url("/openapi.json", openapi))
+        .merge(swagger)
+        .merge(redoc)
+        .route("/", get(|| async { Redirect::permanent("/docs") }))
 }
 
 pub fn write_openapi_snapshot() -> std::io::Result<()> {
     let spec = ApiDoc::openapi();
-    let json = serde_json::to_string_pretty(&spec)?;
-    std::fs::create_dir_all("spec")?;
-    std::fs::write("spec/openapi.json", json)?;
+    let output_path = env::var("OPENAPI_SNAPSHOT_PATH")
+        .unwrap_or_else(|_| "backend/spec/openapi.json".to_string());
+    let path = Path::new(&output_path);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let file = File::create(path)?;
+    let writer = BufWriter::new(file);
+    serde_json::to_writer_pretty(writer, &spec)?;
     Ok(())
 }
 
