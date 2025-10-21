@@ -4,6 +4,7 @@ mod domain;
 mod infrastructure;
 mod presentation;
 
+use crate::application::ports::util::SlugGenerator;
 use crate::application::{
     ports::{
         security::{PasswordHasher, TokenManager},
@@ -13,7 +14,7 @@ use crate::application::{
 };
 use crate::config::AppConfig;
 use crate::domain::{
-    article::{services::SlugGenerator, ArticleReadRepository, ArticleWriteRepository},
+    article::{ArticleReadRepository, ArticleWriteRepository},
     user::UserRepository,
 };
 use crate::infrastructure::{

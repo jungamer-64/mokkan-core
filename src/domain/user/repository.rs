@@ -1,5 +1,8 @@
 use crate::domain::errors::DomainResult;
-use crate::domain::user::{entity::{NewUser, User}, value_objects::{Username, UserId}};
+use crate::domain::user::{
+    entity::{NewUser, User},
+    value_objects::{UserId, Username},
+};
 use async_trait::async_trait;
 
 #[async_trait]

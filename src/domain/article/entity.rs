@@ -44,6 +44,60 @@ impl Article {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::article::value_objects::{ArticleBody, ArticleSlug, ArticleTitle};
+    use chrono::Utc;
+
+    fn sample_article() -> Article {
+        Article {
+            id: ArticleId::new(1).unwrap(),
+            title: ArticleTitle::new("title").unwrap(),
+            slug: ArticleSlug::new("title").unwrap(),
+            body: ArticleBody::new("body").unwrap(),
+            published: false,
+            author_id: crate::domain::user::UserId::new(1).unwrap(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn publish_sets_state() {
+        let mut article = sample_article();
+        let now = Utc::now();
+        article.publish(now);
+        assert!(article.published);
+        assert_eq!(article.updated_at, now);
+    }
+
+    #[test]
+    fn unpublish_sets_state() {
+        let mut article = sample_article();
+        let now = Utc::now();
+        article.publish(now);
+        let later = now + chrono::Duration::seconds(10);
+        article.unpublish(later);
+        assert!(!article.published);
+        assert_eq!(article.updated_at, later);
+    }
+
+    #[test]
+    fn set_content_updates_fields() {
+        let mut article = sample_article();
+        let now = Utc::now();
+        let title = ArticleTitle::new("new title").unwrap();
+        let body = ArticleBody::new("new body").unwrap();
+        article
+            .set_content(title.clone(), body.clone(), now)
+            .unwrap();
+        assert_eq!(article.title.as_str(), title.as_str());
+        assert_eq!(article.body.as_str(), body.as_str());
+        assert_eq!(article.updated_at, now);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NewArticle {
     pub title: ArticleTitle,

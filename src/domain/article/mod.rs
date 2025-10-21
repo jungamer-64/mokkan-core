@@ -1,9 +1,9 @@
 pub mod entity;
-pub mod repository;
-pub mod value_objects;
-pub mod services;
 pub mod events;
+pub mod repository;
+pub mod services;
 pub mod specifications;
+pub mod value_objects;
 
 pub use entity::{Article, ArticleUpdate, NewArticle};
 pub use repository::{ArticleReadRepository, ArticleWriteRepository};

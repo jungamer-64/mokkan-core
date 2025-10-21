@@ -6,11 +6,12 @@ use crate::{
         ports::{
             security::{PasswordHasher, TokenManager},
             time::Clock,
+            util::SlugGenerator,
         },
         queries::{articles::ArticleQueryService, users::UserQueryService},
     },
     domain::{
-        article::{services::{ArticleSlugService, SlugGenerator}, ArticleReadRepository, ArticleWriteRepository},
+        article::{ArticleReadRepository, ArticleWriteRepository, services::ArticleSlugService},
         user::UserRepository,
     },
 };

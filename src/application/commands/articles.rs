@@ -5,10 +5,10 @@ use crate::{
         ports::time::Clock,
     },
     domain::article::{
-        services::ArticleSlugService,
-        specifications::{CanDeleteArticleSpec, CanUpdateArticleSpec},
         ArticleBody, ArticleId, ArticleReadRepository, ArticleTitle, ArticleUpdate,
         ArticleWriteRepository, NewArticle,
+        services::ArticleSlugService,
+        specifications::{ArticleSpecification, CanDeleteArticleSpec, CanUpdateArticleSpec},
     },
 };
 use std::sync::Arc;
@@ -45,7 +45,7 @@ pub struct ArticleCommandService {
 impl ArticleCommandService {
     pub fn new(
         write_repo: Arc<dyn ArticleWriteRepository>,
-        read_repo: Arc<dyn crate::domain::article::ArticleReadRepository>,
+        read_repo: Arc<dyn ArticleReadRepository>,
         slug_service: Arc<ArticleSlugService>,
         clock: Arc<dyn Clock>,
     ) -> Self {
@@ -68,10 +68,7 @@ impl ArticleCommandService {
         let body = ArticleBody::new(command.body)?;
         let now = self.clock.now();
 
-        let slug = self
-            .slug_service
-            .generate_unique_slug(&title, None)
-            .await?;
+        let slug = self.slug_service.generate_unique_slug(&title, None).await?;
 
         let new_article = NewArticle {
             title,
@@ -93,13 +90,13 @@ impl ArticleCommandService {
         command: UpdateArticleCommand,
     ) -> ApplicationResult<ArticleDto> {
         let id = ArticleId::new(command.id)?;
-        let existing = self
+        let mut article = self
             .read_repo
             .find_by_id(id)
             .await?
             .ok_or_else(|| ApplicationError::not_found("article not found"))?;
 
-        let update_spec = CanUpdateArticleSpec::new(&actor.capabilities, &existing, actor.id);
+        let update_spec = CanUpdateArticleSpec::new(&actor.capabilities, &article, actor.id);
 
         if !update_spec.is_satisfied() {
             return Err(ApplicationError::forbidden(
@@ -107,26 +104,51 @@ impl ArticleCommandService {
             ));
         }
 
-        let mut update = ArticleUpdate::new(id, self.clock.now());
+        let UpdateArticleCommand {
+            id: _,
+            title,
+            body,
+            publish,
+        } = command;
+        let mut update = ArticleUpdate::new(id, article.updated_at);
 
-        if let Some(title) = command.title {
-            let title = ArticleTitle::new(title)?;
-            let slug = self
-                .slug_service
-                .generate_unique_slug(&title, Some(existing.id))
-                .await?;
-            update = update.with_title(title).with_slug(slug);
+        let title_opt = match title {
+            Some(value) => Some(ArticleTitle::new(value)?),
+            None => None,
+        };
+        let body_opt = match body {
+            Some(value) => Some(ArticleBody::new(value)?),
+            None => None,
+        };
+
+        if title_opt.is_some() || body_opt.is_some() {
+            let now = self.clock.now();
+            let new_title = title_opt.clone().unwrap_or_else(|| article.title.clone());
+            let new_body = body_opt.clone().unwrap_or_else(|| article.body.clone());
+            article.set_content(new_title.clone(), new_body.clone(), now)?;
+            update = update.with_title(new_title).with_body(new_body);
+
+            if let Some(title) = &title_opt {
+                let slug = self
+                    .slug_service
+                    .generate_unique_slug(title, Some(article.id))
+                    .await?;
+                article.set_slug(slug.clone(), now);
+                update = update.with_slug(slug);
+            }
         }
 
-        if let Some(body) = command.body {
-            let body = ArticleBody::new(body)?;
-            update = update.with_body(body);
-        }
-
-        if let Some(publish) = command.publish {
-            if publish != existing.published {
+        if let Some(publish_flag) = publish {
+            if publish_flag != article.published {
                 ensure_capability(actor, "articles", "publish")?;
-                update = update.with_published(publish);
+                let now = self.clock.now();
+                if publish_flag {
+                    article.publish(now);
+                } else {
+                    article.unpublish(now);
+                }
+                update = update.with_published(article.published);
+                update.updated_at = article.updated_at;
             }
         }
 
@@ -140,13 +162,13 @@ impl ArticleCommandService {
         command: DeleteArticleCommand,
     ) -> ApplicationResult<()> {
         let id = ArticleId::new(command.id)?;
-        let existing = self
+        let article = self
             .read_repo
             .find_by_id(id)
             .await?
             .ok_or_else(|| ApplicationError::not_found("article not found"))?;
 
-        let delete_spec = CanDeleteArticleSpec::new(&actor.capabilities, &existing, actor.id);
+        let delete_spec = CanDeleteArticleSpec::new(&actor.capabilities, &article, actor.id);
 
         if !delete_spec.is_satisfied() {
             return Err(ApplicationError::forbidden(
@@ -174,7 +196,6 @@ impl ArticleCommandService {
         let updated = self.write_repo.update(update).await?;
         Ok(updated.into())
     }
-
 }
 
 fn ensure_capability(

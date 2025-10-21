@@ -1,4 +1,4 @@
-use crate::domain::article::services::SlugGenerator;
+use crate::application::ports::util::SlugGenerator;
 use slug::slugify;
 
 #[derive(Default, Clone)]

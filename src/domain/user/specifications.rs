@@ -12,7 +12,9 @@ pub struct HasCapability<'a> {
 
 impl CapabilitySpecification for HasCapability<'_> {
     fn is_satisfied_by(&self, capabilities: &[Capability]) -> bool {
-        capabilities.iter().any(|cap| cap.matches(self.resource, self.action))
+        capabilities
+            .iter()
+            .any(|cap| cap.matches(self.resource, self.action))
     }
 }
 
