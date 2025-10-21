@@ -25,3 +25,5 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 utoipa = { version = "5.4", features = ["chrono"] }
 utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
+tower_governor = { version = "0.8", default-features = false, features = ["axum"] }
+governor = "0.10"

@@ -162,6 +162,17 @@ pub struct TokenSubject {
     pub capabilities: HashSet<Capability>,
 }
 
+impl TokenSubject {
+    pub fn from_authenticated(auth: &AuthenticatedUser) -> Self {
+        Self {
+            user_id: auth.id,
+            username: auth.username.clone(),
+            role: auth.role,
+            capabilities: auth.capabilities.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CapabilityView {
     pub resource: String,

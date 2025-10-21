@@ -40,6 +40,10 @@ pub struct LoginResult {
     pub user: UserDto,
 }
 
+pub struct RefreshTokenCommand {
+    pub token: String,
+}
+
 pub struct UserCommandService {
     user_repo: Arc<dyn UserRepository>,
     password_hasher: Arc<dyn PasswordHasher>,
@@ -201,6 +205,25 @@ impl UserCommandService {
         self.user_repo.update(update).await?;
 
         Ok(())
+    }
+
+    pub async fn refresh_token(
+        &self,
+        command: RefreshTokenCommand,
+    ) -> ApplicationResult<AuthTokenDto> {
+        let user = self.token_manager.authenticate(&command.token).await?;
+
+        let now = self.clock.now();
+        let remaining = user.expires_at.signed_duration_since(now);
+        if remaining.num_hours() > 1 {
+            return Err(ApplicationError::validation(
+                "token is still valid for more than 1 hour",
+            ));
+        }
+
+        let subject = TokenSubject::from_authenticated(&user);
+
+        self.token_manager.issue(subject).await
     }
 }
 

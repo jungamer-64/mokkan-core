@@ -36,6 +36,7 @@ pub struct ArticleListResponse {
     paths(
         crate::presentation::http::controllers::auth::register,
         crate::presentation::http::controllers::auth::login,
+        crate::presentation::http::controllers::auth::refresh_token,
         crate::presentation::http::controllers::auth::profile,
         crate::presentation::http::controllers::auth::list_users,
         crate::presentation::http::controllers::auth::update_user,
@@ -58,6 +59,7 @@ pub struct ArticleListResponse {
             crate::presentation::http::controllers::auth::RegisterRequest,
             crate::presentation::http::controllers::auth::LoginRequest,
             crate::presentation::http::controllers::auth::LoginResponse,
+            crate::presentation::http::controllers::auth::RefreshTokenRequest,
             crate::presentation::http::controllers::auth::ListUsersParams,
             crate::presentation::http::controllers::auth::UpdateUserRequest,
             crate::presentation::http::controllers::auth::ChangePasswordRequest,

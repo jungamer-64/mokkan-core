@@ -2,6 +2,7 @@
 use crate::presentation::http::state::HttpState;
 use crate::presentation::http::{
     controllers::{articles, auth},
+    middleware::rate_limit,
     openapi::{self, StatusResponse},
 };
 use axum::{
@@ -31,6 +32,7 @@ pub fn build_router(state: HttpState) -> Router {
         .route("/health", get(health))
         .route("/api/v1/auth/register", post(auth::register))
         .route("/api/v1/auth/login", post(auth::login))
+        .route("/api/v1/auth/refresh", post(auth::refresh_token))
         .route("/api/v1/auth/me", get(auth::profile))
         .route("/api/v1/users", get(auth::list_users))
         .route("/api/v1/users/:id", patch(auth::update_user))
@@ -59,6 +61,7 @@ pub fn build_router(state: HttpState) -> Router {
             post(articles::set_publish_state),
         )
         .layer(TraceLayer::new_for_http())
+        .layer(rate_limit::rate_limit_layer())
         .layer(cors)
         .layer(Extension(state))
 }

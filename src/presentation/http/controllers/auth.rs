@@ -1,7 +1,8 @@
 // src/presentation/http/controllers/auth.rs
 use crate::application::{
     commands::users::{
-        ChangePasswordCommand, LoginUserCommand, RegisterUserCommand, UpdateUserCommand,
+        ChangePasswordCommand, LoginUserCommand, RefreshTokenCommand, RegisterUserCommand,
+        UpdateUserCommand,
     },
     dto::{AuthTokenDto, UserDto, UserProfileDto},
     queries::users::ListUsersQuery,
@@ -28,6 +29,11 @@ pub struct RegisterRequest {
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct RefreshTokenRequest {
+    pub token: String,
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -127,6 +133,36 @@ pub async fn login(
         token: result.token,
         user: result.user,
     }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/refresh",
+    request_body = RefreshTokenRequest,
+    responses(
+        (status = 200, description = "Token refreshed.", body = AuthTokenDto),
+        (status = 400, description = "Token not eligible for refresh.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 401, description = "Invalid token.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+    ),
+    security([]),
+    tag = "Auth"
+)]
+pub async fn refresh_token(
+    Extension(state): Extension<HttpState>,
+    Json(payload): Json<RefreshTokenRequest>,
+) -> HttpResult<Json<AuthTokenDto>> {
+    let command = RefreshTokenCommand {
+        token: payload.token,
+    };
+
+    state
+        .services
+        .user_commands
+        .refresh_token(command)
+        .await
+        .into_http()
+        .map(Json)
 }
 
 #[utoipa::path(
