@@ -1,9 +1,12 @@
 use crate::{
     application::{
-        dto::{ArticleDto, AuthenticatedUser, CursorPage},
+        dto::{ArticleDto, ArticleRevisionDto, AuthenticatedUser, CursorPage},
         error::{ApplicationError, ApplicationResult},
     },
-    domain::article::{ArticleId, ArticleListCursor, ArticleReadRepository, ArticleSlug},
+    domain::article::specifications::{ArticleSpecification, CanUpdateArticleSpec},
+    domain::article::{
+        ArticleId, ArticleListCursor, ArticleReadRepository, ArticleRevisionRepository, ArticleSlug,
+    },
     domain::errors::DomainError,
 };
 use std::sync::Arc;
@@ -25,13 +28,24 @@ pub struct GetArticleBySlugQuery {
     pub slug: String,
 }
 
+pub struct ListArticleRevisionsQuery {
+    pub article_id: i64,
+}
+
 pub struct ArticleQueryService {
     read_repo: Arc<dyn ArticleReadRepository>,
+    revision_repo: Arc<dyn ArticleRevisionRepository>,
 }
 
 impl ArticleQueryService {
-    pub fn new(read_repo: Arc<dyn ArticleReadRepository>) -> Self {
-        Self { read_repo }
+    pub fn new(
+        read_repo: Arc<dyn ArticleReadRepository>,
+        revision_repo: Arc<dyn ArticleRevisionRepository>,
+    ) -> Self {
+        Self {
+            read_repo,
+            revision_repo,
+        }
     }
 
     pub async fn list_articles(
@@ -120,6 +134,30 @@ impl ArticleQueryService {
             .await?
             .ok_or_else(|| ApplicationError::not_found("article not found"))?;
         Ok(article.into())
+    }
+
+    pub async fn list_revisions(
+        &self,
+        actor: &AuthenticatedUser,
+        query: ListArticleRevisionsQuery,
+    ) -> ApplicationResult<Vec<ArticleRevisionDto>> {
+        let article_id = ArticleId::new(query.article_id)?;
+        let article = self
+            .read_repo
+            .find_by_id(article_id)
+            .await?
+            .ok_or_else(|| ApplicationError::not_found("article not found"))?;
+
+        let spec = CanUpdateArticleSpec::new(&actor.capabilities, &article, actor.id);
+        if !spec.is_satisfied() {
+            return Err(ApplicationError::forbidden(
+                "insufficient privileges to view revisions",
+            ));
+        }
+
+        let revisions = self.revision_repo.list_by_article(article_id).await?;
+
+        Ok(revisions.into_iter().map(Into::into).collect())
     }
 
     fn normalize_listing(

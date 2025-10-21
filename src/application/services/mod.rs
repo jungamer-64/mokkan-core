@@ -12,7 +12,10 @@ use crate::{
         queries::{articles::ArticleQueryService, users::UserQueryService},
     },
     domain::{
-        article::{ArticleReadRepository, ArticleWriteRepository, services::ArticleSlugService},
+        article::{
+            ArticleReadRepository, ArticleRevisionRepository, ArticleWriteRepository,
+            services::ArticleSlugService,
+        },
         user::UserRepository,
     },
 };
@@ -31,6 +34,7 @@ impl ApplicationServices {
         user_repo: Arc<dyn UserRepository>,
         article_write_repo: Arc<dyn ArticleWriteRepository>,
         article_read_repo: Arc<dyn ArticleReadRepository>,
+        article_revision_repo: Arc<dyn ArticleRevisionRepository>,
         password_hasher: Arc<dyn PasswordHasher>,
         token_manager: Arc<dyn TokenManager>,
         clock: Arc<dyn Clock>,
@@ -51,11 +55,15 @@ impl ApplicationServices {
         let article_commands = Arc::new(ArticleCommandService::new(
             Arc::clone(&article_write_repo),
             Arc::clone(&article_read_repo),
+            Arc::clone(&article_revision_repo),
             Arc::clone(&slug_service),
             Arc::clone(&clock),
         ));
 
-        let article_queries = Arc::new(ArticleQueryService::new(Arc::clone(&article_read_repo)));
+        let article_queries = Arc::new(ArticleQueryService::new(
+            Arc::clone(&article_read_repo),
+            Arc::clone(&article_revision_repo),
+        ));
         let user_queries = Arc::new(UserQueryService::new(Arc::clone(&user_repo)));
 
         Self {

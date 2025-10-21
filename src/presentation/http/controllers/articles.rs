@@ -3,8 +3,10 @@ use crate::application::{
     commands::articles::{
         CreateArticleCommand, DeleteArticleCommand, SetPublishStateCommand, UpdateArticleCommand,
     },
-    dto::{ArticleDto, CursorPage},
-    queries::articles::{GetArticleBySlugQuery, ListArticlesQuery, SearchArticlesQuery},
+    dto::{ArticleDto, ArticleRevisionDto, CursorPage},
+    queries::articles::{
+        GetArticleBySlugQuery, ListArticleRevisionsQuery, ListArticlesQuery, SearchArticlesQuery,
+    },
 };
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::{Authenticated, MaybeAuthenticated};
@@ -181,6 +183,20 @@ pub async fn set_publish_state(
         .services
         .article_commands
         .set_publish_state(&user, command)
+        .await
+        .into_http()
+        .map(Json)
+}
+
+pub async fn list_article_revisions(
+    Extension(state): Extension<HttpState>,
+    Authenticated(user): Authenticated,
+    Path(id): Path<i64>,
+) -> HttpResult<Json<Vec<ArticleRevisionDto>>> {
+    state
+        .services
+        .article_queries
+        .list_revisions(&user, ListArticleRevisionsQuery { article_id: id })
         .await
         .into_http()
         .map(Json)

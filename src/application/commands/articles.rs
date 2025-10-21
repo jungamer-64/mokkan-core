@@ -6,8 +6,8 @@ use crate::{
         ports::time::Clock,
     },
     domain::article::{
-        ArticleBody, ArticleId, ArticleReadRepository, ArticleTitle, ArticleUpdate,
-        ArticleWriteRepository, NewArticle,
+        ArticleBody, ArticleId, ArticleReadRepository, ArticleRevisionRepository, ArticleTitle,
+        ArticleUpdate, ArticleWriteRepository, NewArticle,
         services::ArticleSlugService,
         specifications::{ArticleSpecification, CanDeleteArticleSpec, CanUpdateArticleSpec},
     },
@@ -39,6 +39,7 @@ pub struct SetPublishStateCommand {
 pub struct ArticleCommandService {
     write_repo: Arc<dyn ArticleWriteRepository>,
     read_repo: Arc<dyn ArticleReadRepository>,
+    revision_repo: Arc<dyn ArticleRevisionRepository>,
     slug_service: Arc<ArticleSlugService>,
     clock: Arc<dyn Clock>,
 }
@@ -47,12 +48,14 @@ impl ArticleCommandService {
     pub fn new(
         write_repo: Arc<dyn ArticleWriteRepository>,
         read_repo: Arc<dyn ArticleReadRepository>,
+        revision_repo: Arc<dyn ArticleRevisionRepository>,
         slug_service: Arc<ArticleSlugService>,
         clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             write_repo,
             read_repo,
+            revision_repo,
             slug_service,
             clock,
         }
@@ -83,6 +86,7 @@ impl ArticleCommandService {
         };
 
         let created = self.write_repo.insert(new_article).await?;
+        self.revision_repo.append(&created, Some(actor.id)).await?;
         Ok(created.into())
     }
 
@@ -158,6 +162,7 @@ impl ArticleCommandService {
         }
 
         let updated = self.write_repo.update(update).await?;
+        self.revision_repo.append(&updated, Some(actor.id)).await?;
         Ok(updated.into())
     }
 
@@ -180,6 +185,8 @@ impl ArticleCommandService {
                 "insufficient privileges to delete article",
             ));
         }
+
+        self.revision_repo.append(&article, Some(actor.id)).await?;
 
         self.write_repo.delete(id).await?;
         Ok(())
@@ -215,6 +222,7 @@ impl ArticleCommandService {
             .with_publish_state(article.published, article.published_at);
         update.set_updated_at(article.updated_at);
         let updated = self.write_repo.update(update).await?;
+        self.revision_repo.append(&updated, Some(actor.id)).await?;
         Ok(updated.into())
     }
 }

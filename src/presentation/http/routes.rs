@@ -41,6 +41,10 @@ pub fn build_router(state: HttpState) -> Router {
             put(articles::update_article).delete(articles::delete_article),
         )
         .route(
+            "/api/v1/articles/:id/revisions",
+            get(articles::list_article_revisions),
+        )
+        .route(
             "/api/v1/articles/:id/publish",
             post(articles::set_publish_state),
         )

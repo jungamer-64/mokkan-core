@@ -1,6 +1,6 @@
 // src/application/dto.rs
 use crate::domain::{
-    article::Article,
+    article::{Article, ArticleRevision},
     user::{Capability, Role, User, UserId},
 };
 use chrono::{DateTime, Utc};
@@ -55,6 +55,38 @@ impl From<Article> for ArticleDto {
             author_id: article.author_id.into(),
             created_at: article.created_at,
             updated_at: article.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ArticleRevisionDto {
+    pub version: i32,
+    pub title: String,
+    pub slug: String,
+    pub body: String,
+    pub published: bool,
+    #[serde(default, with = "serde_time::option")]
+    pub published_at: Option<DateTime<Utc>>,
+    pub author_id: i64,
+    #[serde(default)]
+    pub edited_by: Option<i64>,
+    #[serde(with = "serde_time")]
+    pub recorded_at: DateTime<Utc>,
+}
+
+impl From<ArticleRevision> for ArticleRevisionDto {
+    fn from(revision: ArticleRevision) -> Self {
+        Self {
+            version: revision.version,
+            title: revision.title.to_string(),
+            slug: revision.slug.to_string(),
+            body: revision.body.to_string(),
+            published: revision.published,
+            published_at: revision.published_at,
+            author_id: revision.author_id.into(),
+            edited_by: revision.edited_by.map(Into::into),
+            recorded_at: revision.recorded_at,
         }
     }
 }

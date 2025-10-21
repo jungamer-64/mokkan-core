@@ -15,13 +15,14 @@ use crate::application::{
 };
 use crate::config::AppConfig;
 use crate::domain::{
-    article::{ArticleReadRepository, ArticleWriteRepository},
+    article::{ArticleReadRepository, ArticleRevisionRepository, ArticleWriteRepository},
     user::UserRepository,
 };
 use crate::infrastructure::{
     database,
     repositories::{
-        PostgresArticleReadRepository, PostgresArticleWriteRepository, PostgresUserRepository,
+        PostgresArticleReadRepository, PostgresArticleRevisionRepository,
+        PostgresArticleWriteRepository, PostgresUserRepository,
     },
     security::{password::Argon2PasswordHasher, token::BiscuitTokenManager},
     time::SystemClock,
@@ -57,6 +58,8 @@ async fn bootstrap() -> Result<()> {
         Arc::new(PostgresArticleWriteRepository::new(pool.clone()));
     let article_read_repo: Arc<dyn ArticleReadRepository> =
         Arc::new(PostgresArticleReadRepository::new(pool.clone()));
+    let article_revision_repo: Arc<dyn ArticleRevisionRepository> =
+        Arc::new(PostgresArticleRevisionRepository::new(pool.clone()));
 
     let password_hasher: Arc<dyn PasswordHasher> = Arc::new(Argon2PasswordHasher::default());
     let token_manager_impl =
@@ -69,6 +72,7 @@ async fn bootstrap() -> Result<()> {
         Arc::clone(&user_repo),
         Arc::clone(&article_write_repo),
         Arc::clone(&article_read_repo),
+        Arc::clone(&article_revision_repo),
         Arc::clone(&password_hasher),
         Arc::clone(&token_manager),
         Arc::clone(&clock),
