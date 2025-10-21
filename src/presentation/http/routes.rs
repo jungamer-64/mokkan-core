@@ -1,6 +1,9 @@
 // src/presentation/http/routes.rs
-use crate::presentation::http::controllers::{articles, auth};
 use crate::presentation::http::state::HttpState;
+use crate::presentation::http::{
+    controllers::{articles, auth},
+    openapi,
+};
 use axum::{
     Extension, Router,
     http::Method,
@@ -26,6 +29,7 @@ pub fn build_router(state: HttpState) -> Router {
 
     Router::new()
         .route("/health", get(health))
+        .route("/api/v1/openapi.json", get(openapi::serve_openapi))
         .route("/api/v1/auth/register", post(auth::register))
         .route("/api/v1/auth/login", post(auth::login))
         .route("/api/v1/auth/me", get(auth::profile))
@@ -60,6 +64,14 @@ pub fn build_router(state: HttpState) -> Router {
         .layer(Extension(state))
 }
 
-async fn health() -> axum::Json<serde_json::Value> {
+#[utoipa::path(
+    get,
+    path = "/health",
+    responses(
+        (status = 200, description = "Service health check.", body = crate::presentation::http::openapi::StatusResponse)
+    ),
+    tag = "System"
+)]
+pub async fn health() -> axum::Json<serde_json::Value> {
     axum::Json(json!({ "status": "ok" }))
 }

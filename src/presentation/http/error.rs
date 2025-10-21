@@ -6,6 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
+use utoipa::ToSchema;
 
 #[derive(Debug)]
 pub struct HttpError {
@@ -37,7 +38,7 @@ impl HttpError {
 
 impl IntoResponse for HttpError {
     fn into_response(self) -> Response {
-        let payload = ErrorBody {
+        let payload = ErrorResponse {
             error: self
                 .status
                 .canonical_reason()
@@ -49,10 +50,10 @@ impl IntoResponse for HttpError {
     }
 }
 
-#[derive(Serialize)]
-struct ErrorBody {
-    error: String,
-    message: String,
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ErrorResponse {
+    pub error: String,
+    pub message: String,
 }
 
 pub type HttpResult<T> = Result<T, HttpError>;

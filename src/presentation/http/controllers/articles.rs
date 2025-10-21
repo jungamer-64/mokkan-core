@@ -8,8 +8,9 @@ use crate::application::{
         GetArticleBySlugQuery, ListArticleRevisionsQuery, ListArticlesQuery, SearchArticlesQuery,
     },
 };
-use crate::presentation::http::error::{HttpResult, IntoHttpResult};
+use crate::presentation::http::error::{ErrorResponse, HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::{Authenticated, MaybeAuthenticated};
+use crate::presentation::http::openapi::{ArticleListResponse, StatusResponse};
 use crate::presentation::http::state::HttpState;
 use axum::{
     Extension, Json,
@@ -17,12 +18,13 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
+use utoipa::IntoParams;
 
 fn default_limit() -> u32 {
     20
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, IntoParams, utoipa::ToSchema)]
 pub struct ArticleListParams {
     #[serde(default)]
     pub include_drafts: bool,
@@ -34,7 +36,7 @@ pub struct ArticleListParams {
     pub q: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateArticleRequest {
     pub title: String,
     pub body: String,
@@ -42,18 +44,29 @@ pub struct CreateArticleRequest {
     pub publish: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateArticleRequest {
     pub title: Option<String>,
     pub body: Option<String>,
     pub publish: Option<bool>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct PublishRequest {
     pub publish: bool,
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/articles",
+    params(ArticleListParams),
+    responses(
+        (status = 200, description = "List articles.", body = ArticleListResponse),
+        (status = 400, description = "Invalid query parameters.", body = ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+    ),
+    tag = "Articles"
+)]
 pub async fn list_articles(
     Extension(state): Extension<HttpState>,
     actor: MaybeAuthenticated,
@@ -97,6 +110,21 @@ pub async fn list_articles(
     Ok(Json(result))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/articles/by-slug/{slug}",
+    params(
+        ("slug" = String, Path, description = "Article slug")
+    ),
+    responses(
+        (status = 200, description = "Article by slug.", body = ArticleDto),
+        (status = 401, description = "Unauthorized.", body = ErrorResponse),
+        (status = 403, description = "Forbidden.", body = ErrorResponse),
+        (status = 404, description = "Article not found.", body = ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+    ),
+    tag = "Articles"
+)]
 pub async fn get_article_by_slug(
     Extension(state): Extension<HttpState>,
     actor: MaybeAuthenticated,
@@ -111,6 +139,20 @@ pub async fn get_article_by_slug(
         .map(Json)
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/articles",
+    request_body = CreateArticleRequest,
+    responses(
+        (status = 200, description = "Article created.", body = ArticleDto),
+        (status = 400, description = "Invalid input.", body = ErrorResponse),
+        (status = 401, description = "Unauthorized.", body = ErrorResponse),
+        (status = 403, description = "Forbidden.", body = ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+    ),
+    security(("bearerAuth" = [])),
+    tag = "Articles"
+)]
 pub async fn create_article(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -131,6 +173,24 @@ pub async fn create_article(
         .map(Json)
 }
 
+#[utoipa::path(
+    put,
+    path = "/api/v1/articles/{id}",
+    params(
+        ("id" = i64, Path, description = "Article identifier")
+    ),
+    request_body = UpdateArticleRequest,
+    responses(
+        (status = 200, description = "Article updated.", body = ArticleDto),
+        (status = 400, description = "Invalid input.", body = ErrorResponse),
+        (status = 401, description = "Unauthorized.", body = ErrorResponse),
+        (status = 403, description = "Forbidden.", body = ErrorResponse),
+        (status = 404, description = "Article not found.", body = ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+    ),
+    security(("bearerAuth" = [])),
+    tag = "Articles"
+)]
 pub async fn update_article(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -153,6 +213,22 @@ pub async fn update_article(
         .map(Json)
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/v1/articles/{id}",
+    params(
+        ("id" = i64, Path, description = "Article identifier")
+    ),
+    responses(
+        (status = 200, description = "Article deleted.", body = StatusResponse),
+        (status = 401, description = "Unauthorized.", body = ErrorResponse),
+        (status = 403, description = "Forbidden.", body = ErrorResponse),
+        (status = 404, description = "Article not found.", body = ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+    ),
+    security(("bearerAuth" = [])),
+    tag = "Articles"
+)]
 pub async fn delete_article(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -168,6 +244,24 @@ pub async fn delete_article(
     Ok(Json(json!({ "status": "deleted" })))
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/v1/articles/{id}/publish",
+    params(
+        ("id" = i64, Path, description = "Article identifier")
+    ),
+    request_body = PublishRequest,
+    responses(
+        (status = 200, description = "Article publish state updated.", body = ArticleDto),
+        (status = 400, description = "Invalid input.", body = ErrorResponse),
+        (status = 401, description = "Unauthorized.", body = ErrorResponse),
+        (status = 403, description = "Forbidden.", body = ErrorResponse),
+        (status = 404, description = "Article not found.", body = ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+    ),
+    security(("bearerAuth" = [])),
+    tag = "Articles"
+)]
 pub async fn set_publish_state(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -188,6 +282,22 @@ pub async fn set_publish_state(
         .map(Json)
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/v1/articles/{id}/revisions",
+    params(
+        ("id" = i64, Path, description = "Article identifier")
+    ),
+    responses(
+        (status = 200, description = "Article revision history.", body = [ArticleRevisionDto]),
+        (status = 401, description = "Unauthorized.", body = ErrorResponse),
+        (status = 403, description = "Forbidden.", body = ErrorResponse),
+        (status = 404, description = "Article not found.", body = ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+    ),
+    security(("bearerAuth" = [])),
+    tag = "Articles"
+)]
 pub async fn list_article_revisions(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,

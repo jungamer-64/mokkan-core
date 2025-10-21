@@ -6,8 +6,9 @@ use crate::domain::{
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct UserDto {
     pub id: i64,
     pub username: String,
@@ -29,7 +30,7 @@ impl From<User> for UserDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ArticleDto {
     pub id: i64,
     pub title: String,
@@ -61,7 +62,7 @@ impl From<Article> for ArticleDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct ArticleRevisionDto {
     pub version: i32,
     pub title: String,
@@ -93,8 +94,9 @@ impl From<ArticleRevision> for ArticleRevisionDto {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 #[serde(bound = "T: Serialize")]
+#[schema(bound = "T: utoipa::ToSchema")]
 pub struct CursorPage<T> {
     pub items: Vec<T>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -113,7 +115,7 @@ impl<T> CursorPage<T> {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct AuthTokenDto {
     pub token: String,
     #[serde(with = "serde_time")]
@@ -123,7 +125,7 @@ pub struct AuthTokenDto {
     pub expires_in: i64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct UserProfileDto {
     pub user: UserDto,
     pub capabilities: Vec<CapabilityView>,
@@ -158,7 +160,7 @@ pub struct TokenSubject {
     pub capabilities: HashSet<Capability>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct CapabilityView {
     pub resource: String,
     pub action: String,
