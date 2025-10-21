@@ -10,13 +10,11 @@
 
    cp .env.example .env
 
-   必要に応じて `.env` を編集してください。デフォルトは SQLite のファイルベース DB を使用します。
+   必要に応じて `.env` を編集してください。デフォルトは PostgreSQL を使用します。
 
 4. データベースを作成・マイグレーションを実行します。
-   - このプロジェクトは `migrations/` ディレクトリ内の SQL を使って初期テーブルを作成できます。例えば sqlite の場合:
-
-     mkdir -p data
-     sqlite3 ./data/dev.db < migrations/0001_create_tables.sql
+   - 例: `createdb cms` などで PostgreSQL データベースを用意します。
+   - `DATABASE_URL=postgres://postgres:postgres@localhost:5432/cms sqlx migrate run`
 
 5. ビルドして実行します:
 
@@ -40,7 +38,7 @@
 - 環境変数:
 
    - `BISCUIT_ROOT_PRIVATE_KEY`: Biscuit トークンのルート秘密鍵 (base64/hex)。必要に応じて設定してください。
-   - `DATABASE_URL`: データベース接続文字列 (例: sqlite://./data/dev.db)
+   - `DATABASE_URL`: データベース接続文字列 (例: postgres://postgres:postgres@localhost:5432/cms)
    - `TOKEN_TTL_SECONDS`: トークンの有効期限 (秒)
 
 問題が発生したら、エラーメッセージを共有してください。ビルドや実行エラーの調査を手伝います。

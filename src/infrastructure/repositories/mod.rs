@@ -1,5 +1,5 @@
-mod sqlite_article;
-mod sqlite_user;
+mod postgres_article;
+mod postgres_user;
 
-pub use sqlite_article::{SqliteArticleReadRepository, SqliteArticleWriteRepository};
-pub use sqlite_user::SqliteUserRepository;
+pub use postgres_article::{PostgresArticleReadRepository, PostgresArticleWriteRepository};
+pub use postgres_user::PostgresUserRepository;

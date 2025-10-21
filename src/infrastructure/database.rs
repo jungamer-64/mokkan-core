@@ -1,18 +1,12 @@
-use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 
-pub async fn init_pool(database_url: &str) -> Result<SqlitePool, sqlx::Error> {
-    let pool = SqlitePoolOptions::new()
+pub async fn init_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {
+    PgPoolOptions::new()
         .max_connections(16)
         .connect(database_url)
-        .await?;
-
-    sqlx::query("PRAGMA foreign_keys = ON;")
-        .execute(&pool)
-        .await?;
-
-    Ok(pool)
+        .await
 }
 
-pub async fn run_migrations(pool: &SqlitePool) -> Result<(), sqlx::migrate::MigrateError> {
+pub async fn run_migrations(pool: &PgPool) -> Result<(), sqlx::migrate::MigrateError> {
     sqlx::migrate!("./migrations").run(pool).await
 }

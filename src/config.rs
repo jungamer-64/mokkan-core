@@ -19,8 +19,8 @@ pub enum ConfigError {
 
 impl AppConfig {
     pub fn from_env() -> Result<Self, ConfigError> {
-        let database_url =
-            env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite://cms.db".to_string());
+        let database_url = env::var("DATABASE_URL")
+            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/cms".to_string());
         let listen_addr = env::var("LISTEN_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
         let biscuit_private_key = env::var("BISCUIT_ROOT_PRIVATE_KEY")
             .map_err(|_| ConfigError::Missing("BISCUIT_ROOT_PRIVATE_KEY"))?;

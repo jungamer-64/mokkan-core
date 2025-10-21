@@ -20,7 +20,7 @@ use crate::domain::{
 use crate::infrastructure::{
     database,
     repositories::{
-        SqliteArticleReadRepository, SqliteArticleWriteRepository, SqliteUserRepository,
+        PostgresArticleReadRepository, PostgresArticleWriteRepository, PostgresUserRepository,
     },
     security::{password::Argon2PasswordHasher, token::BiscuitTokenManager},
     time::SystemClock,
@@ -52,11 +52,12 @@ async fn bootstrap() -> Result<()> {
     database::run_migrations(&pool).await?;
     let pool = Arc::new(pool);
 
-    let user_repo: Arc<dyn UserRepository> = Arc::new(SqliteUserRepository::new(Arc::clone(&pool)));
+    let user_repo: Arc<dyn UserRepository> =
+        Arc::new(PostgresUserRepository::new(Arc::clone(&pool)));
     let article_write_repo: Arc<dyn ArticleWriteRepository> =
-        Arc::new(SqliteArticleWriteRepository::new(Arc::clone(&pool)));
+        Arc::new(PostgresArticleWriteRepository::new(Arc::clone(&pool)));
     let article_read_repo: Arc<dyn ArticleReadRepository> =
-        Arc::new(SqliteArticleReadRepository::new(Arc::clone(&pool)));
+        Arc::new(PostgresArticleReadRepository::new(Arc::clone(&pool)));
 
     let password_hasher: Arc<dyn PasswordHasher> = Arc::new(Argon2PasswordHasher::default());
     let token_manager_impl =
