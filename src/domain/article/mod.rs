@@ -1,5 +1,4 @@
 pub mod entity;
-pub mod events;
 pub mod repository;
 pub mod services;
 pub mod specifications;

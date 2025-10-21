@@ -1,6 +1,5 @@
 pub mod entity;
 pub mod repository;
-pub mod specifications;
 pub mod value_objects;
 
 pub use entity::{NewUser, User};

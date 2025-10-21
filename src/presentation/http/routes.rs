@@ -31,7 +31,10 @@ pub fn build_router(state: HttpState) -> Router {
             "/api/v1/articles",
             get(articles::list_articles).post(articles::create_article),
         )
-        .route("/api/v1/articles/:slug", get(articles::get_article_by_slug))
+        .route(
+            "/api/v1/articles/by-slug/:slug",
+            get(articles::get_article_by_slug),
+        )
         .route(
             "/api/v1/articles/:id",
             put(articles::update_article).delete(articles::delete_article),
