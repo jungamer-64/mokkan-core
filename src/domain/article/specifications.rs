@@ -93,6 +93,7 @@ mod tests {
             slug: ArticleSlug::new("title").unwrap(),
             body: ArticleBody::new("body").unwrap(),
             published: false,
+            published_at: None,
             author_id: UserId::new(author_id).unwrap(),
             created_at: Utc::now(),
             updated_at: Utc::now(),

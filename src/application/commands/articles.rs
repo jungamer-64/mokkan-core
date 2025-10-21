@@ -75,6 +75,7 @@ impl ArticleCommandService {
             slug,
             body,
             published: command.publish,
+            published_at: if command.publish { Some(now) } else { None },
             author_id: actor.id,
             created_at: now,
             updated_at: now,
@@ -147,7 +148,7 @@ impl ArticleCommandService {
                 } else {
                     article.unpublish(now);
                 }
-                update = update.with_published(article.published);
+                update = update.with_publish_state(article.published, article.published_at);
                 update.updated_at = article.updated_at;
             }
         }
@@ -187,12 +188,25 @@ impl ArticleCommandService {
     ) -> ApplicationResult<ArticleDto> {
         ensure_capability(actor, "articles", "publish")?;
         let id = ArticleId::new(command.id)?;
-        self.read_repo
+        let mut article = self
+            .read_repo
             .find_by_id(id)
             .await?
             .ok_or_else(|| ApplicationError::not_found("article not found"))?;
 
-        let update = ArticleUpdate::new(id, self.clock.now()).with_published(command.publish);
+        if article.published == command.publish {
+            return Ok(article.into());
+        }
+
+        let now = self.clock.now();
+        if command.publish {
+            article.publish(now);
+        } else {
+            article.unpublish(now);
+        }
+
+        let update = ArticleUpdate::new(id, article.updated_at)
+            .with_publish_state(article.published, article.published_at);
         let updated = self.write_repo.update(update).await?;
         Ok(updated.into())
     }

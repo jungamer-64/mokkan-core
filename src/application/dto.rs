@@ -33,6 +33,8 @@ pub struct ArticleDto {
     pub slug: String,
     pub body: String,
     pub published: bool,
+    #[serde(default, with = "serde_time::option")]
+    pub published_at: Option<DateTime<Utc>>,
     pub author_id: i64,
     #[serde(with = "serde_time")]
     pub created_at: DateTime<Utc>,
@@ -48,6 +50,7 @@ impl From<Article> for ArticleDto {
             slug: article.slug.to_string(),
             body: article.body.to_string(),
             published: article.published,
+            published_at: article.published_at,
             author_id: article.author_id.into(),
             created_at: article.created_at,
             updated_at: article.updated_at,
@@ -182,6 +185,7 @@ pub mod serde_time {
         serializer.serialize_str(&value.to_rfc3339())
     }
 
+    #[allow(dead_code)]
     pub fn deserialize<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
     where
         D: Deserializer<'de>,
@@ -190,5 +194,33 @@ pub mod serde_time {
         DateTime::parse_from_rfc3339(&s)
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(serde::de::Error::custom)
+    }
+
+    pub mod option {
+        use super::*;
+
+        pub fn serialize<S>(value: &Option<DateTime<Utc>>, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            match value {
+                Some(dt) => serializer.serialize_some(&dt.to_rfc3339()),
+                None => serializer.serialize_none(),
+            }
+        }
+
+        #[allow(dead_code)]
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let opt = Option::<String>::deserialize(deserializer)?;
+            opt.map(|s| {
+                DateTime::parse_from_rfc3339(&s)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .map_err(serde::de::Error::custom)
+            })
+            .transpose()
+        }
     }
 }

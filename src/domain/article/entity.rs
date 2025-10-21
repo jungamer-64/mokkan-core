@@ -10,6 +10,7 @@ pub struct Article {
     pub slug: ArticleSlug,
     pub body: ArticleBody,
     pub published: bool,
+    pub published_at: Option<DateTime<Utc>>,
     pub author_id: UserId,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
@@ -18,11 +19,13 @@ pub struct Article {
 impl Article {
     pub fn publish(&mut self, now: DateTime<Utc>) {
         self.published = true;
+        self.published_at = Some(now);
         self.updated_at = now;
     }
 
     pub fn unpublish(&mut self, now: DateTime<Utc>) {
         self.published = false;
+        self.published_at = None;
         self.updated_at = now;
     }
 
@@ -57,6 +60,7 @@ mod tests {
             slug: ArticleSlug::new("title").unwrap(),
             body: ArticleBody::new("body").unwrap(),
             published: false,
+            published_at: None,
             author_id: crate::domain::user::UserId::new(1).unwrap(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -69,6 +73,7 @@ mod tests {
         let now = Utc::now();
         article.publish(now);
         assert!(article.published);
+        assert_eq!(article.published_at, Some(now));
         assert_eq!(article.updated_at, now);
     }
 
@@ -80,6 +85,7 @@ mod tests {
         let later = now + chrono::Duration::seconds(10);
         article.unpublish(later);
         assert!(!article.published);
+        assert!(article.published_at.is_none());
         assert_eq!(article.updated_at, later);
     }
 
@@ -104,9 +110,16 @@ pub struct NewArticle {
     pub slug: ArticleSlug,
     pub body: ArticleBody,
     pub published: bool,
+    pub published_at: Option<DateTime<Utc>>,
     pub author_id: UserId,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PublishStateUpdate {
+    pub published: bool,
+    pub published_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone)]
@@ -115,7 +128,7 @@ pub struct ArticleUpdate {
     pub title: Option<ArticleTitle>,
     pub slug: Option<ArticleSlug>,
     pub body: Option<ArticleBody>,
-    pub published: Option<bool>,
+    pub publish_state: Option<PublishStateUpdate>,
     pub updated_at: DateTime<Utc>,
 }
 
@@ -126,7 +139,7 @@ impl ArticleUpdate {
             title: None,
             slug: None,
             body: None,
-            published: None,
+            publish_state: None,
             updated_at,
         }
     }
@@ -146,8 +159,15 @@ impl ArticleUpdate {
         self
     }
 
-    pub fn with_published(mut self, published: bool) -> Self {
-        self.published = Some(published);
+    pub fn with_publish_state(
+        mut self,
+        published: bool,
+        published_at: Option<DateTime<Utc>>,
+    ) -> Self {
+        self.publish_state = Some(PublishStateUpdate {
+            published,
+            published_at,
+        });
         self
     }
 }
