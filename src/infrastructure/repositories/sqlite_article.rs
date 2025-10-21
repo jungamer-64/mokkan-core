@@ -6,7 +6,7 @@ use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::user::UserId;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, QueryBuilder, Sqlite, SqlitePool};
 use std::sync::Arc;
 
 fn map_error(err: sqlx::Error) -> DomainError {
@@ -156,22 +156,80 @@ impl ArticleReadRepository for SqliteArticleReadRepository {
         row.map(Article::try_from).transpose()
     }
 
-    async fn list(&self, include_drafts: bool) -> DomainResult<Vec<Article>> {
-        let rows = if include_drafts {
-            sqlx::query_as::<_, ArticleRow>(
-                "SELECT id, title, slug, body, published, author_id, created_at, updated_at FROM articles ORDER BY created_at DESC",
-            )
-            .fetch_all(&*self.pool)
-            .await
-        } else {
-            sqlx::query_as::<_, ArticleRow>(
-                "SELECT id, title, slug, body, published, author_id, created_at, updated_at FROM articles WHERE published = 1 ORDER BY created_at DESC",
-            )
-            .fetch_all(&*self.pool)
-            .await
-        }
-        .map_err(map_error)?;
+    async fn list_paginated(
+        &self,
+        include_drafts: bool,
+        page: u32,
+        page_size: u32,
+        search: Option<&str>,
+    ) -> DomainResult<(Vec<Article>, u64)> {
+        let page = page.max(1);
+        let page_size = page_size.max(1);
+        let offset = ((page - 1) as i64) * page_size as i64;
+        let search_pattern = search
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|s| format!("%{}%", s));
 
-        rows.into_iter().map(Article::try_from).collect()
+        fn apply_conditions<'a>(
+            builder: &mut QueryBuilder<'a, Sqlite>,
+            include_drafts: bool,
+            search_pattern: Option<&'a str>,
+        ) {
+            let mut has_where = false;
+            if !include_drafts {
+                builder.push(" WHERE published = 1");
+                has_where = true;
+            }
+
+            if let Some(pattern) = search_pattern {
+                if has_where {
+                    builder.push(" AND (");
+                } else {
+                    builder.push(" WHERE (");
+                }
+                builder.push("title LIKE ");
+                builder.push_bind(pattern);
+                builder.push(" OR body LIKE ");
+                builder.push_bind(pattern);
+                builder.push(")");
+            }
+        }
+
+        let mut list_builder: QueryBuilder<Sqlite> = QueryBuilder::new(
+            "SELECT id, title, slug, body, published, author_id, created_at, updated_at FROM articles",
+        );
+        apply_conditions(&mut list_builder, include_drafts, search_pattern.as_deref());
+        list_builder.push(" ORDER BY created_at DESC LIMIT ");
+        list_builder.push_bind(page_size as i64);
+        list_builder.push(" OFFSET ");
+        list_builder.push_bind(offset);
+
+        let rows = list_builder
+            .build_query_as::<ArticleRow>()
+            .fetch_all(&*self.pool)
+            .await
+            .map_err(map_error)?;
+
+        let mut count_builder: QueryBuilder<Sqlite> =
+            QueryBuilder::new("SELECT COUNT(1) as count FROM articles");
+        apply_conditions(
+            &mut count_builder,
+            include_drafts,
+            search_pattern.as_deref(),
+        );
+
+        let total: i64 = count_builder
+            .build_query_scalar()
+            .fetch_one(&*self.pool)
+            .await
+            .map_err(map_error)?;
+
+        let articles = rows
+            .into_iter()
+            .map(Article::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok((articles, total as u64))
     }
 }

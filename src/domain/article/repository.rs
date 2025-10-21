@@ -14,5 +14,11 @@ pub trait ArticleWriteRepository: Send + Sync {
 pub trait ArticleReadRepository: Send + Sync {
     async fn find_by_id(&self, id: ArticleId) -> DomainResult<Option<Article>>;
     async fn find_by_slug(&self, slug: &ArticleSlug) -> DomainResult<Option<Article>>;
-    async fn list(&self, include_drafts: bool) -> DomainResult<Vec<Article>>;
+    async fn list_paginated(
+        &self,
+        include_drafts: bool,
+        page: u32,
+        page_size: u32,
+        search: Option<&str>,
+    ) -> DomainResult<(Vec<Article>, u64)>;
 }

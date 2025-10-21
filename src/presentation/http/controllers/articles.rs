@@ -2,8 +2,8 @@ use crate::application::{
     commands::articles::{
         CreateArticleCommand, DeleteArticleCommand, SetPublishStateCommand, UpdateArticleCommand,
     },
-    dto::ArticleDto,
-    queries::articles::{GetArticleBySlugQuery, ListArticlesQuery},
+    dto::{ArticleDto, PaginatedResult},
+    queries::articles::{GetArticleBySlugQuery, ListArticlesQuery, SearchArticlesQuery},
 };
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::{Authenticated, MaybeAuthenticated};
@@ -15,10 +15,24 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
+fn default_page() -> u32 {
+    1
+}
+
+fn default_page_size() -> u32 {
+    20
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ArticleListParams {
     #[serde(default)]
     pub include_drafts: bool,
+    #[serde(default = "default_page")]
+    pub page: u32,
+    #[serde(default = "default_page_size")]
+    pub page_size: u32,
+    #[serde(default)]
+    pub q: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,19 +59,43 @@ pub async fn list_articles(
     Extension(state): Extension<HttpState>,
     actor: MaybeAuthenticated,
     Query(params): Query<ArticleListParams>,
-) -> HttpResult<Json<Vec<ArticleDto>>> {
-    state
-        .services
-        .article_queries
-        .list_articles(
-            actor.0.as_ref(),
-            ListArticlesQuery {
-                include_drafts: params.include_drafts,
-            },
-        )
-        .await
-        .into_http()
-        .map(Json)
+) -> HttpResult<Json<PaginatedResult<ArticleDto>>> {
+    let include_drafts = params.include_drafts;
+    let page = params.page;
+    let page_size = params.page_size;
+
+    let result = if let Some(query) = params.q.clone() {
+        state
+            .services
+            .article_queries
+            .search_articles(
+                actor.0.as_ref(),
+                SearchArticlesQuery {
+                    query,
+                    include_drafts,
+                    page,
+                    page_size,
+                },
+            )
+            .await
+            .into_http()?
+    } else {
+        state
+            .services
+            .article_queries
+            .list_articles(
+                actor.0.as_ref(),
+                ListArticlesQuery {
+                    include_drafts,
+                    page,
+                    page_size,
+                },
+            )
+            .await
+            .into_http()?
+    };
+
+    Ok(Json(result))
 }
 
 pub async fn get_article_by_slug(

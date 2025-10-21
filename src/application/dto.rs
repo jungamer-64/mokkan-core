@@ -56,6 +56,33 @@ impl From<Article> for ArticleDto {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[serde(bound = "T: Serialize")]
+pub struct PaginatedResult<T> {
+    pub items: Vec<T>,
+    pub total: u64,
+    pub page: u32,
+    pub page_size: u32,
+    pub total_pages: u32,
+}
+
+impl<T> PaginatedResult<T> {
+    pub fn new(items: Vec<T>, total: u64, page: u32, page_size: u32) -> Self {
+        let total_pages = if total == 0 || page_size == 0 {
+            0
+        } else {
+            ((total - 1) / page_size as u64 + 1) as u32
+        };
+        Self {
+            items,
+            total,
+            page,
+            page_size,
+            total_pages,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct AuthTokenDto {
     pub token: String,
     #[serde(with = "serde_time")]
