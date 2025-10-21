@@ -1,3 +1,4 @@
+-- migrations/0004_create_article_revisions.sql
 CREATE TABLE article_revisions (
     id BIGSERIAL PRIMARY KEY,
     article_id BIGINT NOT NULL REFERENCES articles(id) ON DELETE CASCADE,

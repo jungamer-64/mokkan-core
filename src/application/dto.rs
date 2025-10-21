@@ -12,6 +12,7 @@ pub struct UserDto {
     pub id: i64,
     pub username: String,
     pub role: Role,
+    pub is_active: bool,
     #[serde(with = "serde_time")]
     pub created_at: DateTime<Utc>,
 }
@@ -22,6 +23,7 @@ impl From<User> for UserDto {
             id: user.id.into(),
             username: user.username.to_string(),
             role: user.role,
+            is_active: user.is_active,
             created_at: user.created_at,
         }
     }

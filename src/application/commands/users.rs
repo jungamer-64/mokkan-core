@@ -1,23 +1,33 @@
 // src/application/commands/users.rs
 use crate::{
     application::{
-        dto::{AuthTokenDto, TokenSubject, UserDto},
+        dto::{AuthTokenDto, AuthenticatedUser, TokenSubject, UserDto},
         error::{ApplicationError, ApplicationResult},
         ports::{
             security::{PasswordHasher, TokenManager},
             time::Clock,
         },
     },
-    domain::user::{NewUser, PasswordHash, Role, UserRepository, Username},
+    domain::user::{NewUser, PasswordHash, Role, UserId, UserRepository, UserUpdate, Username},
 };
 use std::sync::Arc;
-
-use crate::application::dto::AuthenticatedUser;
 
 pub struct RegisterUserCommand {
     pub username: String,
     pub password: String,
     pub role: Option<Role>,
+}
+
+pub struct UpdateUserCommand {
+    pub user_id: i64,
+    pub is_active: Option<bool>,
+    pub role: Option<Role>,
+}
+
+pub struct ChangePasswordCommand {
+    pub user_id: i64,
+    pub current_password: Option<String>,
+    pub new_password: String,
 }
 
 pub struct LoginUserCommand {
@@ -122,16 +132,97 @@ impl UserCommandService {
             user: user_dto,
         })
     }
+
+    pub async fn update_user(
+        &self,
+        actor: &AuthenticatedUser,
+        command: UpdateUserCommand,
+    ) -> ApplicationResult<UserDto> {
+        ensure_capability(actor, "users", "update")?;
+
+        let user_id = UserId::new(command.user_id)?;
+
+        if command.is_active.is_none() && command.role.is_none() {
+            return Err(ApplicationError::validation(
+                "at least one field must be provided",
+            ));
+        }
+
+        let mut update = UserUpdate::new(user_id);
+
+        if let Some(is_active) = command.is_active {
+            update = update.with_is_active(is_active);
+        }
+
+        if let Some(role) = command.role {
+            update = update.with_role(role);
+        }
+
+        let user = self.user_repo.update(update).await?;
+        Ok(user.into())
+    }
+
+    pub async fn change_password(
+        &self,
+        actor: &AuthenticatedUser,
+        command: ChangePasswordCommand,
+    ) -> ApplicationResult<()> {
+        let target_id = UserId::new(command.user_id)?;
+
+        let user = self
+            .user_repo
+            .find_by_id(target_id)
+            .await?
+            .ok_or_else(|| ApplicationError::not_found("user not found"))?;
+
+        let is_self = actor.id == user.id;
+
+        if !is_self {
+            ensure_capability(actor, "users", "update")?;
+        }
+
+        if is_self {
+            let current = command
+                .current_password
+                .as_deref()
+                .ok_or_else(|| ApplicationError::validation("current password is required"))?;
+
+            self.password_hasher
+                .verify(current, user.password_hash.as_str())
+                .await?;
+        }
+
+        validate_password(&command.new_password)?;
+
+        let hashed = self.password_hasher.hash(&command.new_password).await?;
+        let password_hash = PasswordHash::new(hashed)?;
+
+        let update = UserUpdate::new(target_id).with_password_hash(password_hash);
+        self.user_repo.update(update).await?;
+
+        Ok(())
+    }
 }
 
 fn validate_password(password: &str) -> ApplicationResult<()> {
     if password.len() < MIN_PASSWORD_LENGTH {
-        Err(ApplicationError::validation(format!(
+        return Err(ApplicationError::validation(format!(
             "password must be at least {MIN_PASSWORD_LENGTH} characters"
-        )))
-    } else {
-        Ok(())
+        )));
     }
+
+    let has_uppercase = password.chars().any(|c| c.is_uppercase());
+    let has_lowercase = password.chars().any(|c| c.is_lowercase());
+    let has_digit = password.chars().any(|c| c.is_ascii_digit());
+    let has_special = password.chars().any(|c| !c.is_alphanumeric());
+
+    if !(has_uppercase && has_lowercase && has_digit && has_special) {
+        return Err(ApplicationError::validation(
+            "password must contain uppercase, lowercase, digit, and special character",
+        ));
+    }
+
+    Ok(())
 }
 
 fn ensure_capability(

@@ -4,7 +4,7 @@ use crate::presentation::http::state::HttpState;
 use axum::{
     Extension, Router,
     http::Method,
-    routing::{get, post, put},
+    routing::{get, patch, post, put},
 };
 use serde_json::json;
 use std::time::Duration;
@@ -17,6 +17,7 @@ pub fn build_router(state: HttpState) -> Router {
             Method::GET,
             Method::POST,
             Method::PUT,
+            Method::PATCH,
             Method::DELETE,
             Method::OPTIONS,
         ])
@@ -28,6 +29,12 @@ pub fn build_router(state: HttpState) -> Router {
         .route("/api/v1/auth/register", post(auth::register))
         .route("/api/v1/auth/login", post(auth::login))
         .route("/api/v1/auth/me", get(auth::profile))
+        .route("/api/v1/users", get(auth::list_users))
+        .route("/api/v1/users/:id", patch(auth::update_user))
+        .route(
+            "/api/v1/users/:id/change-password",
+            post(auth::change_password),
+        )
         .route(
             "/api/v1/articles",
             get(articles::list_articles).post(articles::create_article),

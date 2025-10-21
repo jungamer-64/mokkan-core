@@ -1,3 +1,4 @@
+// src/application/queries/articles.rs
 use crate::{
     application::{
         dto::{ArticleDto, ArticleRevisionDto, AuthenticatedUser, CursorPage},
