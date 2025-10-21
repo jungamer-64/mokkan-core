@@ -6,12 +6,11 @@ use crate::{
         ports::{
             security::{PasswordHasher, TokenManager},
             time::Clock,
-            util::SlugGenerator,
         },
         queries::{articles::ArticleQueryService, users::UserQueryService},
     },
     domain::{
-        article::{ArticleReadRepository, ArticleWriteRepository},
+        article::{services::{ArticleSlugService, SlugGenerator}, ArticleReadRepository, ArticleWriteRepository},
         user::UserRepository,
     },
 };
@@ -42,10 +41,15 @@ impl ApplicationServices {
             Arc::clone(&clock),
         ));
 
+        let slug_service = Arc::new(ArticleSlugService::new(
+            Arc::clone(&article_read_repo),
+            Arc::clone(&slugger),
+        ));
+
         let article_commands = Arc::new(ArticleCommandService::new(
             Arc::clone(&article_write_repo),
             Arc::clone(&article_read_repo),
-            Arc::clone(&slugger),
+            Arc::clone(&slug_service),
             Arc::clone(&clock),
         ));
 

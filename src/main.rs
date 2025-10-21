@@ -8,13 +8,12 @@ use crate::application::{
     ports::{
         security::{PasswordHasher, TokenManager},
         time::Clock,
-        util::SlugGenerator,
     },
     services::ApplicationServices,
 };
 use crate::config::AppConfig;
 use crate::domain::{
-    article::{ArticleReadRepository, ArticleWriteRepository},
+    article::{services::SlugGenerator, ArticleReadRepository, ArticleWriteRepository},
     user::UserRepository,
 };
 use crate::infrastructure::{

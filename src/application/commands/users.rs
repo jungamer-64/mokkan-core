@@ -82,7 +82,7 @@ impl UserCommandService {
         let password_hash = PasswordHash::new(password_hash)?;
 
         let created_at = self.clock.now();
-        let new_user = NewUser::new(username.clone(), password_hash, role, created_at);
+        let new_user = NewUser::new(username.clone(), password_hash, role, created_at)?;
         let user = self.user_repo.insert(new_user).await?;
 
         Ok(user.into())

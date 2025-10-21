@@ -2,14 +2,15 @@ use crate::{
     application::{
         dto::{ArticleDto, AuthenticatedUser},
         error::{ApplicationError, ApplicationResult},
-        ports::{time::Clock, util::SlugGenerator},
+        ports::time::Clock,
     },
     domain::article::{
-        ArticleBody, ArticleId, ArticleSlug, ArticleTitle, ArticleUpdate, ArticleWriteRepository,
-        NewArticle,
+        services::ArticleSlugService,
+        specifications::{CanDeleteArticleSpec, CanUpdateArticleSpec},
+        ArticleBody, ArticleId, ArticleReadRepository, ArticleTitle, ArticleUpdate,
+        ArticleWriteRepository, NewArticle,
     },
 };
-use chrono::Utc;
 use std::sync::Arc;
 
 pub struct CreateArticleCommand {
@@ -36,8 +37,8 @@ pub struct SetPublishStateCommand {
 
 pub struct ArticleCommandService {
     write_repo: Arc<dyn ArticleWriteRepository>,
-    read_repo: Arc<dyn crate::domain::article::ArticleReadRepository>,
-    slugger: Arc<dyn SlugGenerator>,
+    read_repo: Arc<dyn ArticleReadRepository>,
+    slug_service: Arc<ArticleSlugService>,
     clock: Arc<dyn Clock>,
 }
 
@@ -45,13 +46,13 @@ impl ArticleCommandService {
     pub fn new(
         write_repo: Arc<dyn ArticleWriteRepository>,
         read_repo: Arc<dyn crate::domain::article::ArticleReadRepository>,
-        slugger: Arc<dyn SlugGenerator>,
+        slug_service: Arc<ArticleSlugService>,
         clock: Arc<dyn Clock>,
     ) -> Self {
         Self {
             write_repo,
             read_repo,
-            slugger,
+            slug_service,
             clock,
         }
     }
@@ -67,7 +68,10 @@ impl ArticleCommandService {
         let body = ArticleBody::new(command.body)?;
         let now = self.clock.now();
 
-        let slug = self.generate_unique_slug(title.as_str(), None).await?;
+        let slug = self
+            .slug_service
+            .generate_unique_slug(&title, None)
+            .await?;
 
         let new_article = NewArticle {
             title,
@@ -95,11 +99,9 @@ impl ArticleCommandService {
             .await?
             .ok_or_else(|| ApplicationError::not_found("article not found"))?;
 
-        let can_update_any = actor.has_capability("articles", "update:any");
-        let can_update_own =
-            actor.has_capability("articles", "update:own") && existing.author_id == actor.id;
+        let update_spec = CanUpdateArticleSpec::new(&actor.capabilities, &existing, actor.id);
 
-        if !(can_update_any || can_update_own) {
+        if !update_spec.is_satisfied() {
             return Err(ApplicationError::forbidden(
                 "insufficient privileges to update article",
             ));
@@ -110,7 +112,8 @@ impl ArticleCommandService {
         if let Some(title) = command.title {
             let title = ArticleTitle::new(title)?;
             let slug = self
-                .generate_unique_slug(title.as_str(), Some(existing.id))
+                .slug_service
+                .generate_unique_slug(&title, Some(existing.id))
                 .await?;
             update = update.with_title(title).with_slug(slug);
         }
@@ -143,11 +146,9 @@ impl ArticleCommandService {
             .await?
             .ok_or_else(|| ApplicationError::not_found("article not found"))?;
 
-        let can_delete_any = actor.has_capability("articles", "delete:any");
-        let can_delete_own =
-            actor.has_capability("articles", "delete:own") && existing.author_id == actor.id;
+        let delete_spec = CanDeleteArticleSpec::new(&actor.capabilities, &existing, actor.id);
 
-        if !(can_delete_any || can_delete_own) {
+        if !delete_spec.is_satisfied() {
             return Err(ApplicationError::forbidden(
                 "insufficient privileges to delete article",
             ));
@@ -174,35 +175,6 @@ impl ArticleCommandService {
         Ok(updated.into())
     }
 
-    async fn generate_unique_slug(
-        &self,
-        title: &str,
-        ignore_id: Option<ArticleId>,
-    ) -> ApplicationResult<ArticleSlug> {
-        let base = self.slugger.slugify(title);
-        let base_slug = if base.is_empty() {
-            format!("article-{}", Utc::now().timestamp())
-        } else {
-            base
-        };
-
-        let mut candidate = base_slug.clone();
-        let mut counter = 1u64;
-
-        loop {
-            let slug = ArticleSlug::new(candidate.clone())?;
-            if let Some(existing) = self.read_repo.find_by_slug(&slug).await? {
-                if ignore_id.map(|id| id == existing.id).unwrap_or(false) {
-                    return Ok(slug);
-                }
-                candidate = format!("{}-{}", base_slug, counter);
-                counter += 1;
-                continue;
-            } else {
-                return Ok(slug);
-            }
-        }
-    }
 }
 
 fn ensure_capability(

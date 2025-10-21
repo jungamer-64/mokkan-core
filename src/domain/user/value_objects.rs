@@ -1,6 +1,4 @@
 use crate::domain::errors::{DomainError, DomainResult};
-use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt, str::FromStr};
 
@@ -162,58 +160,4 @@ impl From<PasswordHash> for String {
     fn from(value: PasswordHash) -> Self {
         value.0
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct User {
-    pub id: UserId,
-    pub username: Username,
-    pub password_hash: PasswordHash,
-    pub role: Role,
-    pub is_active: bool,
-    pub created_at: DateTime<Utc>,
-}
-
-impl User {
-    pub fn activate(mut self) -> Self {
-        self.is_active = true;
-        self
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct NewUser {
-    pub username: Username,
-    pub password_hash: PasswordHash,
-    pub role: Role,
-    pub is_active: bool,
-    pub created_at: DateTime<Utc>,
-}
-
-impl NewUser {
-    pub fn new(
-        username: Username,
-        password_hash: PasswordHash,
-        role: Role,
-        created_at: DateTime<Utc>,
-    ) -> Self {
-        Self {
-            username,
-            password_hash,
-            role,
-            is_active: true,
-            created_at,
-        }
-    }
-}
-
-#[async_trait]
-pub trait UserRepository: Send + Sync {
-    async fn count(&self) -> DomainResult<u64>;
-
-    async fn insert(&self, new_user: NewUser) -> DomainResult<User>;
-
-    async fn find_by_username(&self, username: &Username) -> DomainResult<Option<User>>;
-
-    async fn find_by_id(&self, id: UserId) -> DomainResult<Option<User>>;
 }
