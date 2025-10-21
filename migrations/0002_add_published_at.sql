@@ -1,3 +1,4 @@
+-- migrations/0002_add_published_at.sql
 ALTER TABLE articles
 ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ NULL;
 

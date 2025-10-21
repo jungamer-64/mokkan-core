@@ -1,8 +1,8 @@
 // src/infrastructure/repositories/postgres_article.rs
 use super::map_sqlx;
 use crate::domain::article::{
-    Article, ArticleBody, ArticleId, ArticleReadRepository, ArticleSlug, ArticleTitle,
-    ArticleUpdate, ArticleWriteRepository, NewArticle,
+    Article, ArticleBody, ArticleId, ArticleListCursor, ArticleReadRepository, ArticleSlug,
+    ArticleTitle, ArticleUpdate, ArticleWriteRepository, NewArticle,
 };
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::user::UserId;
@@ -170,6 +170,121 @@ impl ArticleWriteRepository for PostgresArticleWriteRepository {
     }
 }
 
+enum SearchMode<'q> {
+    None,
+    FullText(&'q str),
+    Trigram(&'q str),
+}
+
+impl PostgresArticleReadRepository {
+    fn apply_conditions<'a>(
+        builder: &mut QueryBuilder<'a, Postgres>,
+        include_drafts: bool,
+        cursor: Option<&'a ArticleListCursor>,
+        mode: &SearchMode<'a>,
+    ) {
+        let mut has_where = false;
+        if !include_drafts {
+            builder.push(" WHERE published = TRUE");
+            has_where = true;
+        }
+
+        match mode {
+            SearchMode::FullText(query) => {
+                if has_where {
+                    builder.push(" AND ");
+                } else {
+                    builder.push(" WHERE ");
+                    has_where = true;
+                }
+                builder.push("search @@ plainto_tsquery('simple', ");
+                builder.push_bind(*query);
+                builder.push(")");
+            }
+            SearchMode::Trigram(pattern) => {
+                if has_where {
+                    builder.push(" AND (");
+                } else {
+                    builder.push(" WHERE (");
+                    has_where = true;
+                }
+                builder.push("title ILIKE ");
+                builder.push_bind(*pattern);
+                builder.push(" OR body ILIKE ");
+                builder.push_bind(*pattern);
+                builder.push(")");
+            }
+            SearchMode::None => {}
+        }
+
+        if let Some(cursor) = cursor {
+            if has_where {
+                builder.push(" AND ");
+            } else {
+                builder.push(" WHERE ");
+            }
+            builder.push("(created_at, id) < (");
+            builder.push_bind(cursor.created_at);
+            builder.push(", ");
+            builder.push_bind(i64::from(cursor.article_id));
+            builder.push(")");
+        }
+    }
+
+    fn apply_ordering<'a>(builder: &mut QueryBuilder<'a, Postgres>, mode: &SearchMode<'a>) {
+        match mode {
+            SearchMode::FullText(query) => {
+                builder.push(" ORDER BY ts_rank(search, plainto_tsquery('simple', ");
+                builder.push_bind(*query);
+                builder.push(")) DESC, created_at DESC, id DESC");
+            }
+            _ => {
+                builder.push(" ORDER BY created_at DESC, id DESC");
+            }
+        }
+    }
+
+    async fn fetch_page(
+        &self,
+        include_drafts: bool,
+        limit: u32,
+        cursor: Option<&ArticleListCursor>,
+        mode: SearchMode<'_>,
+    ) -> DomainResult<(Vec<Article>, Option<ArticleListCursor>)> {
+        let limit = limit.clamp(1, 100);
+        let fetch_limit = (limit as i64) + 1;
+
+        let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(
+            "SELECT id, title, slug, body, published, published_at, author_id, created_at, updated_at FROM articles",
+        );
+        Self::apply_conditions(&mut builder, include_drafts, cursor, &mode);
+        Self::apply_ordering(&mut builder, &mode);
+        builder.push(" LIMIT ");
+        builder.push_bind(fetch_limit);
+
+        let rows = builder
+            .build_query_as::<ArticleRow>()
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_sqlx)?;
+
+        let mut articles = rows
+            .into_iter()
+            .map(Article::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut next_cursor = None;
+        if articles.len() > limit as usize {
+            articles.pop();
+            if let Some(last) = articles.last() {
+                next_cursor = Some(ArticleListCursor::from_parts(last.created_at, last.id));
+            }
+        }
+
+        Ok((articles, next_cursor))
+    }
+}
+
 #[async_trait]
 impl ArticleReadRepository for PostgresArticleReadRepository {
     async fn find_by_id(&self, id: ArticleId) -> DomainResult<Option<Article>> {
@@ -198,81 +313,41 @@ impl ArticleReadRepository for PostgresArticleReadRepository {
         row.map(Article::try_from).transpose()
     }
 
-    async fn list_paginated(
+    async fn list_page(
         &self,
         include_drafts: bool,
-        page: u32,
-        page_size: u32,
+        limit: u32,
+        cursor: Option<ArticleListCursor>,
         search: Option<&str>,
-    ) -> DomainResult<(Vec<Article>, u64)> {
-        const MAX_PAGE_SIZE: u32 = 100;
-        let page = page.max(1);
-        let page_size = page_size.clamp(1, MAX_PAGE_SIZE);
-        let offset = ((page - 1) as i64) * page_size as i64;
-        let search_pattern = search
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(|s| format!("%{}%", s));
+    ) -> DomainResult<(Vec<Article>, Option<ArticleListCursor>)> {
+        let cursor_ref = cursor.as_ref();
 
-        fn apply_conditions<'a>(
-            builder: &mut QueryBuilder<'a, Postgres>,
-            include_drafts: bool,
-            search_pattern: Option<&'a str>,
-        ) {
-            let mut has_where = false;
-            if !include_drafts {
-                builder.push(" WHERE published = TRUE");
-                has_where = true;
+        if let Some(query) = search.map(str::trim).filter(|s| !s.is_empty()) {
+            let (articles, next_cursor) = self
+                .fetch_page(
+                    include_drafts,
+                    limit,
+                    cursor_ref,
+                    SearchMode::FullText(query),
+                )
+                .await?;
+
+            if !articles.is_empty() {
+                return Ok((articles, next_cursor));
             }
 
-            if let Some(pattern) = search_pattern {
-                if has_where {
-                    builder.push(" AND (");
-                } else {
-                    builder.push(" WHERE (");
-                }
-                builder.push("title ILIKE ");
-                builder.push_bind(pattern);
-                builder.push(" OR body ILIKE ");
-                builder.push_bind(pattern);
-                builder.push(")");
-            }
+            let pattern = format!("%{}%", query);
+            return self
+                .fetch_page(
+                    include_drafts,
+                    limit,
+                    cursor_ref,
+                    SearchMode::Trigram(&pattern),
+                )
+                .await;
         }
 
-        let mut list_builder: QueryBuilder<Postgres> = QueryBuilder::new(
-            "SELECT id, title, slug, body, published, published_at, author_id, created_at, updated_at FROM articles",
-        );
-        apply_conditions(&mut list_builder, include_drafts, search_pattern.as_deref());
-        list_builder.push(" ORDER BY created_at DESC LIMIT ");
-        list_builder.push_bind(page_size as i64);
-        list_builder.push(" OFFSET ");
-        list_builder.push_bind(offset);
-
-        let rows = list_builder
-            .build_query_as::<ArticleRow>()
-            .fetch_all(&self.pool)
+        self.fetch_page(include_drafts, limit, cursor_ref, SearchMode::None)
             .await
-            .map_err(map_sqlx)?;
-
-        let mut count_builder: QueryBuilder<Postgres> =
-            QueryBuilder::new("SELECT COUNT(1) as count FROM articles");
-        apply_conditions(
-            &mut count_builder,
-            include_drafts,
-            search_pattern.as_deref(),
-        );
-
-        let total: i64 = count_builder
-            .build_query_scalar()
-            .fetch_one(&self.pool)
-            .await
-            .map_err(map_sqlx)?;
-
-        let articles = rows
-            .into_iter()
-            .map(Article::try_from)
-            .collect::<Result<Vec<_>, _>>()?;
-
-        Ok((articles, total as u64))
     }
 }

@@ -1,24 +1,24 @@
-// src/application/queries/articles.rs
 use crate::{
     application::{
-        dto::{ArticleDto, AuthenticatedUser, PaginatedResult},
+        dto::{ArticleDto, AuthenticatedUser, CursorPage},
         error::{ApplicationError, ApplicationResult},
     },
-    domain::article::{ArticleId, ArticleReadRepository, ArticleSlug},
+    domain::article::{ArticleId, ArticleListCursor, ArticleReadRepository, ArticleSlug},
+    domain::errors::DomainError,
 };
 use std::sync::Arc;
 
 pub struct ListArticlesQuery {
     pub include_drafts: bool,
-    pub page: u32,
-    pub page_size: u32,
+    pub limit: u32,
+    pub cursor: Option<String>,
 }
 
 pub struct SearchArticlesQuery {
     pub query: String,
     pub include_drafts: bool,
-    pub page: u32,
-    pub page_size: u32,
+    pub limit: u32,
+    pub cursor: Option<String>,
 }
 
 pub struct GetArticleBySlugQuery {
@@ -38,47 +38,56 @@ impl ArticleQueryService {
         &self,
         actor: Option<&AuthenticatedUser>,
         query: ListArticlesQuery,
-    ) -> ApplicationResult<PaginatedResult<ArticleDto>> {
-        let (include_drafts, page, page_size) =
-            self.normalize_listing(actor, query.include_drafts, query.page, query.page_size)?;
+    ) -> ApplicationResult<CursorPage<ArticleDto>> {
+        let (include_drafts, limit) =
+            self.normalize_listing(actor, query.include_drafts, query.limit)?;
+        let cursor = self.decode_cursor(query.cursor.as_deref())?;
 
-        let (records, total) = self
+        let (records, next_cursor) = self
             .read_repo
-            .list_paginated(include_drafts, page, page_size, None)
+            .list_page(include_drafts, limit, cursor, None)
             .await?;
 
-        let dtos = records.into_iter().map(Into::into).collect();
-        Ok(PaginatedResult::new(dtos, total, page, page_size))
+        let items = records.into_iter().map(Into::into).collect();
+        Ok(CursorPage::new(
+            items,
+            next_cursor.map(|cursor| cursor.encode()),
+        ))
     }
 
     pub async fn search_articles(
         &self,
         actor: Option<&AuthenticatedUser>,
         query: SearchArticlesQuery,
-    ) -> ApplicationResult<PaginatedResult<ArticleDto>> {
-        if query.query.trim().is_empty() {
+    ) -> ApplicationResult<CursorPage<ArticleDto>> {
+        let trimmed = query.query.trim();
+        if trimmed.is_empty() {
             return self
                 .list_articles(
                     actor,
                     ListArticlesQuery {
                         include_drafts: query.include_drafts,
-                        page: query.page,
-                        page_size: query.page_size,
+                        limit: query.limit,
+                        cursor: query.cursor,
                     },
                 )
                 .await;
         }
 
-        let (include_drafts, page, page_size) =
-            self.normalize_listing(actor, query.include_drafts, query.page, query.page_size)?;
+        let (include_drafts, limit) =
+            self.normalize_listing(actor, query.include_drafts, query.limit)?;
+        let cursor = self.decode_cursor(query.cursor.as_deref())?;
 
-        let (records, total) = self
+        let (records, next_cursor) = self
             .read_repo
-            .list_paginated(include_drafts, page, page_size, Some(query.query.as_str()))
+            .list_page(include_drafts, limit, cursor, Some(trimmed))
             .await?;
 
-        let dtos = records.into_iter().map(Into::into).collect();
-        Ok(PaginatedResult::new(dtos, total, page, page_size))
+        let items = records.into_iter().map(Into::into).collect();
+        Ok(CursorPage::new(
+            items,
+            next_cursor.map(|cursor| cursor.encode()),
+        ))
     }
 
     pub async fn get_article_by_slug(
@@ -117,9 +126,8 @@ impl ArticleQueryService {
         &self,
         actor: Option<&AuthenticatedUser>,
         include_drafts: bool,
-        page: u32,
-        page_size: u32,
-    ) -> ApplicationResult<(bool, u32, u32)> {
+        limit: u32,
+    ) -> ApplicationResult<(bool, u32)> {
         let include_drafts = if include_drafts {
             let actor = actor.ok_or_else(|| {
                 ApplicationError::forbidden("authentication required for draft access")
@@ -134,17 +142,26 @@ impl ArticleQueryService {
             false
         };
 
-        const DEFAULT_PAGE: u32 = 1;
-        const DEFAULT_PAGE_SIZE: u32 = 20;
-        const MAX_PAGE_SIZE: u32 = 100;
+        const DEFAULT_LIMIT: u32 = 20;
+        const MAX_LIMIT: u32 = 100;
 
-        let page = if page == 0 { DEFAULT_PAGE } else { page };
-        let page_size = if page_size == 0 {
-            DEFAULT_PAGE_SIZE
+        let limit = if limit == 0 {
+            DEFAULT_LIMIT
         } else {
-            page_size.min(MAX_PAGE_SIZE)
+            limit.min(MAX_LIMIT)
         };
 
-        Ok((include_drafts, page, page_size))
+        Ok((include_drafts, limit))
+    }
+
+    fn decode_cursor(&self, token: Option<&str>) -> ApplicationResult<Option<ArticleListCursor>> {
+        match token {
+            Some(value) => match ArticleListCursor::decode(value) {
+                Ok(cursor) => Ok(Some(cursor)),
+                Err(DomainError::Validation(msg)) => Err(ApplicationError::validation(msg)),
+                Err(other) => Err(ApplicationError::from(other)),
+            },
+            None => Ok(None),
+        }
     }
 }

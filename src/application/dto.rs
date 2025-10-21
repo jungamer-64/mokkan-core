@@ -61,27 +61,20 @@ impl From<Article> for ArticleDto {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(bound = "T: Serialize")]
-pub struct PaginatedResult<T> {
+pub struct CursorPage<T> {
     pub items: Vec<T>,
-    pub total: u64,
-    pub page: u32,
-    pub page_size: u32,
-    pub total_pages: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+    pub has_more: bool,
 }
 
-impl<T> PaginatedResult<T> {
-    pub fn new(items: Vec<T>, total: u64, page: u32, page_size: u32) -> Self {
-        let total_pages = if total == 0 || page_size == 0 {
-            0
-        } else {
-            ((total - 1) / page_size as u64 + 1) as u32
-        };
+impl<T> CursorPage<T> {
+    pub fn new(items: Vec<T>, next_cursor: Option<String>) -> Self {
+        let has_more = next_cursor.is_some();
         Self {
             items,
-            total,
-            page,
-            page_size,
-            total_pages,
+            next_cursor,
+            has_more,
         }
     }
 }

@@ -1,3 +1,4 @@
+// src/infrastructure/repositories/error.rs
 use crate::domain::errors::DomainError;
 
 const CNT_ARTICLE_SLUG: &str = "articles_slug_key";

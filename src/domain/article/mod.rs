@@ -7,4 +7,4 @@ pub mod value_objects;
 
 pub use entity::{Article, ArticleUpdate, NewArticle};
 pub use repository::{ArticleReadRepository, ArticleWriteRepository};
-pub use value_objects::{ArticleBody, ArticleId, ArticleSlug, ArticleTitle};
+pub use value_objects::{ArticleBody, ArticleId, ArticleListCursor, ArticleSlug, ArticleTitle};

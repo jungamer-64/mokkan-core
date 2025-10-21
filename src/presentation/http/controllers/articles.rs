@@ -3,7 +3,7 @@ use crate::application::{
     commands::articles::{
         CreateArticleCommand, DeleteArticleCommand, SetPublishStateCommand, UpdateArticleCommand,
     },
-    dto::{ArticleDto, PaginatedResult},
+    dto::{ArticleDto, CursorPage},
     queries::articles::{GetArticleBySlugQuery, ListArticlesQuery, SearchArticlesQuery},
 };
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
@@ -16,11 +16,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 
-fn default_page() -> u32 {
-    1
-}
-
-fn default_page_size() -> u32 {
+fn default_limit() -> u32 {
     20
 }
 
@@ -28,10 +24,10 @@ fn default_page_size() -> u32 {
 pub struct ArticleListParams {
     #[serde(default)]
     pub include_drafts: bool,
-    #[serde(default = "default_page")]
-    pub page: u32,
-    #[serde(default = "default_page_size")]
-    pub page_size: u32,
+    #[serde(default = "default_limit")]
+    pub limit: u32,
+    #[serde(default)]
+    pub cursor: Option<String>,
     #[serde(default)]
     pub q: Option<String>,
 }
@@ -60,10 +56,10 @@ pub async fn list_articles(
     Extension(state): Extension<HttpState>,
     actor: MaybeAuthenticated,
     Query(params): Query<ArticleListParams>,
-) -> HttpResult<Json<PaginatedResult<ArticleDto>>> {
+) -> HttpResult<Json<CursorPage<ArticleDto>>> {
     let include_drafts = params.include_drafts;
-    let page = params.page;
-    let page_size = params.page_size;
+    let limit = params.limit;
+    let cursor = params.cursor.clone();
 
     let result = if let Some(query) = params.q.clone() {
         state
@@ -74,8 +70,8 @@ pub async fn list_articles(
                 SearchArticlesQuery {
                     query,
                     include_drafts,
-                    page,
-                    page_size,
+                    limit,
+                    cursor: cursor.clone(),
                 },
             )
             .await
@@ -88,8 +84,8 @@ pub async fn list_articles(
                 actor.0.as_ref(),
                 ListArticlesQuery {
                     include_drafts,
-                    page,
-                    page_size,
+                    limit,
+                    cursor,
                 },
             )
             .await
