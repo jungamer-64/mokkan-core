@@ -1,3 +1,4 @@
+// src/domain/user/repository.rs
 use crate::domain::errors::DomainResult;
 use crate::domain::user::{
     entity::{NewUser, User},

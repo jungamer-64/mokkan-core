@@ -1,3 +1,4 @@
+// src/infrastructure/repositories/mod.rs
 mod postgres_article;
 mod postgres_user;
 

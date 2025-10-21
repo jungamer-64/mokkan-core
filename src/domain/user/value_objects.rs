@@ -1,3 +1,4 @@
+// src/domain/user/value_objects.rs
 use crate::domain::errors::{DomainError, DomainResult};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, fmt, str::FromStr};

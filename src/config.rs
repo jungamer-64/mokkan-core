@@ -1,3 +1,4 @@
+// src/config.rs
 use std::{env, time::Duration};
 use thiserror::Error;
 

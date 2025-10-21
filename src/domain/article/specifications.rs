@@ -1,3 +1,4 @@
+// src/domain/article/specifications.rs
 use std::collections::HashSet;
 
 use crate::domain::article::entity::Article;

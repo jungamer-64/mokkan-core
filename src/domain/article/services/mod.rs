@@ -1,3 +1,4 @@
+// src/domain/article/services/mod.rs
 use std::sync::Arc;
 
 use chrono::Utc;

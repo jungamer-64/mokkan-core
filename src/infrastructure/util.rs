@@ -1,3 +1,4 @@
+// src/infrastructure/util.rs
 use crate::application::ports::util::SlugGenerator;
 use slug::slugify;
 

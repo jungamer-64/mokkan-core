@@ -1,3 +1,4 @@
+// src/infrastructure/repositories/postgres_article.rs
 use crate::domain::article::{
     Article, ArticleBody, ArticleId, ArticleReadRepository, ArticleSlug, ArticleTitle,
     ArticleUpdate, ArticleWriteRepository, NewArticle,

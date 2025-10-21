@@ -1,3 +1,4 @@
+// src/domain/user/entity.rs
 use crate::domain::errors::DomainResult;
 use crate::domain::user::value_objects::{PasswordHash, Role, UserId, Username};
 use chrono::{DateTime, Utc};

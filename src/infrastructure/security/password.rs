@@ -1,3 +1,4 @@
+// src/infrastructure/security/password.rs
 use crate::application::{
     error::{ApplicationError, ApplicationResult},
     ports::security::PasswordHasher,

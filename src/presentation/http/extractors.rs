@@ -1,3 +1,4 @@
+// src/presentation/http/extractors.rs
 use crate::{
     application::{dto::AuthenticatedUser, error::ApplicationError},
     presentation::http::state::HttpState,

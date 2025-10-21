@@ -1,3 +1,4 @@
+// src/domain/article/repository.rs
 use crate::domain::article::entity::{Article, ArticleUpdate, NewArticle};
 use crate::domain::article::value_objects::{ArticleId, ArticleSlug};
 use crate::domain::errors::DomainResult;

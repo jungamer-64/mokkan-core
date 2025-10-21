@@ -1,3 +1,4 @@
+// src/infrastructure/database.rs
 use sqlx::{PgPool, postgres::PgPoolOptions};
 
 pub async fn init_pool(database_url: &str) -> Result<PgPool, sqlx::Error> {

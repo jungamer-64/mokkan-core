@@ -1,3 +1,4 @@
+// src/presentation/http/controllers/auth.rs
 use crate::application::{
     commands::users::{LoginUserCommand, RegisterUserCommand},
     dto::{AuthTokenDto, UserDto, UserProfileDto},

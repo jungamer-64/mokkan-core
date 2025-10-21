@@ -1,3 +1,4 @@
+// src/infrastructure/repositories/postgres_user.rs
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::user::{NewUser, PasswordHash, Role, User, UserId, UserRepository, Username};
 use async_trait::async_trait;

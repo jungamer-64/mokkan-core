@@ -1,3 +1,4 @@
+// src/presentation/http/error.rs
 use crate::application::{ApplicationResult, error::ApplicationError};
 use axum::{
     Json,

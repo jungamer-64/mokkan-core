@@ -1,3 +1,4 @@
+// src/domain/article/mod.rs
 pub mod entity;
 pub mod repository;
 pub mod services;

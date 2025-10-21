@@ -1,3 +1,4 @@
+// src/domain/errors.rs
 use thiserror::Error;
 
 pub type DomainResult<T> = Result<T, DomainError>;

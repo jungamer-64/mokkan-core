@@ -1,3 +1,4 @@
+// src/domain/article/entity.rs
 use crate::domain::article::value_objects::{ArticleBody, ArticleId, ArticleSlug, ArticleTitle};
 use crate::domain::errors::DomainResult;
 use crate::domain::user::UserId;
