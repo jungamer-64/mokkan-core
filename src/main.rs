@@ -84,6 +84,9 @@ async fn bootstrap() -> Result<()> {
     };
 
     let app = build_router(state);
+    if let Err(err) = crate::presentation::http::openapi::write_openapi_snapshot() {
+        tracing::warn!(error = %err, "failed to write OpenAPI snapshot");
+    }
     let service = app.into_service::<Body>().into_make_service();
 
     let listener = tokio::net::TcpListener::bind(config.listen_addr()).await?;

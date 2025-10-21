@@ -1,19 +1,21 @@
 // src/presentation/http/openapi.rs
-use crate::application::dto::{ArticleDto, UserDto};
-use axum::Json;
-use serde::Serialize;
+use crate::application::dto::{ArticleDto, CursorPage, UserDto};
+use axum::{Router, routing::get};
+use serde::{Deserialize, Serialize};
 use utoipa::openapi::{
     Components,
     security::{Http, HttpAuthScheme, SecurityScheme},
+    server::Server,
 };
 use utoipa::{Modify, OpenApi, ToSchema};
+use utoipa_swagger_ui::SwaggerUi;
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct StatusResponse {
     pub status: String,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct UserListResponse {
     pub items: Vec<UserDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -21,7 +23,7 @@ pub struct UserListResponse {
     pub has_more: bool,
 }
 
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct ArticleListResponse {
     pub items: Vec<ArticleDto>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,21 +79,67 @@ pub struct ArticleListResponse {
         (name = "Articles", description = "Article management endpoints"),
         (name = "System", description = "System level endpoints")
     ),
-    modifiers(&SecurityAddon)
+    modifiers(&ApiDocCustomizer),
+    security(("bearerAuth" = [])),
+    info(
+        title = "Mokkan API",
+        description = "Headless CMS backend",
+        version = "0.1.0"
+    )
 )]
 pub struct ApiDoc;
 
-struct SecurityAddon;
+struct ApiDocCustomizer;
 
-impl Modify for SecurityAddon {
+impl Modify for ApiDocCustomizer {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         let components = openapi.components.get_or_insert_with(Components::default);
         let mut http = Http::new(HttpAuthScheme::Bearer);
         http.bearer_format = Some("JWT".into());
         components.add_security_scheme("bearerAuth", SecurityScheme::Http(http));
+
+        let servers = openapi.servers.get_or_insert_with(Vec::new);
+        if servers.is_empty() {
+            servers.push(Server::new("http://localhost:3000"));
+        }
     }
 }
 
-pub async fn serve_openapi() -> Json<utoipa::openapi::OpenApi> {
-    Json(ApiDoc::openapi())
+pub async fn serve_openapi() -> axum::Json<utoipa::openapi::OpenApi> {
+    axum::Json(ApiDoc::openapi())
+}
+
+pub fn docs_router() -> Router {
+    let openapi = ApiDoc::openapi();
+    Router::new()
+        .route("/openapi.json", get(serve_openapi))
+        .merge(SwaggerUi::new("/docs").url("/openapi.json", openapi))
+}
+
+pub fn write_openapi_snapshot() -> std::io::Result<()> {
+    let spec = ApiDoc::openapi();
+    let json = serde_json::to_string_pretty(&spec)?;
+    std::fs::create_dir_all("spec")?;
+    std::fs::write("spec/openapi.json", json)?;
+    Ok(())
+}
+
+impl From<CursorPage<UserDto>> for UserListResponse {
+    fn from(page: CursorPage<UserDto>) -> Self {
+        Self {
+            items: page.items,
+            next_cursor: page.next_cursor,
+            has_more: page.has_more,
+        }
+    }
+}
+
+impl From<CursorPage<ArticleDto>> for ArticleListResponse {
+    fn from(page: CursorPage<ArticleDto>) -> Self {
+        Self {
+            items: page.items,
+            next_cursor: page.next_cursor,
+            has_more: page.has_more,
+        }
+    }
 }

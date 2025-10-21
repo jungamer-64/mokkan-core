@@ -3,12 +3,12 @@ use crate::application::{
     commands::articles::{
         CreateArticleCommand, DeleteArticleCommand, SetPublishStateCommand, UpdateArticleCommand,
     },
-    dto::{ArticleDto, ArticleRevisionDto, CursorPage},
+    dto::{ArticleDto, ArticleRevisionDto},
     queries::articles::{
         GetArticleBySlugQuery, ListArticleRevisionsQuery, ListArticlesQuery, SearchArticlesQuery,
     },
 };
-use crate::presentation::http::error::{ErrorResponse, HttpResult, IntoHttpResult};
+use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::{Authenticated, MaybeAuthenticated};
 use crate::presentation::http::openapi::{ArticleListResponse, StatusResponse};
 use crate::presentation::http::state::HttpState;
@@ -17,7 +17,6 @@ use axum::{
     extract::{Path, Query},
 };
 use serde::Deserialize;
-use serde_json::json;
 use utoipa::IntoParams;
 
 fn default_limit() -> u32 {
@@ -62,8 +61,8 @@ pub struct PublishRequest {
     params(ArticleListParams),
     responses(
         (status = 200, description = "List articles.", body = ArticleListResponse),
-        (status = 400, description = "Invalid query parameters.", body = ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+        (status = 400, description = "Invalid query parameters.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
     ),
     tag = "Articles"
 )]
@@ -71,7 +70,7 @@ pub async fn list_articles(
     Extension(state): Extension<HttpState>,
     actor: MaybeAuthenticated,
     Query(params): Query<ArticleListParams>,
-) -> HttpResult<Json<CursorPage<ArticleDto>>> {
+) -> HttpResult<Json<ArticleListResponse>> {
     let include_drafts = params.include_drafts;
     let limit = params.limit;
     let cursor = params.cursor.clone();
@@ -107,7 +106,7 @@ pub async fn list_articles(
             .into_http()?
     };
 
-    Ok(Json(result))
+    Ok(Json(ArticleListResponse::from(result)))
 }
 
 #[utoipa::path(
@@ -118,10 +117,10 @@ pub async fn list_articles(
     ),
     responses(
         (status = 200, description = "Article by slug.", body = ArticleDto),
-        (status = 401, description = "Unauthorized.", body = ErrorResponse),
-        (status = 403, description = "Forbidden.", body = ErrorResponse),
-        (status = 404, description = "Article not found.", body = ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 404, description = "Article not found.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
     ),
     tag = "Articles"
 )]
@@ -145,10 +144,10 @@ pub async fn get_article_by_slug(
     request_body = CreateArticleRequest,
     responses(
         (status = 200, description = "Article created.", body = ArticleDto),
-        (status = 400, description = "Invalid input.", body = ErrorResponse),
-        (status = 401, description = "Unauthorized.", body = ErrorResponse),
-        (status = 403, description = "Forbidden.", body = ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
     ),
     security(("bearerAuth" = [])),
     tag = "Articles"
@@ -182,11 +181,11 @@ pub async fn create_article(
     request_body = UpdateArticleRequest,
     responses(
         (status = 200, description = "Article updated.", body = ArticleDto),
-        (status = 400, description = "Invalid input.", body = ErrorResponse),
-        (status = 401, description = "Unauthorized.", body = ErrorResponse),
-        (status = 403, description = "Forbidden.", body = ErrorResponse),
-        (status = 404, description = "Article not found.", body = ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 404, description = "Article not found.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
     ),
     security(("bearerAuth" = [])),
     tag = "Articles"
@@ -221,10 +220,10 @@ pub async fn update_article(
     ),
     responses(
         (status = 200, description = "Article deleted.", body = StatusResponse),
-        (status = 401, description = "Unauthorized.", body = ErrorResponse),
-        (status = 403, description = "Forbidden.", body = ErrorResponse),
-        (status = 404, description = "Article not found.", body = ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 404, description = "Article not found.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
     ),
     security(("bearerAuth" = [])),
     tag = "Articles"
@@ -233,7 +232,7 @@ pub async fn delete_article(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
     Path(id): Path<i64>,
-) -> HttpResult<Json<serde_json::Value>> {
+) -> HttpResult<Json<StatusResponse>> {
     state
         .services
         .article_commands
@@ -241,7 +240,9 @@ pub async fn delete_article(
         .await
         .into_http()?;
 
-    Ok(Json(json!({ "status": "deleted" })))
+    Ok(Json(StatusResponse {
+        status: "deleted".into(),
+    }))
 }
 
 #[utoipa::path(
@@ -253,11 +254,11 @@ pub async fn delete_article(
     request_body = PublishRequest,
     responses(
         (status = 200, description = "Article publish state updated.", body = ArticleDto),
-        (status = 400, description = "Invalid input.", body = ErrorResponse),
-        (status = 401, description = "Unauthorized.", body = ErrorResponse),
-        (status = 403, description = "Forbidden.", body = ErrorResponse),
-        (status = 404, description = "Article not found.", body = ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 404, description = "Article not found.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
     ),
     security(("bearerAuth" = [])),
     tag = "Articles"
@@ -290,10 +291,10 @@ pub async fn set_publish_state(
     ),
     responses(
         (status = 200, description = "Article revision history.", body = [ArticleRevisionDto]),
-        (status = 401, description = "Unauthorized.", body = ErrorResponse),
-        (status = 403, description = "Forbidden.", body = ErrorResponse),
-        (status = 404, description = "Article not found.", body = ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = ErrorResponse)
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 404, description = "Article not found.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
     ),
     security(("bearerAuth" = [])),
     tag = "Articles"

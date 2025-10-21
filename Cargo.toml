@@ -1,12 +1,12 @@
 [package]
-name = "mokksn_core"
+name = "mokkan_core"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 argon2 = { version = "0.5", features = ["password-hash"] }
 async-trait = "0.1"
-axum = { version = "0.7.5", features = ["macros", "json"] }
+axum = { version = "0.8.6", features = ["macros", "json"] }
 anyhow = "1.0"
 biscuit-auth = "6.0.0"
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
@@ -17,10 +17,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 slug = "0.1"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "macros", "postgres", "chrono", "migrate"] }
-thiserror = "1.0"
+thiserror = "2.0"
 tokio = { version = "1.43", features = ["macros", "rt-multi-thread", "signal", "time"] }
 tower-http = { version = "0.6", features = ["trace", "cors"] }
 tower = { version = "0.5", features = ["make"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-utoipa = { version = "5", features = ["chrono"] }
+utoipa = { version = "5.4", features = ["chrono"] }
+utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
