@@ -1202,6 +1202,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "mokksn_core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "async-trait",
+ "axum",
+ "base64 0.22.1",
+ "biscuit-auth",
+ "chrono",
+ "dotenvy",
+ "headers",
+ "serde",
+ "serde_json",
+ "slug",
+ "sqlx",
+ "thiserror 1.0.69",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1617,31 +1642,6 @@ dependencies = [
  "spki 0.7.3",
  "subtle",
  "zeroize",
-]
-
-[[package]]
-name = "rust_cms_nw"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "argon2",
- "async-trait",
- "axum",
- "base64 0.22.1",
- "biscuit-auth",
- "chrono",
- "dotenvy",
- "headers",
- "serde",
- "serde_json",
- "slug",
- "sqlx",
- "thiserror 1.0.69",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

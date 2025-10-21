@@ -1,4 +1,4 @@
-# rust_cms_nw
+# mokkan_core
 
 軽量な Rust 製 CMS の雛形リポジトリです。ここにはローカルセットアップ手順、環境変数の説明、マイグレーション方法を記載します。
 
@@ -41,8 +41,8 @@
 
 - 環境変数:
 
-   - `BISCUIT_ROOT_PRIVATE_KEY`: Biscuit トークンのルート秘密鍵 (base64/hex)。必要に応じて設定してください。
-   - `DATABASE_URL`: データベース接続文字列 (例: postgres://postgres:postgres@localhost:5432/cms)
-   - `TOKEN_TTL_SECONDS`: トークンの有効期限 (秒)
+  - `BISCUIT_ROOT_PRIVATE_KEY`: Biscuit トークンのルート秘密鍵 (base64/hex)。必要に応じて設定してください。
+  - `DATABASE_URL`: データベース接続文字列 (例: postgres://postgres:postgres@localhost:5432/cms)
+  - `TOKEN_TTL_SECONDS`: トークンの有効期限 (秒)
 
 問題が発生したら、エラーメッセージを共有してください。ビルドや実行エラーの調査を手伝います。
