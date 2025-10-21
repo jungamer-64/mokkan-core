@@ -1,3 +1,4 @@
+// src/application/services/mod.rs
 use std::sync::Arc;
 
 use crate::{

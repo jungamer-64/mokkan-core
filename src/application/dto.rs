@@ -1,3 +1,4 @@
+// src/application/dto.rs
 use crate::domain::{
     article::Article,
     user::{Capability, Role, User, UserId},

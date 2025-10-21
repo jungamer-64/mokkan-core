@@ -1,3 +1,4 @@
+// src/application/error.rs
 use crate::domain::errors::DomainError;
 use thiserror::Error;
 

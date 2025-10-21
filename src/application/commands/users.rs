@@ -1,3 +1,4 @@
+// src/application/commands/users.rs
 use crate::{
     application::{
         dto::{AuthTokenDto, TokenSubject, UserDto},
