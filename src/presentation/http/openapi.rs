@@ -11,6 +11,8 @@ use blake3::hash;
 use bytes::Bytes;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, env, fs, path::Path, sync::OnceLock};
+mod openapi_meta;
+use openapi_meta::last_modified_str;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::compression::CompressionLayer;
 use utoipa::openapi::{
@@ -130,6 +132,7 @@ static OPENAPI_JSON: OnceLock<String> = OnceLock::new();
 static OPENAPI_BYTES: OnceLock<Bytes> = OnceLock::new();
 static OPENAPI_ETAG: OnceLock<String> = OnceLock::new();
 static OPENAPI_CONTENT_LENGTH: OnceLock<usize> = OnceLock::new();
+// process-startup timestamp for Last-Modified when BUILD_DATE is not set
 
 fn openapi_spec() -> &'static utoipa::openapi::OpenApi {
     OPENAPI.get_or_init(|| ApiDoc::openapi())
@@ -157,9 +160,13 @@ fn openapi_etag() -> &'static str {
 
 // ---- HTTP handlers / router ----
 fn strip_weak_prefix(tag: &str) -> &str {
-    let trimmed = tag.trim();
-    trimmed.strip_prefix("W/").map(str::trim).unwrap_or(trimmed)
+    let t = tag.trim();
+    let t = t.strip_prefix("W/").or_else(|| t.strip_prefix("w/")).unwrap_or(t);
+    t.trim()
 }
+
+// Return the Last-Modified string the server actually sends (BUILD_DATE or STARTUP_DATE)
+// last_modified_str is implemented in the sibling module openapi_meta
 
 fn weak_match(a: &str, b: &str) -> bool {
     strip_weak_prefix(a) == strip_weak_prefix(b)
@@ -185,12 +192,16 @@ fn set_common_headers(
         )
         .header(
             header::CACHE_CONTROL,
-            HeaderValue::from_static("public, max-age=0, must-revalidate"),
+            // prefer the server's prerogative to avoid intermediate transforms that
+            // could invalidate the ETag/Content-Length coupling; keep revalidation semantics
+            HeaderValue::from_static("public, max-age=0, must-revalidate, no-transform"),
         );
 
-    // optional Last-Modified from build time to improve compatibility
-    if let Some(v) = option_env!("BUILD_DATE") {
-        b = b.header(header::LAST_MODIFIED, HeaderValue::from_static(v));
+    // Last-Modified: use the value we actually send back (BUILD_DATE preferred, otherwise startup time)
+    if let Some(v) = last_modified_str() {
+        if let Ok(hv) = HeaderValue::from_str(v) {
+            b = b.header(header::LAST_MODIFIED, hv);
+        }
     }
 
     b = b
@@ -220,9 +231,41 @@ fn inm_matches(inm: &HeaderMap, etag: &str) -> bool {
     }
 }
 
+fn has_if_none_match(headers: &HeaderMap) -> bool {
+    headers.get(header::IF_NONE_MATCH).is_some()
+}
+
+fn ims_matches(headers: &HeaderMap) -> bool {
+    // Use the actual Last-Modified value we send (BUILD_DATE or STARTUP_DATE)
+    let lm = match last_modified_str() {
+        Some(v) => v,
+        None => return false,
+    };
+
+    let ims = match headers.get(header::IF_MODIFIED_SINCE) {
+        Some(v) => match v.to_str() {
+            Ok(s) => s,
+            Err(_) => return false,
+        },
+        None => return false,
+    };
+
+    // parse both dates and compare
+    if let (Ok(lm_time), Ok(ims_time)) = (httpdate::parse_http_date(lm), httpdate::parse_http_date(ims)) {
+        return ims_time >= lm_time;
+    }
+    false
+}
+
 pub async fn head_openapi(headers: HeaderMap) -> Response {
     let etag = openapi_etag();
-    if inm_matches(&headers, etag) {
+    let not_modified = if has_if_none_match(&headers) {
+        inm_matches(&headers, etag)
+    } else {
+        ims_matches(&headers)
+    };
+
+    if not_modified {
         let mut resp = set_common_headers(
             Response::builder().status(StatusCode::NOT_MODIFIED),
             etag,
@@ -230,19 +273,30 @@ pub async fn head_openapi(headers: HeaderMap) -> Response {
         )
         .body(Body::empty())
         .unwrap();
+        // Ensure compression-related headers are not present for HEAD responses to avoid
+        // mismatches between Content-Length and Content-Encoding applied by middleware.
         resp.headers_mut().remove(header::CONTENT_LENGTH);
+        resp.headers_mut().remove(header::CONTENT_ENCODING);
         return resp;
     }
     let content_length = openapi_content_length();
-    set_common_headers(Response::builder().status(StatusCode::OK), etag, true)
-        .header(header::CONTENT_LENGTH, content_length.to_string())
-        .body(Body::empty())
-        .unwrap()
+    let builder = set_common_headers(Response::builder().status(StatusCode::OK), etag, true)
+        .header(header::CONTENT_LENGTH, content_length.to_string());
+    let mut resp = builder.body(Body::empty()).unwrap();
+    // Remove compression header just in case a middleware adds Content-Encoding on HEAD
+    resp.headers_mut().remove(header::CONTENT_ENCODING);
+    resp
 }
 
 pub async fn serve_openapi(headers: HeaderMap) -> Response {
     let etag = openapi_etag();
-    if inm_matches(&headers, etag) {
+    let not_modified = if has_if_none_match(&headers) {
+        inm_matches(&headers, etag)
+    } else {
+        ims_matches(&headers)
+    };
+
+    if not_modified {
         let mut resp = set_common_headers(
             Response::builder().status(StatusCode::NOT_MODIFIED),
             etag,
@@ -251,13 +305,16 @@ pub async fn serve_openapi(headers: HeaderMap) -> Response {
         .body(Body::empty())
         .unwrap();
         resp.headers_mut().remove(header::CONTENT_LENGTH);
+        // Also remove Content-Encoding for 304 responses to avoid any middleware-induced
+        // ambiguity between encoding and length.
+        resp.headers_mut().remove(header::CONTENT_ENCODING);
         return resp;
     }
 
     let body = openapi_bytes().clone();
-    let content_length = openapi_content_length();
+    // Do NOT set Content-Length on GET responses so downstream compression/chunking
+    // layers can adjust the response without causing a mismatch.
     set_common_headers(Response::builder().status(StatusCode::OK), etag, true)
-        .header(header::CONTENT_LENGTH, content_length.to_string())
         .body(Body::from(body))
         .unwrap()
 }
@@ -265,17 +322,27 @@ pub async fn serve_openapi(headers: HeaderMap) -> Response {
 pub fn docs_router_with_options(expose_openapi_json: bool, enable_api_docs: bool) -> Router {
     let mut base = Router::new();
 
-    if expose_openapi_json {
+    // If docs UI is enabled, always provide /openapi.json on the same origin so the UI can load it.
+    if enable_api_docs || expose_openapi_json {
         base = base.route("/openapi.json", get(serve_openapi).head(head_openapi));
+    }
 
-        // optional CORS for UI usage from other origins (only applied when JSON is exposed)
+    // Apply CORS only when the JSON is meant to be exposed to other origins.
+    if expose_openapi_json {
         let cors = CorsLayer::new()
             .allow_origin(Any)
             .allow_methods([Method::GET, Method::HEAD])
-            // allow non-simple header used by browsers to send ETag checks
-            .allow_headers([header::IF_NONE_MATCH])
-            // allow client JS to read ETag/cache/vary
-            .expose_headers([header::ETAG, header::CACHE_CONTROL, header::VARY]);
+            // allow non-simple headers used by browsers to send caching checks
+            .allow_headers([header::IF_NONE_MATCH, header::IF_MODIFIED_SINCE])
+            // allow client JS to read ETag/cache/vary/last-modified and optionally content-encoding
+            .expose_headers([
+                header::ETAG,
+                header::CACHE_CONTROL,
+                header::VARY,
+                header::LAST_MODIFIED,
+                header::CONTENT_ENCODING,
+                header::CONTENT_LENGTH,
+            ]);
         base = base.layer(cors);
     }
 
@@ -291,8 +358,8 @@ pub fn docs_router_with_options(expose_openapi_json: bool, enable_api_docs: bool
 }
 
 pub fn docs_router() -> Router {
-    let expose = env::var("EXPOSE_OPENAPI_JSON").as_deref() == Ok("1");
-    let enable_docs = env::var("ENABLE_API_DOCS").as_deref() == Ok("1");
+    let expose = matches!(env::var("EXPOSE_OPENAPI_JSON").as_deref(), Ok("1"));
+    let enable_docs = matches!(env::var("ENABLE_API_DOCS").as_deref(), Ok("1"));
     // Apply compression at the router level when using env-driven router
     docs_router_with_options(expose, enable_docs).layer(CompressionLayer::new())
 }
@@ -305,7 +372,7 @@ pub fn write_openapi_snapshot() -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let tmp_path = format!("{}{}.tmp", output_path, "");
+    let tmp_path = format!("{}.tmp", output_path);
     let mut file = std::fs::File::create(&tmp_path)?;
     use std::io::Write;
     file.write_all(openapi_json().as_bytes())?;
@@ -417,6 +484,12 @@ mod tests {
         assert_eq!(candidates, vec!["\"foo\"", "W/\"bar\""]);
     }
 
+    #[test]
+    fn weak_match_handles_lowercase_prefix() {
+        assert!(weak_match(r#"w/"abc""#, r#""abc""#));
+        assert!(weak_match(r#""abc""#, r#"w/"abc""#));
+    }
+
     #[tokio::test]
     async fn serve_openapi_returns_not_modified_when_if_none_match_matches() {
         // build headers that match current etag
@@ -451,5 +524,56 @@ mod tests {
         let resp = head_openapi(headers).await;
         assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
         assert!(resp.headers().get(header::ETAG).is_some());
+    }
+
+    #[tokio::test]
+    async fn get_openapi_returns_not_modified_on_ims() {
+        // Skip if BUILD_DATE not embedded during build
+        if option_env!("BUILD_DATE").is_none() {
+            return;
+        }
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::IF_MODIFIED_SINCE,
+            HeaderValue::from_static(option_env!("BUILD_DATE").unwrap()),
+        );
+        let resp = serve_openapi(headers).await;
+        assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
+    }
+
+    #[tokio::test]
+    async fn get_openapi_inm_takes_precedence_over_ims() {
+        // If both INM and IMS are present, INM must take precedence per RFC.
+        let mut headers = HeaderMap::new();
+        headers.insert(header::IF_NONE_MATCH, HeaderValue::from_static(openapi_etag()));
+        headers.insert(
+            header::IF_MODIFIED_SINCE,
+            HeaderValue::from_static("Thu, 01 Jan 1970 00:00:00 GMT"),
+        );
+        let resp = serve_openapi(headers).await;
+        assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
+    }
+
+    #[tokio::test]
+    async fn get_openapi_returns_ok_when_inm_mismatch_even_if_ims_matches() {
+        // Only meaningful when BUILD_DATE is present (we compare against it)
+        if option_env!("BUILD_DATE").is_none() {
+            return;
+        }
+        let lm = option_env!("BUILD_DATE").unwrap();
+        let mut headers = HeaderMap::new();
+        // intentionally mismatching ETag
+        headers.insert(header::IF_NONE_MATCH, HeaderValue::from_static("\"some-other\""));
+        headers.insert(header::IF_MODIFIED_SINCE, HeaderValue::from_static(lm));
+        let resp = serve_openapi(headers).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn build_date_parses_as_httpdate_when_present() {
+        if let Some(b) = option_env!("BUILD_DATE") {
+            // ensure the compile-time BUILD_DATE (when present) is a valid HTTP date
+            assert!(httpdate::parse_http_date(b).is_ok(), "BUILD_DATE must be httpdate format");
+        }
     }
 }

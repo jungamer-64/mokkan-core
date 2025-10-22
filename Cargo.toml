@@ -21,7 +21,7 @@ slug = "0.1"
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "macros", "postgres", "chrono", "migrate"] }
 thiserror = "2.0"
 tokio = { version = "1.43", features = ["macros", "rt-multi-thread", "signal", "time"] }
-tower-http = { version = "0.6", features = ["trace", "cors", "compression-br"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "compression-gzip", "compression-br"] }
 tower = { version = "0.5", features = ["make"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -30,6 +30,8 @@ utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
 utoipa-redoc = { version = "6.0", features = ["axum"] }
 tower_governor = { version = "0.8", default-features = false, features = ["axum"] }
 governor = "0.10"
+
+httpdate = "1"
 
 [package.metadata.commands]
 openapi = "run --bin mokkan_core -- openapi-snapshot"
