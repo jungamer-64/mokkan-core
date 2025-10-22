@@ -1,8 +1,18 @@
 // src/presentation/http/openapi.rs
 use crate::application::dto::{ArticleDto, CursorPage, UserDto};
-use axum::{Router, response::Redirect, routing::get};
+use axum::{
+    Router,
+    body::Body,
+    http::{self, HeaderMap, HeaderValue, Method, StatusCode, header},
+    response::{Redirect, Response},
+    routing::get,
+};
+use blake3::hash;
+use bytes::Bytes;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, env, fs::File, io::BufWriter, path::Path};
+use std::{collections::HashSet, env, fs, path::Path, sync::OnceLock};
+use tower_http::cors::{Any, CorsLayer};
+use tower_http::compression::CompressionLayer;
 use utoipa::openapi::{
     Components,
     security::{Http, HttpAuthScheme, SecurityScheme},
@@ -10,10 +20,11 @@ use utoipa::openapi::{
 };
 use utoipa::{Modify, OpenApi, ToSchema};
 use utoipa_redoc::{Redoc, Servable};
-use utoipa_swagger_ui::SwaggerUi;
+use utoipa_swagger_ui::{Config, SwaggerUi, Url};
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct StatusResponse {
+    #[schema(example = "ok")]
     pub status: String,
 }
 
@@ -88,7 +99,7 @@ pub struct ArticleListResponse {
     info(
         title = "Mokkan API",
         description = "Headless CMS backend",
-        version = "0.1.0"
+        version = env!("CARGO_PKG_VERSION")
     )
 )]
 pub struct ApiDoc;
@@ -97,77 +108,258 @@ struct ApiDocCustomizer;
 
 impl Modify for ApiDocCustomizer {
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        // security scheme
         let components = openapi.components.get_or_insert_with(Components::default);
         let mut http = Http::new(HttpAuthScheme::Bearer);
         http.bearer_format = Some("JWT".into());
         components.add_security_scheme("bearerAuth", SecurityScheme::Http(http));
 
+        // servers (from env)
         let servers = openapi.servers.get_or_insert_with(Vec::new);
         servers.clear();
 
-        let mut urls: Vec<String> = env::var("PUBLIC_API_URLS")
-            .ok()
-            .map(|value| {
-                value
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|segment| !segment.is_empty())
-                    .map(|segment| segment.trim_end_matches('/').to_string())
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        if urls.is_empty() {
-            if let Ok(url) = env::var("PUBLIC_API_URL") {
-                let sanitized = url.trim().trim_end_matches('/').to_string();
-                if !sanitized.is_empty() {
-                    urls.push(sanitized);
-                }
-            }
-        }
-
-        if !urls.iter().any(|url| url == "http://localhost:3000") {
-            urls.push("http://localhost:3000".to_string());
-        }
-
-        let mut seen = HashSet::new();
-        for url in urls {
-            if seen.insert(url.clone()) {
-                servers.push(Server::new(url));
-            }
+        for url in collect_server_urls() {
+            servers.push(Server::new(url));
         }
     }
 }
 
-pub async fn serve_openapi() -> axum::Json<utoipa::openapi::OpenApi> {
-    axum::Json(ApiDoc::openapi())
+// ---- OpenAPI lazy singletons ----
+static OPENAPI: OnceLock<utoipa::openapi::OpenApi> = OnceLock::new();
+static OPENAPI_JSON: OnceLock<String> = OnceLock::new();
+static OPENAPI_BYTES: OnceLock<Bytes> = OnceLock::new();
+static OPENAPI_ETAG: OnceLock<String> = OnceLock::new();
+static OPENAPI_CONTENT_LENGTH: OnceLock<usize> = OnceLock::new();
+
+fn openapi_spec() -> &'static utoipa::openapi::OpenApi {
+    OPENAPI.get_or_init(|| ApiDoc::openapi())
+}
+
+fn openapi_json() -> &'static str {
+    OPENAPI_JSON.get_or_init(|| {
+        serde_json::to_string_pretty(openapi_spec()).expect("serialize OpenAPI (pretty)")
+    })
+}
+
+fn openapi_bytes() -> &'static Bytes {
+    OPENAPI_BYTES.get_or_init(|| {
+        Bytes::from(serde_json::to_vec(openapi_spec()).expect("serialize OpenAPI (compact bytes)"))
+    })
+}
+
+fn openapi_etag() -> &'static str {
+    OPENAPI_ETAG.get_or_init(|| {
+        let h = hash(openapi_bytes().as_ref());
+        let hex = h.to_hex();
+        format!("W/\"{hex}\"")
+    })
+}
+
+// ---- HTTP handlers / router ----
+fn strip_weak_prefix(tag: &str) -> &str {
+    let trimmed = tag.trim();
+    trimmed.strip_prefix("W/").map(str::trim).unwrap_or(trimmed)
+}
+
+fn weak_match(a: &str, b: &str) -> bool {
+    strip_weak_prefix(a) == strip_weak_prefix(b)
+}
+
+fn set_common_headers(
+    mut builder: http::response::Builder,
+    etag: &str,
+    with_ct: bool,
+) -> http::response::Builder {
+    if with_ct {
+        builder = builder.header(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("application/json; charset=utf-8"),
+        );
+    }
+
+    let mut b = builder;
+    b = b
+        .header(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        )
+        .header(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=0, must-revalidate"),
+        );
+
+    // optional Last-Modified from build time to improve compatibility
+    if let Some(v) = option_env!("BUILD_DATE") {
+        b = b.header(header::LAST_MODIFIED, HeaderValue::from_static(v));
+    }
+
+    b = b
+        .header(header::VARY, HeaderValue::from_static("Accept-Encoding"))
+        .header(header::ETAG, etag);
+
+    b
+}
+
+fn openapi_content_length() -> usize {
+    *OPENAPI_CONTENT_LENGTH.get_or_init(|| openapi_bytes().len())
+}
+
+fn inm_matches(inm: &HeaderMap, etag: &str) -> bool {
+    match inm.get(header::IF_NONE_MATCH) {
+        None => false,
+        Some(v) => match v.to_str() {
+            Err(_) => false,
+            Ok(s) => {
+                let s = s.trim();
+                if s == "*" {
+                    return true;
+                }
+                s.split(',').map(str::trim).any(|t| weak_match(t, etag))
+            }
+        },
+    }
+}
+
+pub async fn head_openapi(headers: HeaderMap) -> Response {
+    let etag = openapi_etag();
+    if inm_matches(&headers, etag) {
+        let mut resp = set_common_headers(
+            Response::builder().status(StatusCode::NOT_MODIFIED),
+            etag,
+            false,
+        )
+        .body(Body::empty())
+        .unwrap();
+        resp.headers_mut().remove(header::CONTENT_LENGTH);
+        return resp;
+    }
+    let content_length = openapi_content_length();
+    set_common_headers(Response::builder().status(StatusCode::OK), etag, true)
+        .header(header::CONTENT_LENGTH, content_length.to_string())
+        .body(Body::empty())
+        .unwrap()
+}
+
+pub async fn serve_openapi(headers: HeaderMap) -> Response {
+    let etag = openapi_etag();
+    if inm_matches(&headers, etag) {
+        let mut resp = set_common_headers(
+            Response::builder().status(StatusCode::NOT_MODIFIED),
+            etag,
+            false,
+        )
+        .body(Body::empty())
+        .unwrap();
+        resp.headers_mut().remove(header::CONTENT_LENGTH);
+        return resp;
+    }
+
+    let body = openapi_bytes().clone();
+    let content_length = openapi_content_length();
+    set_common_headers(Response::builder().status(StatusCode::OK), etag, true)
+        .header(header::CONTENT_LENGTH, content_length.to_string())
+        .body(Body::from(body))
+        .unwrap()
+}
+
+pub fn docs_router_with_options(expose_openapi_json: bool, enable_api_docs: bool) -> Router {
+    let mut base = Router::new();
+
+    if expose_openapi_json {
+        base = base.route("/openapi.json", get(serve_openapi).head(head_openapi));
+
+        // optional CORS for UI usage from other origins (only applied when JSON is exposed)
+        let cors = CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods([Method::GET, Method::HEAD])
+            // allow non-simple header used by browsers to send ETag checks
+            .allow_headers([header::IF_NONE_MATCH])
+            // allow client JS to read ETag/cache/vary
+            .expose_headers([header::ETAG, header::CACHE_CONTROL, header::VARY]);
+        base = base.layer(cors);
+    }
+
+    if enable_api_docs {
+        base.merge(
+            SwaggerUi::new("/docs").config(Config::new([Url::new("Mokkan API", "/openapi.json")])),
+        )
+        .merge(Redoc::with_url("/redoc", "/openapi.json"))
+        .route("/", get(|| async { Redirect::permanent("/docs") }))
+    } else {
+        base
+    }
 }
 
 pub fn docs_router() -> Router {
-    let openapi = ApiDoc::openapi();
-    let swagger = SwaggerUi::new("/docs").url("/openapi.json", openapi.clone());
-    let redoc = Redoc::with_url("/redoc", openapi);
-    Router::new()
-        .route("/openapi.json", get(serve_openapi))
-        .merge(swagger)
-        .merge(redoc)
-        .route("/", get(|| async { Redirect::permanent("/docs") }))
+    let expose = env::var("EXPOSE_OPENAPI_JSON").as_deref() == Ok("1");
+    let enable_docs = env::var("ENABLE_API_DOCS").as_deref() == Ok("1");
+    // Apply compression at the router level when using env-driven router
+    docs_router_with_options(expose, enable_docs).layer(CompressionLayer::new())
 }
 
+// ---- snapshot writer ----
 pub fn write_openapi_snapshot() -> std::io::Result<()> {
-    let spec = ApiDoc::openapi();
     let output_path = env::var("OPENAPI_SNAPSHOT_PATH")
-        .unwrap_or_else(|_| "backend/spec/openapi.json".to_string());
+        .unwrap_or_else(|_| "spec/openapi.json".to_string());
     let path = Path::new(&output_path);
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent)?;
     }
-    let file = File::create(path)?;
-    let writer = BufWriter::new(file);
-    serde_json::to_writer_pretty(writer, &spec)?;
+    let tmp_path = format!("{}{}.tmp", output_path, "");
+    let mut file = std::fs::File::create(&tmp_path)?;
+    use std::io::Write;
+    file.write_all(openapi_json().as_bytes())?;
+    file.flush()?;
+    fs::rename(tmp_path, path)?;
     Ok(())
 }
 
+// ---- helpers ----
+fn collect_server_urls() -> Vec<String> {
+    let mut urls = Vec::new();
+
+    if let Ok(list) = env::var("PUBLIC_API_URLS") {
+        urls.extend(
+            list.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.trim_end_matches('/').to_string()),
+        );
+    }
+
+    if urls.is_empty() {
+        if let Ok(url) = env::var("PUBLIC_API_URL") {
+            let sanitized = url.trim().trim_end_matches('/').to_string();
+            if !sanitized.is_empty() {
+                urls.push(sanitized);
+            }
+        }
+    }
+
+    if let Ok(port) = env::var("SERVER_PORT") {
+        let port = port.trim();
+        if !port.is_empty() {
+            urls.push(format!("http://localhost:{port}"));
+        }
+    }
+
+    if let Some(base_path) = env::var("PUBLIC_API_BASE_PATH")
+        .ok()
+        .map(|base| base.trim().trim_matches('/').to_string())
+        .filter(|base| !base.is_empty())
+    {
+        urls = urls
+            .into_iter()
+            .map(|url| format!("{}/{base_path}", url.trim_end_matches('/')))
+            .collect();
+    }
+
+    let mut seen = HashSet::new();
+    urls.retain(|url| seen.insert(url.clone()));
+    urls
+}
+
+// ---- conversions ----
 impl From<CursorPage<UserDto>> for UserListResponse {
     fn from(page: CursorPage<UserDto>) -> Self {
         Self {
@@ -185,5 +377,79 @@ impl From<CursorPage<ArticleDto>> for ArticleListResponse {
             next_cursor: page.next_cursor,
             has_more: page.has_more,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::{HeaderMap, header};
+
+    #[test]
+    fn weak_match_handles_strong_and_weak_tags() {
+        assert!(weak_match(r#"W/"abc""#, r#""abc""#));
+        assert!(weak_match(r#""abc""#, r#"W/"abc""#));
+        assert!(!weak_match(r#""abc""#, r#""def""#));
+    }
+
+    #[test]
+    fn inm_matches_star_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::IF_NONE_MATCH, HeaderValue::from_static("*"));
+        assert!(inm_matches(&headers, r#""anything""#));
+    }
+
+    #[test]
+    fn inm_matches_comma_separated_values() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::IF_NONE_MATCH,
+            HeaderValue::from_static("\"foo\", W/\"bar\""),
+        );
+        let header_str = headers
+            .get(header::IF_NONE_MATCH)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let candidates: Vec<&str> = header_str.split(',').map(str::trim).collect();
+        assert!(weak_match(candidates[1], r#"W/"bar""#));
+        assert!(inm_matches(&headers, r#"W/"bar""#));
+        assert_eq!(candidates, vec!["\"foo\"", "W/\"bar\""]);
+    }
+
+    #[tokio::test]
+    async fn serve_openapi_returns_not_modified_when_if_none_match_matches() {
+        // build headers that match current etag
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::IF_NONE_MATCH,
+            HeaderValue::from_static(openapi_etag()),
+        );
+
+        let resp = serve_openapi(headers).await;
+        assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
+    }
+
+    #[tokio::test]
+    async fn head_openapi_ok_sets_headers_and_no_body() {
+        let headers = HeaderMap::new();
+        let resp = head_openapi(headers).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let hs = resp.headers();
+        assert!(hs.get(header::ETAG).is_some());
+        assert!(hs.get(header::CONTENT_TYPE).is_some());
+        assert!(hs.get(header::CONTENT_LENGTH).is_some());
+        // HEAD so body must be empty — Content-Length should equal the OpenAPI length
+        let cl = hs.get(header::CONTENT_LENGTH).unwrap().to_str().unwrap();
+        assert_eq!(cl, openapi_content_length().to_string());
+    }
+
+    #[tokio::test]
+    async fn head_openapi_returns_not_modified_when_if_none_match_matches() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::IF_NONE_MATCH, HeaderValue::from_static(openapi_etag()));
+        let resp = head_openapi(headers).await;
+        assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
+        assert!(resp.headers().get(header::ETAG).is_some());
     }
 }

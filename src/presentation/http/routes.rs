@@ -29,17 +29,40 @@ pub fn build_router(state: HttpState) -> Router {
 
     Router::new()
         .merge(openapi::docs_router())
-        .route("/health", get(health))
+        .merge(system_routes())
+        .merge(auth_routes())
+        .merge(user_routes())
+        .merge(article_routes())
+        .layer(TraceLayer::new_for_http())
+        .layer(rate_limit::rate_limit_layer())
+        .layer(cors)
+        .layer(Extension(state))
+}
+
+fn system_routes() -> Router {
+    Router::new().route("/health", get(health))
+}
+
+fn auth_routes() -> Router {
+    Router::new()
         .route("/api/v1/auth/register", post(auth::register))
         .route("/api/v1/auth/login", post(auth::login))
         .route("/api/v1/auth/refresh", post(auth::refresh_token))
         .route("/api/v1/auth/me", get(auth::profile))
+}
+
+fn user_routes() -> Router {
+    Router::new()
         .route("/api/v1/users", get(auth::list_users))
         .route("/api/v1/users/:id", patch(auth::update_user))
         .route(
             "/api/v1/users/:id/change-password",
             post(auth::change_password),
         )
+}
+
+fn article_routes() -> Router {
+    Router::new()
         .route(
             "/api/v1/articles",
             get(articles::list_articles).post(articles::create_article),
@@ -60,10 +83,6 @@ pub fn build_router(state: HttpState) -> Router {
             "/api/v1/articles/:id/publish",
             post(articles::set_publish_state),
         )
-        .layer(TraceLayer::new_for_http())
-        .layer(rate_limit::rate_limit_layer())
-        .layer(cors)
-        .layer(Extension(state))
 }
 
 #[utoipa::path(
