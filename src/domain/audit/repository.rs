@@ -1,3 +1,4 @@
+// src/domain/audit/repository.rs
 use crate::domain::audit::entity::AuditLog;
 use crate::domain::audit::cursor::AuditLogCursor;
 use crate::domain::errors::DomainResult;

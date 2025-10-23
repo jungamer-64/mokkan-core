@@ -1,3 +1,4 @@
+// src/presentation/http/middleware/audit.rs
 use crate::domain::audit::entity::AuditLog;
 use crate::presentation::http::extractors::MaybeAuthenticated;
 use crate::presentation::http::state::HttpState;

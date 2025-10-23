@@ -1,3 +1,4 @@
+// src/application/queries/audit.rs
 use crate::application::dto::{AuditLogDto, CursorPage};
 use crate::application::error::{ApplicationError, ApplicationResult};
 use crate::domain::audit::repository::AuditLogRepository;

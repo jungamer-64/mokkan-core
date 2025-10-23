@@ -1,3 +1,4 @@
+// tests/integration_audit.rs
 #[tokio::test]
 async fn integration_audit_write_and_read() {
     // Run only when explicitly enabled to avoid requiring Postgres in all environments

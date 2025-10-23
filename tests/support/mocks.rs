@@ -1,5 +1,6 @@
 // tests/support/mocks.rs
 //! Minimal, canonical mocks shared by unit/E2E tests. Keep this file small and stable.
+#![allow(dead_code)]
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
@@ -13,6 +14,11 @@ fn fixed_now() -> DateTime<Utc> {
 }
 
 /* ------------------------------ Security ------------------------------ */
+
+/// Known test tokens (avoid typos & get IDE completion)
+pub const TEST_TOKEN: &str = "test-token";
+pub const NO_AUDIT_TOKEN: &str = "no-audit";
+pub const EXPIRED_TOKEN: &str = "expired-token";
 
 pub struct DummyTokenManager;
 
@@ -36,7 +42,7 @@ impl mokkan_core::application::ports::security::TokenManager for DummyTokenManag
         let now = fixed_now();
         match token {
             // Admin + audit:read, valid 1h
-            "test-token" => Ok(mokkan_core::application::dto::AuthenticatedUser {
+            TEST_TOKEN => Ok(mokkan_core::application::dto::AuthenticatedUser {
                 id: mokkan_core::domain::user::value_objects::UserId::new(1).unwrap(),
                 username: "tester".into(),
                 role: mokkan_core::domain::user::value_objects::Role::Admin,
@@ -47,7 +53,7 @@ impl mokkan_core::application::ports::security::TokenManager for DummyTokenManag
                 expires_at: now + Duration::hours(1),
             }),
             // Author, no capabilities
-            "no-audit" => Ok(mokkan_core::application::dto::AuthenticatedUser {
+            NO_AUDIT_TOKEN => Ok(mokkan_core::application::dto::AuthenticatedUser {
                 id: mokkan_core::domain::user::value_objects::UserId::new(2).unwrap(),
                 username: "noaudit".into(),
                 role: mokkan_core::domain::user::value_objects::Role::Author,
@@ -56,16 +62,7 @@ impl mokkan_core::application::ports::security::TokenManager for DummyTokenManag
                 expires_at: now + Duration::hours(1),
             }),
             // Admin + audit:read, but already expired
-            "expired-token" => Ok(mokkan_core::application::dto::AuthenticatedUser {
-                id: mokkan_core::domain::user::value_objects::UserId::new(3).unwrap(),
-                username: "expired".into(),
-                role: mokkan_core::domain::user::value_objects::Role::Admin,
-                capabilities: HashSet::from([
-                    mokkan_core::domain::user::value_objects::Capability::new("audit", "read"),
-                ]),
-                issued_at: now - Duration::hours(2),
-                expires_at: now - Duration::hours(1),
-            }),
+                EXPIRED_TOKEN => Err(mokkan_core::application::error::ApplicationError::unauthorized("token expired")),
             _ => Err(mokkan_core::application::error::ApplicationError::unauthorized("invalid token")),
         }
     }
@@ -107,9 +104,35 @@ impl mokkan_core::application::ports::util::SlugGenerator for DummySlug {
 /* ------------------------------- Audit repo ---------------------------- */
 
 /// Lightweight in-memory repo whose return values can be injected via fields.
+#[derive(Clone, Debug, Default)]
 pub struct MockRepo {
     pub items: Vec<mokkan_core::domain::audit::entity::AuditLog>,
     pub next_cursor: Option<String>,
+}
+
+impl MockRepo {
+    pub fn new() -> Self { Self::default() }
+    pub fn with_items(items: Vec<mokkan_core::domain::audit::entity::AuditLog>) -> Self {
+        Self { items, next_cursor: None }
+    }
+    pub fn with(items: Vec<mokkan_core::domain::audit::entity::AuditLog>, next_cursor: Option<String>) -> Self {
+        Self { items, next_cursor }
+    }
+}
+
+/// Handy factory for a consistent sample log
+pub fn sample_audit(created_at: DateTime<Utc>) -> mokkan_core::domain::audit::entity::AuditLog {
+    mokkan_core::domain::audit::entity::AuditLog {
+        id: Some(1),
+        user_id: Some(mokkan_core::domain::user::value_objects::UserId::new(1).unwrap()),
+        action: "test".into(),
+        resource_type: "article".into(),
+        resource_id: Some(100),
+        details: None,
+        ip_address: Some("127.0.0.1".into()),
+        user_agent: Some("e2e-test".into()),
+        created_at: Some(created_at),
+    }
 }
 
 #[async_trait]
@@ -155,18 +178,7 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for MockAuditRep
         _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
     ) -> mokkan_core::domain::errors::DomainResult<(Vec<mokkan_core::domain::audit::entity::AuditLog>, Option<String>)> {
         let created_at = fixed_now();
-        let sample = mokkan_core::domain::audit::entity::AuditLog {
-            id: Some(1),
-            user_id: Some(mokkan_core::domain::user::value_objects::UserId::new(1).unwrap()),
-            action: "test".into(),
-            resource_type: "article".into(),
-            resource_id: Some(100),
-            details: None,
-            ip_address: Some("127.0.0.1".into()),
-            user_agent: Some("e2e-test".into()),
-            created_at: Some(created_at),
-        };
-        Ok((vec![sample], None))
+        Ok((vec![sample_audit(created_at)], None))
     }
     async fn find_by_user(
         &self,
