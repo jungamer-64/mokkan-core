@@ -3,8 +3,6 @@ use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashSet;
 
-use crate::time::fixed_now;
-
 /// Known test tokens (avoid typos & get IDE completion)
 pub const TEST_TOKEN: &str = "test-token";
 pub const NO_AUDIT_TOKEN: &str = "no-audit";
@@ -67,7 +65,7 @@ impl mokkan_core::application::ports::security::TokenManager for DummyTokenManag
     ) -> mokkan_core::application::ApplicationResult<
         mokkan_core::application::dto::AuthenticatedUser
     > {
-        let now = fixed_now();
+        let now = super::time::fixed_now();
         match token {
             TEST_TOKEN => Ok(admin_audit_user(now)),
             NO_AUDIT_TOKEN => Ok(author_user(now)),

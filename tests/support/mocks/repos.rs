@@ -59,8 +59,8 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for MockAuditRep
         _limit: u32,
         _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
     ) -> mokkan_core::domain::errors::DomainResult<(Vec<mokkan_core::domain::audit::entity::AuditLog>, Option<String>)> {
-        let created_at = crate::time::fixed_now();
-        Ok((vec![crate::audit::sample_audit(created_at)], None))
+        let created_at = super::time::fixed_now();
+        Ok((vec![super::audit::sample_audit(created_at)], None))
     }
     async fn find_by_user(
         &self,

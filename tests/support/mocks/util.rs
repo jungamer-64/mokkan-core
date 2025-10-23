@@ -7,7 +7,7 @@ pub struct DummyClock;
 impl mokkan_core::application::ports::time::Clock for DummyClock {
     fn now(&self) -> DateTime<Utc> {
         // Use fixed time for deterministic tests
-        crate::time::fixed_now()
+        super::time::fixed_now()
     }
 }
 
