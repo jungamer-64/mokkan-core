@@ -1,16 +1,21 @@
 // tests/support/mocks.rs
 //! Minimal, canonical mocks shared by unit/E2E tests. Keep this file small and stable.
+#![cfg(any(test, feature = "test-utils"))]
 #![allow(dead_code)]
 
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
+use once_cell::sync::Lazy;
 use std::collections::HashSet;
 
-fn fixed_now() -> DateTime<Utc> {
-    // Deterministic timestamp for tests
+static FIXED_NOW: Lazy<DateTime<Utc>> = Lazy::new(|| {
     DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
-        .unwrap()
+        .expect("invalid RFC3339 in tests/support/mocks.rs")
         .with_timezone(&Utc)
+});
+
+pub fn fixed_now() -> DateTime<Utc> {
+    FIXED_NOW.clone()
 }
 
 /* ------------------------------ Security ------------------------------ */
@@ -20,7 +25,45 @@ pub const TEST_TOKEN: &str = "test-token";
 pub const NO_AUDIT_TOKEN: &str = "no-audit";
 pub const EXPIRED_TOKEN: &str = "expired-token";
 
+#[derive(Clone, Debug, Default)]
 pub struct DummyTokenManager;
+
+fn admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::dto::AuthenticatedUser {
+    mokkan_core::application::dto::AuthenticatedUser {
+        id: mokkan_core::domain::user::value_objects::UserId::new(1).expect("invalid user id"),
+        username: "tester".into(),
+        role: mokkan_core::domain::user::value_objects::Role::Admin,
+        capabilities: HashSet::from([
+            mokkan_core::domain::user::value_objects::Capability::new("audit", "read"),
+        ]),
+        issued_at: now,
+        expires_at: now + Duration::hours(1),
+    }
+}
+
+fn author_user(now: DateTime<Utc>) -> mokkan_core::application::dto::AuthenticatedUser {
+    mokkan_core::application::dto::AuthenticatedUser {
+        id: mokkan_core::domain::user::value_objects::UserId::new(2).expect("invalid user id"),
+        username: "noaudit".into(),
+        role: mokkan_core::domain::user::value_objects::Role::Author,
+        capabilities: HashSet::new(),
+        issued_at: now,
+        expires_at: now + Duration::hours(1),
+    }
+}
+
+fn expired_admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::dto::AuthenticatedUser {
+    mokkan_core::application::dto::AuthenticatedUser {
+        id: mokkan_core::domain::user::value_objects::UserId::new(3).expect("invalid user id"),
+        username: "expired".into(),
+        role: mokkan_core::domain::user::value_objects::Role::Admin,
+        capabilities: HashSet::from([
+            mokkan_core::domain::user::value_objects::Capability::new("audit", "read"),
+        ]),
+        issued_at: now - Duration::hours(2),
+        expires_at: now - Duration::hours(1),
+    }
+}
 
 #[async_trait]
 impl mokkan_core::application::ports::security::TokenManager for DummyTokenManager {
@@ -41,33 +84,15 @@ impl mokkan_core::application::ports::security::TokenManager for DummyTokenManag
     > {
         let now = fixed_now();
         match token {
-            // Admin + audit:read, valid 1h
-            TEST_TOKEN => Ok(mokkan_core::application::dto::AuthenticatedUser {
-                id: mokkan_core::domain::user::value_objects::UserId::new(1).unwrap(),
-                username: "tester".into(),
-                role: mokkan_core::domain::user::value_objects::Role::Admin,
-                capabilities: HashSet::from([
-                    mokkan_core::domain::user::value_objects::Capability::new("audit", "read"),
-                ]),
-                issued_at: now,
-                expires_at: now + Duration::hours(1),
-            }),
-            // Author, no capabilities
-            NO_AUDIT_TOKEN => Ok(mokkan_core::application::dto::AuthenticatedUser {
-                id: mokkan_core::domain::user::value_objects::UserId::new(2).unwrap(),
-                username: "noaudit".into(),
-                role: mokkan_core::domain::user::value_objects::Role::Author,
-                capabilities: HashSet::new(),
-                issued_at: now,
-                expires_at: now + Duration::hours(1),
-            }),
-            // Admin + audit:read, but already expired
-                EXPIRED_TOKEN => Err(mokkan_core::application::error::ApplicationError::unauthorized("token expired")),
+            TEST_TOKEN => Ok(admin_audit_user(now)),
+            NO_AUDIT_TOKEN => Ok(author_user(now)),
+            EXPIRED_TOKEN => Ok(expired_admin_audit_user(now)),
             _ => Err(mokkan_core::application::error::ApplicationError::unauthorized("invalid token")),
         }
     }
 }
 
+#[derive(Clone, Debug, Default)]
 pub struct DummyPasswordHasher;
 
 #[async_trait]
@@ -76,7 +101,26 @@ impl mokkan_core::application::ports::security::PasswordHasher for DummyPassword
         Ok("hash".into())
     }
     async fn verify(&self, _password: &str, _expected_hash: &str) -> mokkan_core::application::ApplicationResult<()> {
+        // Lenient verifier used by most tests
         Ok(())
+    }
+}
+
+/// Strict hasher useful for negative-path tests
+#[derive(Clone, Debug, Default)]
+pub struct StrictPasswordHasher;
+
+#[async_trait]
+impl mokkan_core::application::ports::security::PasswordHasher for StrictPasswordHasher {
+    async fn hash(&self, password: &str) -> mokkan_core::application::ApplicationResult<String> {
+        Ok(format!("hash::{}", password))
+    }
+    async fn verify(&self, password: &str, expected_hash: &str) -> mokkan_core::application::ApplicationResult<()> {
+        if format!("hash::{}", password) == expected_hash {
+            Ok(())
+        } else {
+            Err(mokkan_core::application::error::ApplicationError::unauthorized("bad password"))
+        }
     }
 }
 
@@ -104,6 +148,7 @@ impl mokkan_core::application::ports::util::SlugGenerator for DummySlug {
 /* ------------------------------- Audit repo ---------------------------- */
 
 /// Lightweight in-memory repo whose return values can be injected via fields.
+#[derive(Clone, Debug, Default)]
 #[derive(Clone, Debug, Default)]
 pub struct MockRepo {
     pub items: Vec<mokkan_core::domain::audit::entity::AuditLog>,
@@ -135,9 +180,63 @@ pub fn sample_audit(created_at: DateTime<Utc>) -> mokkan_core::domain::audit::en
     }
 }
 
+pub fn sample_audit_with(id: i64, resource_id: i64, created_at: DateTime<Utc>) -> mokkan_core::domain::audit::entity::AuditLog {
+    let mut a = sample_audit(created_at);
+    a.id = Some(id);
+    a.resource_id = Some(resource_id);
+    a
+}
+
 #[async_trait]
 impl mokkan_core::domain::audit::repository::AuditLogRepository for MockRepo {
     async fn insert(&self, _log: mokkan_core::domain::audit::entity::AuditLog) -> mokkan_core::domain::errors::DomainResult<()> {
+        Ok(())
+    }
+    async fn list(
+        &self,
+        _limit: u32,
+        _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
+    ) -> mokkan_core::domain::errors::DomainResult<(Vec<mokkan_core::domain::audit::entity::AuditLog>, Option<String>)> {
+        Ok((self.items.clone(), self.next_cursor.clone()))
+    }
+    async fn find_by_user(
+        &self,
+        _user_id: i64,
+        _limit: u32,
+        _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
+    ) -> mokkan_core::domain::errors::DomainResult<(Vec<mokkan_core::domain::audit::entity::AuditLog>, Option<String>)> {
+        Ok((self.items.clone(), self.next_cursor.clone()))
+    }
+    async fn find_by_resource(
+        &self,
+        _resource_type: &str,
+        _resource_id: i64,
+        _limit: u32,
+        _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
+    ) -> mokkan_core::domain::errors::DomainResult<(Vec<mokkan_core::domain::audit::entity::AuditLog>, Option<String>)> {
+        Ok((self.items.clone(), self.next_cursor.clone()))
+    }
+}
+
+/// Capturing repo useful when tests need to assert that insert was called with specific values.
+#[derive(Clone, Default)]
+pub struct CapturingAuditRepo {
+    pub items: Vec<mokkan_core::domain::audit::entity::AuditLog>,
+    pub next_cursor: Option<String>,
+    pub inserted: std::sync::Arc<std::sync::Mutex<Vec<mokkan_core::domain::audit::entity::AuditLog>>>,
+}
+
+impl CapturingAuditRepo {
+    pub fn new() -> Self {
+        Self { items: vec![], next_cursor: None, inserted: std::sync::Arc::new(std::sync::Mutex::new(vec![])) }
+    }
+}
+
+#[async_trait]
+impl mokkan_core::domain::audit::repository::AuditLogRepository for CapturingAuditRepo {
+    async fn insert(&self, log: mokkan_core::domain::audit::entity::AuditLog) -> mokkan_core::domain::errors::DomainResult<()> {
+        let mut guard = self.inserted.lock().expect("mutex poisoned");
+        guard.push(log);
         Ok(())
     }
     async fn list(

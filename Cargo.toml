@@ -38,3 +38,6 @@ openapi = "run --bin mokkan_core -- openapi-snapshot"
 
 [build-dependencies]
 httpdate = "1"
+
+[dev-dependencies]
+once_cell = "1"
