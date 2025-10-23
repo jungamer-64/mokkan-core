@@ -31,6 +31,7 @@ impl FromRequestParts<()> for Authenticated {
                     ))
                 })?;
 
+
             let header = parts
                 .headers
                 .typed_get::<Authorization<Bearer>>()
@@ -40,8 +41,10 @@ impl FromRequestParts<()> for Authenticated {
                     ))
                 })?;
 
+
             let token = header.token();
             let manager = app_state.services.token_manager();
+            // Authorization header present, attempt to authenticate
             let user = manager
                 .authenticate(token)
                 .await
@@ -67,6 +70,8 @@ impl FromRequestParts<()> for MaybeAuthenticated {
                         "application state missing".into(),
                     ))
                 })?;
+
+            // MaybeAuthenticated: proceed if header present
 
             if let Some(header) = parts.headers.typed_get::<Authorization<Bearer>>() {
                 let token = header.token();

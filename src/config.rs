@@ -68,4 +68,13 @@ impl AppConfig {
             .map(|s| s.trim().to_string())
             .collect()
     }
+
+    /// Read allowed origins directly from environment without requiring full AppConfig
+    pub fn allowed_origins_from_env() -> Vec<String> {
+        std::env::var("ALLOWED_ORIGINS")
+            .unwrap_or_else(|_| "http://localhost:3000".to_string())
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect()
+    }
 }

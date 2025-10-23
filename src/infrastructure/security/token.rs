@@ -74,7 +74,7 @@ impl TokenManager for BiscuitTokenManager {
             builder = builder
                 .fact(fact(
                     "right",
-                    &[string(&capability.resource), string(&capability.action)],
+                    & [string(&capability.resource), string(&capability.action)][..],
                 ))
                 .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
         }

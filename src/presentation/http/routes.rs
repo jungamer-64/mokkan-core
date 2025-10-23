@@ -15,9 +15,9 @@ use tower_http::cors::AllowOrigin;
 use std::time::Duration;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
-pub fn build_router(state: HttpState) -> Router {
-    let config = crate::config::AppConfig::from_env().expect("config");
-    let origins = config.allowed_origins();
+pub fn build_router_with_rate_limiter(state: HttpState, enable_rate_limiter: bool) -> Router {
+    // prefer reading allowed origins from env directly so tests don't have to provide BISCUIT key
+    let origins = crate::config::AppConfig::allowed_origins_from_env();
 
     let cors = if origins.iter().any(|o| o == "*") {
         CorsLayer::new().allow_origin(tower_http::cors::Any)
@@ -39,7 +39,7 @@ pub fn build_router(state: HttpState) -> Router {
         .allow_headers(tower_http::cors::Any)
         .max_age(Duration::from_secs(3600));
 
-    Router::new()
+    let mut router = Router::new()
         .merge(openapi::docs_router())
         .merge(system_routes())
         .merge(auth_routes())
@@ -47,9 +47,24 @@ pub fn build_router(state: HttpState) -> Router {
         .merge(audit_routes())
         .merge(article_routes())
         .layer(TraceLayer::new_for_http())
-        .layer(rate_limit::rate_limit_layer())
         .layer(cors)
-        .layer(Extension(state))
+        .layer(Extension(state));
+
+    // apply rate limiter only when requested. Tests can call the alternative constructor
+    // and pass `false` to avoid the governor dependency on real remote addresses.
+    if enable_rate_limiter {
+        router = router.layer(rate_limit::rate_limit_layer());
+    }
+
+    router
+}
+
+/// Backwards-compatible wrapper that reads the `DISABLE_RATE_LIMIT` env var to decide
+/// whether to enable the governor rate limiter. Production code can continue to call
+/// `build_router(state)`.
+pub fn build_router(state: HttpState) -> Router {
+    let disable = std::env::var("DISABLE_RATE_LIMIT").as_deref() == Ok("1");
+    build_router_with_rate_limiter(state, !disable)
 }
 
 fn audit_routes() -> Router {
@@ -59,11 +74,11 @@ fn audit_routes() -> Router {
             get(audit::list_audit_logs),
         )
         .route(
-            "/api/v1/audit-logs/user/:id",
+            "/api/v1/audit-logs/user/{id}",
             get(audit::list_audit_logs_by_user),
         )
         .route(
-            "/api/v1/audit-logs/resource/:type/:id",
+            "/api/v1/audit-logs/resource/{type}/{id}",
             get(audit::list_audit_logs_by_resource),
         )
 }
@@ -83,9 +98,9 @@ fn auth_routes() -> Router {
 fn user_routes() -> Router {
     Router::new()
         .route("/api/v1/users", get(auth::list_users))
-        .route("/api/v1/users/:id", patch(auth::update_user))
+        .route("/api/v1/users/{id}", patch(auth::update_user))
         .route(
-            "/api/v1/users/:id/change-password",
+            "/api/v1/users/{id}/change-password",
             post(auth::change_password),
         )
 }
@@ -97,19 +112,19 @@ fn article_routes() -> Router {
             get(articles::list_articles).post(articles::create_article),
         )
         .route(
-            "/api/v1/articles/by-slug/:slug",
+            "/api/v1/articles/by-slug/{slug}",
             get(articles::get_article_by_slug),
         )
         .route(
-            "/api/v1/articles/:id",
+            "/api/v1/articles/{id}",
             put(articles::update_article).delete(articles::delete_article),
         )
         .route(
-            "/api/v1/articles/:id/revisions",
+            "/api/v1/articles/{id}/revisions",
             get(articles::list_article_revisions),
         )
         .route(
-            "/api/v1/articles/:id/publish",
+            "/api/v1/articles/{id}/publish",
             post(articles::set_publish_state),
         )
 }
