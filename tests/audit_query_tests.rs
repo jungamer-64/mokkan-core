@@ -1,3 +1,4 @@
+// tests/audit_query_tests.rs
 use mokkan_core::application::queries::audit::{AuditQueryService, ListAuditQuery};
 use mokkan_core::application::dto::{AuthenticatedUser, AuditLogDto, CursorPage};
 use mokkan_core::domain::audit::entity::AuditLog;

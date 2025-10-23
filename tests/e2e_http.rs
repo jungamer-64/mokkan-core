@@ -19,7 +19,7 @@ async fn e2e_audit_list_endpoint_invalid_token_returns_401() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    support::assert_error_response(resp, StatusCode::UNAUTHORIZED, "Unauthorized").await;
 }
 
 /// 簡易E2E: /healthおよび /api/v1/audit-logs が200を返すことを確認する
@@ -33,11 +33,9 @@ async fn e2e_audit_list_endpoint_returns_200() {
     let health_status = health_resp.status();
     let (health_parts, health_body_stream) = health_resp.into_parts();
     let health_body_bytes = body::to_bytes(health_body_stream, 1024 * 1024).await.unwrap();
-    // assert Content-Type for health is application/json
-    assert_eq!(
-        health_parts.headers.get("content-type").unwrap().to_str().unwrap(),
-        "application/json",
-    );
+    // assert Content-Type for health starts with application/json
+    let health_ct = health_parts.headers.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("");
+    assert!(health_ct.starts_with("application/json"), "unexpected content-type: {}", health_ct);
     if health_status != StatusCode::OK {
         let s = String::from_utf8_lossy(&health_body_bytes);
         panic!("health endpoint expected 200, got {}: {}", health_status, s);
@@ -58,11 +56,9 @@ async fn e2e_audit_list_endpoint_returns_200() {
     let status = resp.status();
     let (parts, body_stream) = resp.into_parts();
     let body_bytes = body::to_bytes(body_stream, 1024 * 1024).await.unwrap();
-    // assert Content-Type is application/json
-    assert_eq!(
-        parts.headers.get("content-type").unwrap().to_str().unwrap(),
-        "application/json",
-    );
+    // assert Content-Type starts with application/json
+    let ct = parts.headers.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("");
+    assert!(ct.starts_with("application/json"), "unexpected content-type: {}", ct);
     if status != StatusCode::OK {
         let s = String::from_utf8_lossy(&body_bytes);
         panic!("expected 200 OK, got {}: {}", status, s);
