@@ -1,8 +1,10 @@
 use super::map_sqlx;
 use crate::domain::audit::entity::AuditLog;
+use crate::domain::audit::cursor::AuditLogCursor;
 use crate::domain::errors::DomainResult;
 use async_trait::async_trait;
 use sqlx::PgPool;
+use chrono::Utc;
 
 #[derive(Clone)]
 pub struct PostgresAuditLogRepository {
@@ -37,4 +39,132 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
 
         Ok(())
     }
+
+    async fn list(&self, limit: u32, cursor: Option<AuditLogCursor>) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
+        let mut q = String::from("SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs");
+
+        if let Some(c) = cursor {
+            q.push_str(" WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3");
+            let rows = sqlx::query(&q)
+                .bind(c.created_at)
+                .bind(c.id)
+                .bind((limit + 1) as i64)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_sqlx)?;
+            return Ok(map_rows_to_logs(rows, limit));
+        }
+
+        // no cursor
+        q.push_str(" ORDER BY created_at DESC, id DESC LIMIT $1");
+        let rows = sqlx::query(&q)
+            .bind((limit + 1) as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_sqlx)?;
+
+        Ok(map_rows_to_logs(rows, limit))
+    }
+
+    async fn find_by_user(&self, user_id: i64, limit: u32, cursor: Option<AuditLogCursor>) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
+        let mut q = String::from("SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs WHERE user_id = $1");
+        if let Some(c) = cursor {
+            q.push_str(" AND (created_at, id) < ($2, $3) ORDER BY created_at DESC, id DESC LIMIT $4");
+            let rows = sqlx::query(&q)
+                .bind(user_id)
+                .bind(c.created_at)
+                .bind(c.id)
+                .bind((limit + 1) as i64)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_sqlx)?;
+            return Ok(map_rows_to_logs(rows, limit));
+        }
+        q.push_str(" ORDER BY created_at DESC, id DESC LIMIT $2");
+        let rows = sqlx::query(&q)
+            .bind(user_id)
+            .bind((limit + 1) as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_sqlx)?;
+
+        Ok(map_rows_to_logs(rows, limit))
+    }
+
+    async fn find_by_resource(&self, resource_type: &str, resource_id: i64, limit: u32, cursor: Option<AuditLogCursor>) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
+        let mut q = String::from("SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs WHERE resource_type = $1 AND resource_id = $2");
+        if let Some(c) = cursor {
+            q.push_str(" AND (created_at, id) < ($3, $4) ORDER BY created_at DESC, id DESC LIMIT $5");
+            let rows = sqlx::query(&q)
+                .bind(resource_type)
+                .bind(resource_id)
+                .bind(c.created_at)
+                .bind(c.id)
+                .bind((limit + 1) as i64)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_sqlx)?;
+            return Ok(map_rows_to_logs(rows, limit));
+        }
+        q.push_str(" ORDER BY created_at DESC, id DESC LIMIT $3");
+        let rows = sqlx::query(&q)
+            .bind(resource_type)
+            .bind(resource_id)
+            .bind((limit + 1) as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_sqlx)?;
+
+        Ok(map_rows_to_logs(rows, limit))
+    }
+}
+
+fn map_rows_to_logs(rows: Vec<sqlx::postgres::PgRow>, limit: u32) -> (Vec<AuditLog>, Option<String>) {
+    use sqlx::Row;
+    let mut items = Vec::new();
+    // detect if we have an extra row (rows.len() > limit) to set next cursor
+    let mut next_cursor: Option<String> = None;
+    let mut iter = rows.into_iter();
+    for _ in 0..(limit as usize) {
+        if let Some(row) = iter.next() {
+            let id: i64 = row.try_get("id").unwrap_or_default();
+            let user_id: Option<i64> = row.try_get::<Option<i64>, _>("user_id").ok().flatten();
+            let user_id = user_id.and_then(|id| crate::domain::user::value_objects::UserId::new(id).ok());
+            let action: String = row.try_get("action").unwrap_or_default();
+            let resource_type: String = row.try_get("resource_type").unwrap_or_default();
+            let resource_id: Option<i64> = row.try_get("resource_id").ok().flatten();
+            let details: Option<serde_json::Value> = row.try_get("details").ok().flatten();
+            let ip_address: Option<String> = row.try_get("ip_address").ok().flatten();
+            let user_agent: Option<String> = row.try_get("user_agent").ok().flatten();
+            let created_at: Option<chrono::DateTime<Utc>> = row.try_get("created_at").ok().flatten();
+
+            items.push(AuditLog {
+                id: Some(id),
+                user_id,
+                action,
+                resource_type,
+                resource_id,
+                details,
+                ip_address,
+                user_agent,
+                created_at,
+            });
+        }
+    }
+
+    // if remaining iterator has an element, that means there were more than limit rows
+    if let Some(last_row) = iter.next() {
+        // build a cursor from the extra row's created_at and id
+        if let (Ok(created_at_opt), Ok(last_id)) = (
+            last_row.try_get::<Option<chrono::DateTime<Utc>>, _>("created_at"),
+            last_row.try_get::<i64, _>("id"),
+        ) {
+            if let Some(created_at) = created_at_opt {
+                let cursor = AuditLogCursor::new(created_at, last_id);
+                next_cursor = Some(cursor.encode());
+            }
+        }
+    }
+
+    (items, next_cursor)
 }

@@ -5,6 +5,7 @@ use crate::presentation::http::{
     middleware::rate_limit,
     openapi::{self, StatusResponse},
 };
+use crate::presentation::http::controllers::audit;
 use axum::{
     Extension, Router,
     http::{self, Method, header::HeaderValue},
@@ -43,11 +44,28 @@ pub fn build_router(state: HttpState) -> Router {
         .merge(system_routes())
         .merge(auth_routes())
         .merge(user_routes())
+        .merge(audit_routes())
         .merge(article_routes())
         .layer(TraceLayer::new_for_http())
         .layer(rate_limit::rate_limit_layer())
         .layer(cors)
         .layer(Extension(state))
+}
+
+fn audit_routes() -> Router {
+    Router::new()
+        .route(
+            "/api/v1/audit-logs",
+            get(audit::list_audit_logs),
+        )
+        .route(
+            "/api/v1/audit-logs/user/:id",
+            get(audit::list_audit_logs_by_user),
+        )
+        .route(
+            "/api/v1/audit-logs/resource/:type/:id",
+            get(audit::list_audit_logs_by_resource),
+        )
 }
 
 fn system_routes() -> Router {
