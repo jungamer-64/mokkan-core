@@ -26,6 +26,7 @@ pub struct ApplicationServices {
     pub article_queries: Arc<ArticleQueryService>,
     pub user_queries: Arc<UserQueryService>,
     token_manager: Arc<dyn TokenManager>,
+    audit_log_repo: Arc<dyn crate::domain::audit::repository::AuditLogRepository>,
 }
 
 impl ApplicationServices {
@@ -37,6 +38,7 @@ impl ApplicationServices {
         article_revision_repo: Arc<dyn ArticleRevisionRepository>,
         password_hasher: Arc<dyn PasswordHasher>,
         token_manager: Arc<dyn TokenManager>,
+        audit_log_repo: Arc<dyn crate::domain::audit::repository::AuditLogRepository>,
         clock: Arc<dyn Clock>,
         slugger: Arc<dyn SlugGenerator>,
     ) -> Self {
@@ -72,10 +74,15 @@ impl ApplicationServices {
             article_queries,
             user_queries,
             token_manager,
+            audit_log_repo,
         }
     }
 
     pub fn token_manager(&self) -> Arc<dyn TokenManager> {
         Arc::clone(&self.token_manager)
+    }
+
+    pub fn audit_log_repo(&self) -> Arc<dyn crate::domain::audit::repository::AuditLogRepository> {
+        Arc::clone(&self.audit_log_repo)
     }
 }

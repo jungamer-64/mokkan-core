@@ -60,4 +60,12 @@ impl AppConfig {
     pub fn token_ttl(&self) -> Duration {
         self.token_ttl
     }
+
+    pub fn allowed_origins(&self) -> Vec<String> {
+        std::env::var("ALLOWED_ORIGINS")
+            .unwrap_or_else(|_| "http://localhost:3000".to_string())
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect()
+    }
 }

@@ -19,6 +19,7 @@ use mokkan_core::infrastructure::{
     repositories::{
         PostgresArticleReadRepository, PostgresArticleRevisionRepository,
         PostgresArticleWriteRepository, PostgresUserRepository,
+            PostgresAuditLogRepository,
     },
     security::{password::Argon2PasswordHasher, token::BiscuitTokenManager},
     time::SystemClock,
@@ -74,6 +75,9 @@ async fn bootstrap() -> Result<()> {
     let clock: Arc<dyn Clock> = Arc::new(SystemClock::default());
     let slugger: Arc<dyn SlugGenerator> = Arc::new(DefaultSlugGenerator::default());
 
+    let audit_log_repo: Arc<dyn mokkan_core::domain::audit::repository::AuditLogRepository> =
+        Arc::new(PostgresAuditLogRepository::new(pool.clone()));
+
     let services = Arc::new(ApplicationServices::new(
         Arc::clone(&user_repo),
         Arc::clone(&article_write_repo),
@@ -81,12 +85,14 @@ async fn bootstrap() -> Result<()> {
         Arc::clone(&article_revision_repo),
         Arc::clone(&password_hasher),
         Arc::clone(&token_manager),
+        Arc::clone(&audit_log_repo),
         Arc::clone(&clock),
         Arc::clone(&slugger),
     ));
 
     let state = HttpState {
         services: Arc::clone(&services),
+        db_pool: pool.clone(),
     };
 
     let app = build_router(state);

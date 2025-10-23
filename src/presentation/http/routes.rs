@@ -7,15 +7,26 @@ use crate::presentation::http::{
 };
 use axum::{
     Extension, Router,
-    http::Method,
+    http::{self, Method, header::HeaderValue},
     routing::{get, patch, post, put},
 };
+use tower_http::cors::AllowOrigin;
 use std::time::Duration;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 pub fn build_router(state: HttpState) -> Router {
-    let cors = CorsLayer::new()
-        .allow_origin(tower_http::cors::Any)
+    let config = crate::config::AppConfig::from_env().expect("config");
+    let origins = config.allowed_origins();
+
+    let cors = if origins.iter().any(|o| o == "*") {
+        CorsLayer::new().allow_origin(tower_http::cors::Any)
+    } else {
+        let origin_list: Vec<_> = origins
+            .iter()
+            .filter_map(|s| s.parse::<HeaderValue>().ok())
+            .collect();
+        CorsLayer::new().allow_origin(AllowOrigin::list(origin_list))
+    }
         .allow_methods([
             Method::GET,
             Method::POST,
