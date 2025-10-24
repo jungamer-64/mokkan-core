@@ -1,16 +1,11 @@
 // tests/support/helpers.rs
 use std::sync::Arc;
 use super::mocks;
-use axum::body;
-use axum::http::StatusCode;
-use axum::http::header::CONTENT_TYPE;
-use axum::response::Response;
-use axum::http::HeaderMap;
-use serde_json::Value;
 
 // Macros that expand at the call site so panics report the test caller location.
+// Named with `_async` to clarify these return an async block that must be awaited.
 #[macro_export]
-macro_rules! assert_error_response {
+macro_rules! assert_error_response_async {
     ($resp:expr, $expected_status:expr, $expected_error:expr) => {{
         let __resp = $resp;
         async move {
@@ -49,7 +44,7 @@ macro_rules! assert_error_response {
 }
 
 #[macro_export]
-macro_rules! to_json {
+macro_rules! to_json_async {
     ($resp:expr) => {{
         let __resp = $resp;
         async move {
@@ -168,50 +163,7 @@ pub async fn make_test_router_with_audit_repo(audit_repo: Arc<AuditRepo>) -> axu
     mokkan_core::presentation::http::routes::build_router_with_rate_limiter(state, false)
 }
 
-/// レスポンスが期待されるステータスとエラー文字列を持つErrorResponse JSONであることをアサート
-pub async fn assert_error_response(
-    resp: axum::response::Response,
-    expected_status: StatusCode,
-    expected_error: &str,
-) {
-    // まずステータスをチェック
-    assert_eq!(resp.status(), expected_status);
-    
-    let (parts, body_stream) = resp.into_parts();
-    let body_bytes = body::to_bytes(body_stream, 1024 * 1024)
-        .await
-        .expect("read body");
-    
-    let ct = parts
-        .headers
-        .get(CONTENT_TYPE)
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    assert!(
-        ct.starts_with("application/json"),
-        "unexpected content-type: {}",
-        ct
-    );
-    
-    let json: Value = serde_json::from_slice(&body_bytes)
-        .expect("expected valid json body for error");
-    
-    let err_field = json.get("error").and_then(|v| v.as_str()).unwrap_or("");
-    let msg_field = json.get("message").and_then(|v| v.as_str()).unwrap_or("");
-    
-    assert_eq!(err_field, expected_error, "unexpected error field: {}", err_field);
-    assert!(
-        !msg_field.is_empty(),
-        "expected non-empty message field in ErrorResponse"
-    );
-}
+// NOTE: assert_error_response is provided as a macro `assert_error_response_async!` that expands
+// at the test call site so failure locations point to the test instead of this helper module.
 
-/// Convert an axum Response into its headers and parsed JSON body.
-pub async fn to_json(resp: Response) -> (HeaderMap, serde_json::Value) {
-    let (parts, body_stream) = resp.into_parts();
-    let bytes = axum::body::to_bytes(body_stream, 1024 * 1024)
-        .await
-        .expect("read body");
-    let json: serde_json::Value = serde_json::from_slice(&bytes).expect("parse json");
-    (parts.headers, json)
-}
+// NOTE: to_json is provided as a macro `to_json_async!` that expands at the test call site.

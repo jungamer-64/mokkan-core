@@ -18,7 +18,7 @@ async fn e2e_get_article_by_slug_not_found_returns_404() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_error_response!(resp, StatusCode::NOT_FOUND, "Not Found").await;
+    assert_error_response_async!(resp, StatusCode::NOT_FOUND, "Not Found").await;
 }
 
 /// 権限がない操作で 403 Forbidden を返すことを確認する
@@ -36,5 +36,5 @@ async fn e2e_create_article_forbidden_returns_403() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_error_response!(resp, StatusCode::FORBIDDEN, "Forbidden").await;
+    assert_error_response_async!(resp, StatusCode::FORBIDDEN, "Forbidden").await;
 }

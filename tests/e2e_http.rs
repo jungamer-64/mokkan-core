@@ -19,7 +19,7 @@ async fn e2e_audit_list_endpoint_invalid_token_returns_401() {
         .unwrap();
 
     let resp = app.oneshot(req).await.unwrap();
-    assert_error_response!(resp, StatusCode::UNAUTHORIZED, "Unauthorized").await;
+    assert_error_response_async!(resp, StatusCode::UNAUTHORIZED, "Unauthorized").await;
 }
 
 /// 簡易E2E: /healthおよび /api/v1/audit-logs が200を返すことを確認する
