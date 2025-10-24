@@ -5,7 +5,6 @@ use axum::http::{Request, header::{AUTHORIZATION, CONTENT_TYPE}, StatusCode};
 const AUDIT: &str = "/api/v1/audit-logs";
 fn bearer(tok: &str) -> String { format!("Bearer {}", tok) }
 use tower::util::ServiceExt as _;
-use serde_json::Value;
 
 mod support;
 
@@ -14,7 +13,7 @@ async fn missing_token_returns_401() {
     let app = support::make_test_router().await;
     let req = Request::builder().method("GET").uri(AUDIT).body(Body::empty()).unwrap();
     let resp = app.oneshot(req).await.unwrap();
-    support::assert_error_response(resp, StatusCode::UNAUTHORIZED, "Unauthorized").await;
+    assert_error_response!(resp, StatusCode::UNAUTHORIZED, "Unauthorized").await;
 }
 
 #[tokio::test]
@@ -27,7 +26,7 @@ async fn capability_failure_returns_403() {
         .body(Body::empty())
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
-    support::assert_error_response(resp, StatusCode::FORBIDDEN, "Forbidden").await;
+    assert_error_response!(resp, StatusCode::FORBIDDEN, "Forbidden").await;
 }
 
 #[tokio::test]
@@ -40,7 +39,7 @@ async fn expired_token_returns_401() {
         .body(Body::empty())
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
-    support::assert_error_response(resp, StatusCode::UNAUTHORIZED, "Unauthorized").await;
+    assert_error_response!(resp, StatusCode::UNAUTHORIZED, "Unauthorized").await;
 }
 
 #[tokio::test]
@@ -56,7 +55,7 @@ async fn invalid_cursor_returns_400() {
         .body(Body::empty())
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
-    support::assert_error_response(resp, StatusCode::BAD_REQUEST, "Bad Request").await;
+    assert_error_response!(resp, StatusCode::BAD_REQUEST, "Bad Request").await;
 }
 
 #[tokio::test]
@@ -73,7 +72,7 @@ async fn next_cursor_propagates_in_response() {
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
-    let (headers, json) = support::to_json(resp).await;
+    let (headers, json) = to_json!(resp).await;
     let ct = headers.get(CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("");
     assert!(ct.starts_with("application/json"));
     assert_eq!(json.get("next_cursor").and_then(|v| v.as_str()).unwrap_or(""), "next-123");
