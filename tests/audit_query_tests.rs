@@ -1,12 +1,9 @@
 // tests/audit_query_tests.rs
 use mokkan_core::application::queries::audit::{AuditQueryService, ListAuditQuery};
-use mokkan_core::application::dto::{AuthenticatedUser, AuditLogDto, CursorPage};
-use mokkan_core::domain::audit::entity::AuditLog;
-use mokkan_core::domain::audit::cursor::AuditLogCursor;
+use mokkan_core::application::dto::AuthenticatedUser;
 use mokkan_core::domain::user::value_objects::UserId;
 use mokkan_core::domain::user::value_objects::Capability;
-use mokkan_core::domain::errors::DomainResult;
-use mokkan_core::domain::errors::DomainError;
+// domain errors are not needed in this test
 use std::sync::Arc;
 mod support;
 use support::MockRepo;

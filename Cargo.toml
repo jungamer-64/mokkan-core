@@ -33,6 +33,10 @@ governor = "0.10"
 
 httpdate = "1"
 
+# Redis-backed session store
+redis = { version = "0.21", features = ["aio", "tokio-comp"] }
+deadpool-redis = "0.10"
+
 [package.metadata.commands]
 openapi = "run --bin mokkan_core -- openapi-snapshot"
 

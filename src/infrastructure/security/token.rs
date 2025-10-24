@@ -7,8 +7,7 @@ use crate::application::{
 use async_trait::async_trait;
 use biscuit_auth::{
     Biscuit, KeyPair, PrivateKey, PublicKey,
-    builder::{Algorithm, AuthorizerBuilder, fact, string},
-    builder_ext::AuthorizerExt,
+    builder::{Algorithm, AuthorizerBuilder, Term},
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde_json::json;
@@ -43,11 +42,10 @@ impl BiscuitTokenManager {
 
 fn build_code_and_params(
     subject: &TokenSubject,
-    issued_at: std::time::SystemTime,
-    expires_at: std::time::SystemTime,
-) -> (String, std::collections::HashMap<String, biscuit_auth::builder::Term>) {
-    let mut params: std::collections::HashMap<String, biscuit_auth::builder::Term> =
-        std::collections::HashMap::new();
+    issued_at: SystemTime,
+    expires_at: SystemTime,
+) -> (String, HashMap<String, Term>) {
+    let mut params: HashMap<String, Term> = HashMap::new();
     params.insert("uid".to_string(), (i64::from(subject.user_id)).into());
     params.insert("uname".to_string(), subject.username.clone().into());
     params.insert("urole".to_string(), subject.role.as_str().into());
@@ -62,6 +60,7 @@ fn build_code_and_params(
                 check if time($now), $now >= {issued};
                 check if time($now), $now <= {exp};
                 token_type("access");
+                check if token_type("access");
                 "#);
 
     if let Some(sid) = subject.session_id.as_ref() {
@@ -71,7 +70,48 @@ fn build_code_and_params(
         params.insert("ver".to_string(), ver.into());
     }
 
+    // Append capability facts directly into the code so we don't need to fold them into the builder later.
+    for cap in subject.capabilities.iter() {
+        // Escape backslashes and double quotes to avoid breaking the literal
+        let res = cap.resource.replace('\\', "\\\\").replace('"', "\\\"");
+        let act = cap.action.replace('\\', "\\\\").replace('"', "\\\"");
+        code.push_str(&format!(r#"right("{}", "{}");
+"#, res, act));
+    }
+
     (code, params)
+}
+
+fn seal_and_serialize(token: Biscuit) -> Result<String, ApplicationError> {
+    let sealed = token
+        .seal()
+        .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+    sealed
+        .to_base64()
+        .map_err(|err| ApplicationError::infrastructure(err.to_string()))
+}
+
+fn ttl_to_expires_in_seconds(ttl: Duration) -> i64 {
+    ChronoDuration::from_std(ttl)
+        .unwrap_or_else(|_| ChronoDuration::seconds(ttl.as_secs() as i64))
+        .num_seconds()
+        .max(0)
+}
+
+fn build_and_serialize_biscuit(
+    code: &str,
+    params: HashMap<String, Term>,
+    root: &KeyPair,
+) -> Result<String, ApplicationError> {
+    let builder = Biscuit::builder()
+        .code_with_params(code, params, HashMap::new())
+        .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+    let token = builder
+        .build(root)
+        .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+    seal_and_serialize(token)
 }
 
 #[async_trait]
@@ -83,37 +123,11 @@ impl TokenManager for BiscuitTokenManager {
             .ok_or_else(|| ApplicationError::infrastructure("token expiration overflow"))?;
         let (code, params) = build_code_and_params(&subject, issued_at, expires_at);
 
-        let builder = Biscuit::builder()
-            .code_with_params(&code, params, HashMap::new())
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
-
-        let builder = subject
-            .capabilities
-            .iter()
-            .try_fold(builder, |b, capability| {
-                b.fact(fact(
-                    "right",
-                    & [string(&capability.resource), string(&capability.action)][..],
-                ))
-                .map_err(|err| ApplicationError::infrastructure(err.to_string()))
-            })?;
-
-        let token = builder
-            .build(self.root.as_ref())
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
-        let sealed = token
-            .seal()
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
-        let serialized = sealed
-            .to_base64()
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        let serialized = build_and_serialize_biscuit(&code, params, self.root.as_ref())?;
 
         let issued_at_dt = DateTime::<Utc>::from(issued_at);
         let expires_at_dt = DateTime::<Utc>::from(expires_at);
-        let expires_in = ChronoDuration::from_std(self.ttl)
-            .unwrap_or_else(|_| ChronoDuration::seconds(self.ttl.as_secs() as i64))
-            .num_seconds()
-            .max(0);
+        let expires_in = ttl_to_expires_in_seconds(self.ttl);
 
         Ok(AuthTokenDto {
             token: serialized,
@@ -148,9 +162,9 @@ impl TokenManager for BiscuitTokenManager {
         let biscuit = Biscuit::from_base64(token, self.public)
             .map_err(|err| ApplicationError::unauthorized(err.to_string()))?;
 
+        // Build an authorizer that enforces token caveats (checks embedded in the biscuit)
         let mut authorizer = AuthorizerBuilder::new()
             .time()
-            .allow_all()
             .build(&biscuit)
             .map_err(|err| ApplicationError::unauthorized(err.to_string()))?;
 

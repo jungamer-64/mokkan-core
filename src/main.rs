@@ -26,9 +26,11 @@ use mokkan_core::infrastructure::{
     util::DefaultSlugGenerator,
 };
 use mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore;
+use mokkan_core::infrastructure::security::redis_session_store::RedisSessionRevocationStore;
 use mokkan_core::application::ports::session_revocation::SessionRevocationStore;
 use mokkan_core::presentation::http::{routes::build_router, state::HttpState};
 use std::{env, net::SocketAddr, sync::Arc};
+use sqlx::PgPool;
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -56,14 +58,57 @@ async fn main() {
 }
 
 async fn bootstrap() -> Result<()> {
-    dotenvy::dotenv().ok();
     init_tracing();
 
+    let (config, pool) = init_config_and_db().await?;
+
+    let (_services, state) = build_services_and_state(&pool, &config)?;
+
+    let app = build_router(state);
+    if let Err(err) = mokkan_core::presentation::http::openapi::write_openapi_snapshot() {
+        tracing::warn!(error = %err, "failed to write OpenAPI snapshot");
+    }
+    let service = app.into_service::<Body>().into_make_service();
+
+    let listener = tokio::net::TcpListener::bind(config.listen_addr()).await?;
+    let address: SocketAddr = listener.local_addr()?;
+    tracing::info!("listening on {address}");
+
+    axum::serve(listener, service)
+        .with_graceful_shutdown(shutdown_signal())
+        .await?;
+
+    Ok(())
+}
+
+async fn init_config_and_db() -> Result<(AppConfig, PgPool)> {
+    dotenvy::dotenv().ok();
     let config = AppConfig::from_env()?;
 
     let pool = database::init_pool(config.database_url()).await?;
     database::run_migrations(&pool).await?;
 
+    Ok((config, pool))
+}
+
+fn init_session_store() -> Arc<dyn SessionRevocationStore> {
+    if let Ok(redis_url) = std::env::var("REDIS_URL") {
+        match RedisSessionRevocationStore::from_url(&redis_url) {
+            Ok(store) => Arc::new(store),
+            Err(err) => {
+                tracing::error!(error = %err, "failed to initialise redis session store, falling back to in-memory store");
+                Arc::new(InMemorySessionRevocationStore::new())
+            }
+        }
+    } else {
+        Arc::new(InMemorySessionRevocationStore::new())
+    }
+}
+
+fn build_services_and_state(
+    pool: &PgPool,
+    config: &AppConfig,
+) -> Result<(Arc<ApplicationServices>, HttpState)> {
     let user_repo: Arc<dyn UserRepository> = Arc::new(PostgresUserRepository::new(pool.clone()));
     let article_write_repo: Arc<dyn ArticleWriteRepository> =
         Arc::new(PostgresArticleWriteRepository::new(pool.clone()));
@@ -82,7 +127,7 @@ async fn bootstrap() -> Result<()> {
     let audit_log_repo: Arc<dyn mokkan_core::domain::audit::repository::AuditLogRepository> =
         Arc::new(PostgresAuditLogRepository::new(pool.clone()));
 
-    let session_store: Arc<dyn SessionRevocationStore> = Arc::new(InMemorySessionRevocationStore::new());
+    let session_store = init_session_store();
 
     let services = Arc::new(ApplicationServices::new(
         Arc::clone(&user_repo),
@@ -102,21 +147,7 @@ async fn bootstrap() -> Result<()> {
         db_pool: pool.clone(),
     };
 
-    let app = build_router(state);
-    if let Err(err) = mokkan_core::presentation::http::openapi::write_openapi_snapshot() {
-        tracing::warn!(error = %err, "failed to write OpenAPI snapshot");
-    }
-    let service = app.into_service::<Body>().into_make_service();
-
-    let listener = tokio::net::TcpListener::bind(config.listen_addr()).await?;
-    let address: SocketAddr = listener.local_addr()?;
-    tracing::info!("listening on {address}");
-
-    axum::serve(listener, service)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
-
-    Ok(())
+    Ok((services, state))
 }
 
 fn init_tracing() {
