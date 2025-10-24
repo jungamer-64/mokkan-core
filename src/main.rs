@@ -25,6 +25,8 @@ use mokkan_core::infrastructure::{
     time::SystemClock,
     util::DefaultSlugGenerator,
 };
+use mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore;
+use mokkan_core::application::ports::session_revocation::SessionRevocationStore;
 use mokkan_core::presentation::http::{routes::build_router, state::HttpState};
 use std::{env, net::SocketAddr, sync::Arc};
 use tokio::signal;
@@ -32,7 +34,9 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
 async fn main() {
-    if env::args().nth(1).as_deref() == Some("openapi-snapshot") {
+    // Allow triggering the OpenAPI snapshot generation via environment variable in CI
+    // or development workflows. Avoid relying on command-line args for this control.
+    if std::env::var("OPENAPI_SNAPSHOT").as_deref() == Ok("1") {
         dotenvy::dotenv().ok();
         if let Err(err) = mokkan_core::presentation::http::openapi::write_openapi_snapshot() {
             eprintln!("failed to write OpenAPI snapshot: {err}");
@@ -78,6 +82,8 @@ async fn bootstrap() -> Result<()> {
     let audit_log_repo: Arc<dyn mokkan_core::domain::audit::repository::AuditLogRepository> =
         Arc::new(PostgresAuditLogRepository::new(pool.clone()));
 
+    let session_store: Arc<dyn SessionRevocationStore> = Arc::new(InMemorySessionRevocationStore::new());
+
     let services = Arc::new(ApplicationServices::new(
         Arc::clone(&user_repo),
         Arc::clone(&article_write_repo),
@@ -85,6 +91,7 @@ async fn bootstrap() -> Result<()> {
         Arc::clone(&article_revision_repo),
         Arc::clone(&password_hasher),
         Arc::clone(&token_manager),
+        Arc::clone(&session_store),
         Arc::clone(&audit_log_repo),
         Arc::clone(&clock),
         Arc::clone(&slugger),

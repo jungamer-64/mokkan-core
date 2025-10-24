@@ -23,6 +23,8 @@ async fn audit_query_service_list_decodes_cursor_and_returns_page() {
         capabilities: std::collections::HashSet::from([Capability::new("audit","read")]),
         issued_at: chrono::Utc::now(),
         expires_at: chrono::Utc::now(),
+        session_id: None,
+        token_version: None,
     };
 
     let q = ListAuditQuery { limit: 10, cursor: None };

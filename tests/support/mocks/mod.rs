@@ -20,7 +20,7 @@ pub use time::fixed_now;
 // セキュリティ関連
 pub use security::{
     DummyPasswordHasher, DummyTokenManager, StrictPasswordHasher,
-    EXPIRED_TOKEN, NO_AUDIT_TOKEN, TEST_TOKEN,
+    EXPIRED_TOKEN, NO_AUDIT_TOKEN, TEST_TOKEN, SESSION_TOKEN,
 };
 
 // 監査ログ関連

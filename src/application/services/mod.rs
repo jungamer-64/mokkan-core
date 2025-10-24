@@ -8,6 +8,7 @@ use crate::{
             security::{PasswordHasher, TokenManager},
             time::Clock,
             util::SlugGenerator,
+            session_revocation::SessionRevocationStore,
         },
         queries::{articles::ArticleQueryService, users::UserQueryService},
     },
@@ -26,6 +27,7 @@ pub struct ApplicationServices {
     pub article_queries: Arc<ArticleQueryService>,
     pub user_queries: Arc<UserQueryService>,
     token_manager: Arc<dyn TokenManager>,
+    session_revocation_store: Arc<dyn SessionRevocationStore>,
     audit_log_repo: Arc<dyn crate::domain::audit::repository::AuditLogRepository>,
 }
 
@@ -38,6 +40,7 @@ impl ApplicationServices {
         article_revision_repo: Arc<dyn ArticleRevisionRepository>,
         password_hasher: Arc<dyn PasswordHasher>,
         token_manager: Arc<dyn TokenManager>,
+        session_revocation_store: Arc<dyn SessionRevocationStore>,
         audit_log_repo: Arc<dyn crate::domain::audit::repository::AuditLogRepository>,
         clock: Arc<dyn Clock>,
         slugger: Arc<dyn SlugGenerator>,
@@ -74,12 +77,17 @@ impl ApplicationServices {
             article_queries,
             user_queries,
             token_manager,
+            session_revocation_store,
             audit_log_repo,
         }
     }
 
     pub fn token_manager(&self) -> Arc<dyn TokenManager> {
         Arc::clone(&self.token_manager)
+    }
+
+    pub fn session_revocation_store(&self) -> Arc<dyn SessionRevocationStore> {
+        Arc::clone(&self.session_revocation_store)
     }
 
     pub fn audit_log_repo(&self) -> Arc<dyn crate::domain::audit::repository::AuditLogRepository> {

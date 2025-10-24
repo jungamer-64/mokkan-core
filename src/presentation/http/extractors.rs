@@ -26,9 +26,7 @@ impl FromRequestParts<()> for Authenticated {
             let Extension(app_state) = Extension::<HttpState>::from_request_parts(parts, state)
                 .await
                 .map_err(|_| {
-                    HttpError::from_error(ApplicationError::Infrastructure(
-                        "application state missing".into(),
-                    ))
+                    HttpError::from_error(ApplicationError::infrastructure("application state missing"))
                 })?;
 
 
@@ -36,9 +34,7 @@ impl FromRequestParts<()> for Authenticated {
                 .headers
                 .typed_get::<Authorization<Bearer>>()
                 .ok_or_else(|| {
-                    HttpError::from_error(ApplicationError::Unauthorized(
-                        "missing Authorization header".into(),
-                    ))
+                    HttpError::from_error(ApplicationError::unauthorized("missing Authorization header"))
                 })?;
 
 
@@ -66,9 +62,7 @@ impl FromRequestParts<()> for MaybeAuthenticated {
             let Extension(app_state) = Extension::<HttpState>::from_request_parts(parts, state)
                 .await
                 .map_err(|_| {
-                    HttpError::from_error(ApplicationError::Infrastructure(
-                        "application state missing".into(),
-                    ))
+                    HttpError::from_error(ApplicationError::infrastructure("application state missing"))
                 })?;
 
             // MaybeAuthenticated: proceed if header present

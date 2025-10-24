@@ -7,6 +7,7 @@ use std::collections::HashSet;
 pub const TEST_TOKEN: &str = "test-token";
 pub const NO_AUDIT_TOKEN: &str = "no-audit";
 pub const EXPIRED_TOKEN: &str = "expired-token";
+pub const SESSION_TOKEN: &str = "session-token";
 
 /* -------------------------------- TokenManager -------------------------------- */
 
@@ -29,11 +30,18 @@ impl mokkan_core::application::ports::security::TokenManager for DummyTokenManag
         let now = super::time::fixed_now();
         match token {
             TEST_TOKEN => Ok(admin_audit_user(now)),
+            SESSION_TOKEN => Ok(session_user(now)),
             NO_AUDIT_TOKEN => Ok(author_user(now)),
             // Expired tokens should be rejected at authentication time
             EXPIRED_TOKEN => Err(mokkan_core::application::error::ApplicationError::unauthorized("expired token")),
             _ => Err(mokkan_core::application::error::ApplicationError::unauthorized("invalid token")),
         }
+    }
+
+    async fn public_jwk(&self) -> mokkan_core::application::ApplicationResult<serde_json::Value> {
+        // Return a minimal JWKS structure for tests. Real implementations will return
+        // the actual public key material used to verify tokens.
+        Ok(serde_json::json!({ "keys": [] }))
     }
 }
 
@@ -47,6 +55,8 @@ fn admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::dto::Authen
         ]),
         issued_at: now,
         expires_at: now + Duration::hours(1),
+        session_id: None,
+        token_version: None,
     }
 }
 
@@ -58,6 +68,23 @@ fn author_user(now: DateTime<Utc>) -> mokkan_core::application::dto::Authenticat
         capabilities: HashSet::new(),
         issued_at: now,
         expires_at: now + Duration::hours(1),
+        session_id: None,
+        token_version: None,
+    }
+}
+
+fn session_user(now: DateTime<Utc>) -> mokkan_core::application::dto::AuthenticatedUser {
+    mokkan_core::application::dto::AuthenticatedUser {
+        id: mokkan_core::domain::user::value_objects::UserId::new(4).expect("invalid user id"),
+        username: "sessioned".into(),
+        role: mokkan_core::domain::user::value_objects::Role::Author,
+        capabilities: HashSet::from([
+            mokkan_core::domain::user::value_objects::Capability::new("articles", "create"),
+        ]),
+        issued_at: now,
+        expires_at: now + Duration::hours(1),
+        session_id: Some("sid-1".into()),
+        token_version: Some(1),
     }
 }
 
@@ -72,6 +99,8 @@ fn expired_admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::dto
         ]),
         issued_at: now - Duration::hours(2),
         expires_at: now - Duration::hours(1),
+        session_id: None,
+        token_version: None,
     }
 }
 

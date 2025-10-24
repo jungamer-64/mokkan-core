@@ -77,6 +77,8 @@ type ClockPort =
     dyn mokkan_core::application::ports::time::Clock + Send + Sync + 'static;
 type SlugGeneratorPort =
     dyn mokkan_core::application::ports::util::SlugGenerator + Send + Sync + 'static;
+type SessionRevocationPort =
+    dyn mokkan_core::application::ports::session_revocation::SessionRevocationStore + Send + Sync + 'static;
 
 /// テスト用のHTTPステートを構築
 fn default_dependencies() -> (
@@ -122,6 +124,7 @@ fn make_services(audit_repo: Arc<AuditRepo>) -> Arc<mokkan_core::application::se
         article_rev,
         password_hasher,
         token_manager,
+        Arc::new(mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new()),
         audit_repo,
         clock,
         slugger,

@@ -172,6 +172,8 @@ pub struct AuthenticatedUser {
     pub capabilities: HashSet<Capability>,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
+    pub session_id: Option<String>,
+    pub token_version: Option<u32>,
 }
 
 impl AuthenticatedUser {
@@ -188,6 +190,8 @@ pub struct TokenSubject {
     pub username: String,
     pub role: Role,
     pub capabilities: HashSet<Capability>,
+    pub session_id: Option<String>,
+    pub token_version: Option<u32>,
 }
 
 impl TokenSubject {
@@ -197,6 +201,8 @@ impl TokenSubject {
             username: auth.username.clone(),
             role: auth.role,
             capabilities: auth.capabilities.clone(),
+            session_id: auth.session_id.clone(),
+            token_version: auth.token_version,
         }
     }
 }

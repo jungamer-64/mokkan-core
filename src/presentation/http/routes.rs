@@ -2,14 +2,14 @@
 use crate::presentation::http::state::HttpState;
 use crate::presentation::http::{
     controllers::{articles, auth},
-    middleware::rate_limit,
+    middleware::{rate_limit, require_capabilities},
     openapi::{self, StatusResponse},
 };
 use crate::presentation::http::controllers::audit;
 use axum::{
     Extension, Router,
     http::{Method, header::HeaderValue},
-    routing::{get, patch, post, put},
+    routing::{get, patch, post, put, delete},
 };
 use tower_http::cors::AllowOrigin;
 use std::time::Duration;
@@ -90,7 +90,9 @@ fn system_routes() -> Router {
 fn auth_routes() -> Router {
     Router::new()
         .route("/api/v1/auth/register", post(auth::register))
+    .route("/api/v1/auth/keys", get(auth::keys))
         .route("/api/v1/auth/login", post(auth::login))
+        .route("/api/v1/auth/logout", post(auth::logout))
         .route("/api/v1/auth/refresh", post(auth::refresh_token))
         .route("/api/v1/auth/me", get(auth::profile))
 }
@@ -107,9 +109,12 @@ fn user_routes() -> Router {
 
 fn article_routes() -> Router {
     Router::new()
+        .route("/api/v1/articles", get(articles::list_articles))
         .route(
             "/api/v1/articles",
-            get(articles::list_articles).post(articles::create_article),
+            post(articles::create_article).layer(axum::middleware::from_fn(
+                move |req, next| require_capabilities::require_capability(req, next, "articles", "create"),
+            )),
         )
         .route(
             "/api/v1/articles/by-slug/{slug}",
@@ -117,7 +122,15 @@ fn article_routes() -> Router {
         )
         .route(
             "/api/v1/articles/{id}",
-            put(articles::update_article).delete(articles::delete_article),
+            put(articles::update_article).layer(axum::middleware::from_fn(
+                move |req, next| require_capabilities::require_capability(req, next, "articles", "update"),
+            )),
+        )
+        .route(
+            "/api/v1/articles/{id}",
+            delete(articles::delete_article).layer(axum::middleware::from_fn(
+                move |req, next| require_capabilities::require_capability(req, next, "articles", "delete"),
+            )),
         )
         .route(
             "/api/v1/articles/{id}/revisions",
@@ -125,7 +138,9 @@ fn article_routes() -> Router {
         )
         .route(
             "/api/v1/articles/{id}/publish",
-            post(articles::set_publish_state),
+            post(articles::set_publish_state).layer(axum::middleware::from_fn(
+                move |req, next| require_capabilities::require_capability(req, next, "articles", "publish"),
+            )),
         )
 }
 

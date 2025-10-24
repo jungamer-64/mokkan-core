@@ -15,6 +15,7 @@ use axum::{
     Extension, Json,
     extract::{Path, Query},
 };
+use serde_json::Value as JsonValue;
 use serde::{Deserialize, Serialize};
 use utoipa::IntoParams;
 
@@ -304,4 +305,50 @@ pub async fn change_password(
     Ok(Json(StatusResponse {
         status: "password_changed".into(),
     }))
+}
+
+// JWKS-like public keys endpoint. Returns the public key material used to verify tokens.
+pub async fn keys(
+    Extension(state): Extension<HttpState>,
+) -> HttpResult<Json<JsonValue>> {
+    state
+        .services
+        .token_manager()
+        .public_jwk()
+        .await
+        .into_http()
+        .map(Json)
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/logout",
+    responses(
+        (status = 200, description = "Logged out (session revoked).", body = crate::presentation::http::openapi::StatusResponse),
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+    ),
+    security(("bearerAuth" = [])),
+    tag = "Auth"
+)]
+pub async fn logout(
+    Extension(state): Extension<HttpState>,
+    Authenticated(user): Authenticated,
+) -> HttpResult<Json<crate::presentation::http::openapi::StatusResponse>> {
+    if let Some(session_id) = &user.session_id {
+        state
+            .services
+            .session_revocation_store()
+            .revoke(session_id)
+            .await
+            .into_http()?;
+
+        Ok(Json(crate::presentation::http::openapi::StatusResponse {
+            status: "logged_out".into(),
+        }))
+    } else {
+        Err(crate::presentation::http::error::HttpError::from_error(
+            crate::application::error::ApplicationError::validation("token is not session-based"),
+        ))
+    }
 }

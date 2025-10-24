@@ -77,15 +77,7 @@ impl UserCommandService {
         validate_password(&command.password)?;
 
         let existing = self.user_repo.count().await?;
-        let role = if existing == 0 {
-            Role::Admin
-        } else {
-            let requester = actor.ok_or_else(|| {
-                ApplicationError::forbidden("administrative privileges are required")
-            })?;
-            ensure_capability(requester, "users", "create")?;
-            command.role.unwrap_or(Role::Author)
-        };
+        let role = self.determine_role(existing, actor, command.role).await?;
 
         if existing > 0 {
             if self.user_repo.find_by_username(&username).await?.is_some() {
@@ -126,6 +118,8 @@ impl UserCommandService {
             username: user.username.to_string(),
             role: user.role,
             capabilities: capabilities.clone(),
+            session_id: None,
+            token_version: None,
         };
 
         let token = self.token_manager.issue(subject).await?;
@@ -179,22 +173,8 @@ impl UserCommandService {
             .await?
             .ok_or_else(|| ApplicationError::not_found("user not found"))?;
 
-        let is_self = actor.id == user.id;
-
-        if !is_self {
-            ensure_capability(actor, "users", "update")?;
-        }
-
-        if is_self {
-            let current = command
-                .current_password
-                .as_deref()
-                .ok_or_else(|| ApplicationError::validation("current password is required"))?;
-
-            self.password_hasher
-                .verify(current, user.password_hash.as_str())
-                .await?;
-        }
+        // perform authorization and verify current password when user is changing their own password
+        self.verify_change_password_self(actor, &user, command.current_password.as_deref()).await?;
 
         validate_password(&command.new_password)?;
 
@@ -222,8 +202,49 @@ impl UserCommandService {
         }
 
         let subject = TokenSubject::from_authenticated(&user);
+    // Ensure session/version are not carried unintentionally in this path
+    let subject = TokenSubject { session_id: None, token_version: None, ..subject };
 
         self.token_manager.issue(subject).await
+    }
+}
+
+impl UserCommandService {
+    async fn determine_role(
+        &self,
+        existing: u64,
+        actor: Option<&AuthenticatedUser>,
+        role: Option<Role>,
+    ) -> ApplicationResult<Role> {
+        if existing == 0 {
+            return Ok(Role::Admin);
+        }
+        let requester = actor.ok_or_else(|| ApplicationError::forbidden("administrative privileges are required"))?;
+        ensure_capability(requester, "users", "create")?;
+        Ok(role.unwrap_or(Role::Author))
+    }
+
+    async fn verify_change_password_self(
+        &self,
+        actor: &AuthenticatedUser,
+        user: &crate::domain::user::User,
+        current_password: Option<&str>,
+    ) -> ApplicationResult<()> {
+        let is_self = actor.id == user.id;
+
+        if !is_self {
+            ensure_capability(actor, "users", "update")?;
+            return Ok(());
+        }
+
+        let current = current_password
+            .ok_or_else(|| ApplicationError::validation("current password is required"))?;
+
+        self.password_hasher
+            .verify(current, user.password_hash.as_str())
+            .await?;
+
+        Ok(())
     }
 }
 
