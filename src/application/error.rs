@@ -1,6 +1,7 @@
 // src/application/error.rs
 use crate::domain::errors::DomainError;
 use thiserror::Error;
+use anyhow::Error as AnyhowError;
 
 pub type ApplicationResult<T> = Result<T, ApplicationError>;
 
@@ -25,7 +26,7 @@ pub enum ApplicationError {
     Forbidden(String),
 
     #[error("infrastructure failure: {0}")]
-    Infrastructure(String),
+    Infrastructure(#[source] AnyhowError),
 }
 
 impl ApplicationError {
@@ -49,7 +50,11 @@ impl ApplicationError {
         Self::Forbidden(msg.into())
     }
 
+    /// Create an infrastructure error from a message or an existing error.
+    ///
+    /// Many call sites pass `err.to_string()`; to keep those call sites simple
+    /// we accept `impl Into<String>` here and convert it into an `anyhow::Error`.
     pub fn infrastructure(msg: impl Into<String>) -> Self {
-        Self::Infrastructure(msg.into())
+        Self::Infrastructure(AnyhowError::msg(msg.into()))
     }
 }
