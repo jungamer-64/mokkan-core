@@ -1,11 +1,10 @@
 // src/presentation/http/controllers/audit.rs
-use crate::application::queries::audit::{AuditQueryService, ListAuditQuery};
-use crate::application::dto::AuthenticatedUser;
-use crate::presentation::http::state::HttpState;
-use crate::presentation::http::error::{HttpResult, IntoHttpResult};
-use crate::presentation::http::extractors::Authenticated;
 use crate::application::dto::AuditLogDto;
 use crate::application::dto::CursorPage;
+use crate::application::queries::audit::{AuditQueryService, ListAuditQuery};
+use crate::presentation::http::error::{HttpResult, IntoHttpResult};
+use crate::presentation::http::extractors::Authenticated;
+use crate::presentation::http::state::HttpState;
 use axum::{Extension, Json, extract::{Path, Query}};
 
 #[derive(Debug, serde::Deserialize)]

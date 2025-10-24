@@ -3,13 +3,39 @@ use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use std::collections::HashSet;
 
-/// Known test tokens (avoid typos & get IDE completion)
+/// テスト用トークン定数（タイポ防止とIDE補完のため）
 pub const TEST_TOKEN: &str = "test-token";
 pub const NO_AUDIT_TOKEN: &str = "no-audit";
 pub const EXPIRED_TOKEN: &str = "expired-token";
 
+/* -------------------------------- TokenManager -------------------------------- */
+
 #[derive(Clone, Debug, Default)]
 pub struct DummyTokenManager;
+
+#[async_trait]
+impl mokkan_core::application::ports::security::TokenManager for DummyTokenManager {
+    async fn issue(
+        &self,
+        _subject: mokkan_core::application::dto::TokenSubject,
+    ) -> mokkan_core::application::ApplicationResult<mokkan_core::application::dto::AuthTokenDto> {
+        Err(mokkan_core::application::error::ApplicationError::infrastructure("not implemented"))
+    }
+
+    async fn authenticate(
+        &self,
+        token: &str,
+    ) -> mokkan_core::application::ApplicationResult<mokkan_core::application::dto::AuthenticatedUser> {
+        let now = super::time::fixed_now();
+        match token {
+            TEST_TOKEN => Ok(admin_audit_user(now)),
+            NO_AUDIT_TOKEN => Ok(author_user(now)),
+            // Expired tokens should be rejected at authentication time
+            EXPIRED_TOKEN => Err(mokkan_core::application::error::ApplicationError::unauthorized("expired token")),
+            _ => Err(mokkan_core::application::error::ApplicationError::unauthorized("invalid token")),
+        }
+    }
+}
 
 fn admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::dto::AuthenticatedUser {
     mokkan_core::application::dto::AuthenticatedUser {
@@ -35,6 +61,7 @@ fn author_user(now: DateTime<Utc>) -> mokkan_core::application::dto::Authenticat
     }
 }
 
+#[allow(dead_code)]
 fn expired_admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::dto::AuthenticatedUser {
     mokkan_core::application::dto::AuthenticatedUser {
         id: mokkan_core::domain::user::value_objects::UserId::new(3).expect("invalid user id"),
@@ -48,33 +75,9 @@ fn expired_admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::dto
     }
 }
 
-#[async_trait]
-impl mokkan_core::application::ports::security::TokenManager for DummyTokenManager {
-    async fn issue(
-        &self,
-        _subject: mokkan_core::application::dto::TokenSubject,
-    ) -> mokkan_core::application::ApplicationResult<
-        mokkan_core::application::dto::AuthTokenDto
-    > {
-        Err(mokkan_core::application::error::ApplicationError::infrastructure("not implemented"))
-    }
+/* -------------------------------- PasswordHasher -------------------------------- */
 
-    async fn authenticate(
-        &self,
-        token: &str,
-    ) -> mokkan_core::application::ApplicationResult<
-        mokkan_core::application::dto::AuthenticatedUser
-    > {
-        let now = super::time::fixed_now();
-        match token {
-            TEST_TOKEN => Ok(admin_audit_user(now)),
-            NO_AUDIT_TOKEN => Ok(author_user(now)),
-            EXPIRED_TOKEN => Ok(expired_admin_audit_user(now)),
-            _ => Err(mokkan_core::application::error::ApplicationError::unauthorized("invalid token")),
-        }
-    }
-}
-
+/// 寛容なパスワードハッシャー（大半のテストで使用）
 #[derive(Clone, Debug, Default)]
 pub struct DummyPasswordHasher;
 
@@ -83,13 +86,13 @@ impl mokkan_core::application::ports::security::PasswordHasher for DummyPassword
     async fn hash(&self, _password: &str) -> mokkan_core::application::ApplicationResult<String> {
         Ok("hash".into())
     }
+
     async fn verify(&self, _password: &str, _expected_hash: &str) -> mokkan_core::application::ApplicationResult<()> {
-        // Lenient verifier used by most tests
         Ok(())
     }
 }
 
-/// Strict hasher useful for negative-path tests
+/// 厳密なパスワードハッシャー（ネガティブパステスト用）
 #[derive(Clone, Debug, Default)]
 pub struct StrictPasswordHasher;
 
@@ -98,6 +101,7 @@ impl mokkan_core::application::ports::security::PasswordHasher for StrictPasswor
     async fn hash(&self, password: &str) -> mokkan_core::application::ApplicationResult<String> {
         Ok(format!("hash::{}", password))
     }
+
     async fn verify(&self, password: &str, expected_hash: &str) -> mokkan_core::application::ApplicationResult<()> {
         if format!("hash::{}", password) == expected_hash {
             Ok(())

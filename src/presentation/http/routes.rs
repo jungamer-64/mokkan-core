@@ -8,7 +8,7 @@ use crate::presentation::http::{
 use crate::presentation::http::controllers::audit;
 use axum::{
     Extension, Router,
-    http::{self, Method, header::HeaderValue},
+    http::{Method, header::HeaderValue},
     routing::{get, patch, post, put},
 };
 use tower_http::cors::AllowOrigin;
