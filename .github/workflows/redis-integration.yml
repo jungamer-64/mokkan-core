@@ -42,12 +42,32 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: Show Rust version
         run: rustc --version
 
-      - name: Run Redis integration test
-        run: cargo test --test e2e_refresh_rotation_redis -- --nocapture
+      - name: Run Redis integration test (capture logs)
+        run: |
+          set -o pipefail
+          cargo test --test e2e_refresh_rotation_redis -- --nocapture 2>&1 | tee redis-test.log
 
-      - name: Run full test suite
-        run: cargo test --all --jobs 2
+      - name: Upload Redis test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: redis-test-log
+          path: redis-test.log
+
+      - name: Run full test suite (capture logs)
+        run: |
+          set -o pipefail
+          cargo test --all --jobs 2 2>&1 | tee full-test.log
+
+      - name: Upload full test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-test-log
+          path: full-test.log
