@@ -1,0 +1,53 @@
+name: Redis integration tests
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test-redis:
+    name: Redis integration tests
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd 'redis-cli ping'
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      REDIS_URL: redis://127.0.0.1:6379
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust (install if missing)
+        run: |
+          if ! command -v rustc > /dev/null; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            echo "source $HOME/.cargo/env" >> $GITHUB_ENV
+          fi
+          rustup default stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Show Rust version
+        run: rustc --version
+
+      - name: Run Redis integration test
+        run: cargo test --test e2e_refresh_rotation_redis -- --nocapture
+
+      - name: Run full test suite
+        run: cargo test --all --jobs 2
