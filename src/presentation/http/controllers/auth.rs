@@ -2,7 +2,7 @@
 use crate::application::{
     commands::users::{
         ChangePasswordCommand, LoginUserCommand, RefreshTokenCommand, RegisterUserCommand,
-        UpdateUserCommand,
+        UpdateUserCommand, GrantRoleCommand, RevokeRoleCommand,
     },
     dto::{AuthTokenDto, UserDto, UserProfileDto},
     queries::users::ListUsersQuery,
@@ -67,6 +67,11 @@ pub struct UpdateUserRequest {
 pub struct ChangePasswordRequest {
     pub current_password: Option<String>,
     pub new_password: String,
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct GrantRoleRequest {
+    pub role: crate::domain::user::Role,
 }
 
 #[utoipa::path(
@@ -305,6 +310,74 @@ pub async fn change_password(
     Ok(Json(StatusResponse {
         status: "password_changed".into(),
     }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/{id}/grant-role",
+    params(
+        ("id" = i64, Path, description = "User identifier")
+    ),
+    request_body = GrantRoleRequest,
+    responses(
+        (status = 200, description = "Role granted.", body = UserDto),
+        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 404, description = "User not found.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+    ),
+    security(("bearerAuth" = [])),
+    tag = "Users"
+)]
+pub async fn grant_role(
+    Extension(state): Extension<HttpState>,
+    Authenticated(user): Authenticated,
+    Path(id): Path<i64>,
+    Json(payload): Json<GrantRoleRequest>,
+) -> HttpResult<Json<UserDto>> {
+    let command = GrantRoleCommand { user_id: id, role: payload.role };
+
+    state
+        .services
+        .user_commands
+        .grant_role(&user, command)
+        .await
+        .into_http()
+        .map(Json)
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/users/{id}/revoke-role",
+    params(
+        ("id" = i64, Path, description = "User identifier")
+    ),
+    responses(
+        (status = 200, description = "Role revoked.", body = UserDto),
+        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 404, description = "User not found.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+    ),
+    security(("bearerAuth" = [])),
+    tag = "Users"
+)]
+pub async fn revoke_role(
+    Extension(state): Extension<HttpState>,
+    Authenticated(user): Authenticated,
+    Path(id): Path<i64>,
+) -> HttpResult<Json<UserDto>> {
+    let command = RevokeRoleCommand { user_id: id };
+
+    state
+        .services
+        .user_commands
+        .revoke_role(&user, command)
+        .await
+        .into_http()
+        .map(Json)
 }
 
 // JWKS-like public keys endpoint. Returns the public key material used to verify tokens.

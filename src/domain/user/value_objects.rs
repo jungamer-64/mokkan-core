@@ -143,6 +143,19 @@ impl fmt::Display for Username {
     }
 }
 
+impl Username {
+    /// Consume the Username and return the inner String.
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl AsRef<str> for Username {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PasswordHash(String);
 
@@ -165,6 +178,19 @@ impl PasswordHash {
 impl From<PasswordHash> for String {
     fn from(value: PasswordHash) -> Self {
         value.0
+    }
+}
+
+impl PasswordHash {
+    /// Consume the PasswordHash and return the inner String.
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+}
+
+impl AsRef<str> for PasswordHash {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 

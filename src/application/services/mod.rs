@@ -49,6 +49,7 @@ impl ApplicationServices {
             Arc::clone(&user_repo),
             Arc::clone(&password_hasher),
             Arc::clone(&token_manager),
+            Arc::clone(&session_revocation_store),
             Arc::clone(&clock),
         ));
 

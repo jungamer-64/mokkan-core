@@ -234,6 +234,8 @@ impl TokenManager for BiscuitTokenManager {
             issued_at: issued_at_dt,
             expires_at: expires_at_dt,
             expires_in,
+            session_id: subject.session_id.clone(),
+            refresh_token: None,
         })
     }
 

@@ -10,6 +10,8 @@ use std::sync::Arc;
 pub struct InMemorySessionRevocationStore {
     revoked: Mutex<HashSet<String>>,
     min_versions: Mutex<HashMap<i64, u32>>,
+    // per-session refresh nonce storage (session_id -> nonce)
+    session_nonces: Mutex<HashMap<String, String>>,
 }
 
 impl InMemorySessionRevocationStore {
@@ -40,6 +42,33 @@ impl SessionRevocationStore for InMemorySessionRevocationStore {
         let mut guard = self.min_versions.lock().unwrap();
         guard.insert(user_id, min_version);
         Ok(())
+    }
+
+    async fn set_session_refresh_nonce(&self, session_id: &str, nonce: &str) -> ApplicationResult<()> {
+        let mut guard = self.session_nonces.lock().unwrap();
+        guard.insert(session_id.to_string(), nonce.to_string());
+        Ok(())
+    }
+
+    async fn get_session_refresh_nonce(&self, session_id: &str) -> ApplicationResult<Option<String>> {
+        let guard = self.session_nonces.lock().unwrap();
+        Ok(guard.get(session_id).cloned())
+    }
+
+    async fn compare_and_swap_session_refresh_nonce(
+        &self,
+        session_id: &str,
+        expected: &str,
+        new_nonce: &str,
+    ) -> ApplicationResult<bool> {
+        let mut guard = self.session_nonces.lock().unwrap();
+        match guard.get(session_id) {
+            Some(cur) if cur == expected => {
+                guard.insert(session_id.to_string(), new_nonce.to_string());
+                Ok(true)
+            }
+            _ => Ok(false),
+        }
     }
 }
 
