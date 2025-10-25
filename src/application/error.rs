@@ -57,4 +57,12 @@ impl ApplicationError {
     pub fn infrastructure(msg: impl Into<String>) -> Self {
         Self::Infrastructure(AnyhowError::msg(msg.into()))
     }
+
+    /// Create an infrastructure error from any error type, preserving the
+    /// original error as the source. This is useful when you already have an
+    /// `anyhow::Error` (or something that can be converted into one) and want to
+    /// keep the richer error context instead of just converting it to a string.
+    pub fn infrastructure_error(err: impl Into<AnyhowError>) -> Self {
+        Self::Infrastructure(err.into())
+    }
 }

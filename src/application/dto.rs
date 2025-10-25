@@ -51,9 +51,9 @@ impl From<Article> for ArticleDto {
     fn from(article: Article) -> Self {
         Self {
             id: article.id.into(),
-            title: article.title.to_string(),
-            slug: article.slug.to_string(),
-            body: article.body.to_string(),
+            title: article.title.into_inner(),
+            slug: article.slug.into_inner(),
+            body: article.body.into_inner(),
             published: article.published,
             published_at: article.published_at,
             author_id: article.author_id.into(),
@@ -83,9 +83,9 @@ impl From<ArticleRevision> for ArticleRevisionDto {
     fn from(revision: ArticleRevision) -> Self {
         Self {
             version: revision.version,
-            title: revision.title.to_string(),
-            slug: revision.slug.to_string(),
-            body: revision.body.to_string(),
+            title: revision.title.into_inner(),
+            slug: revision.slug.into_inner(),
+            body: revision.body.into_inner(),
             published: revision.published,
             published_at: revision.published_at,
             author_id: revision.author_id.into(),

@@ -40,11 +40,22 @@ impl ArticleTitle {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Consume the value object and return the inner String.
+    pub fn into_inner(self) -> String {
+        self.0
+    }
 }
 
 impl fmt::Display for ArticleTitle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+impl AsRef<str> for ArticleTitle {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 
@@ -69,11 +80,22 @@ impl ArticleSlug {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Consume the value object and return the inner String.
+    pub fn into_inner(self) -> String {
+        self.0
+    }
 }
 
 impl fmt::Display for ArticleSlug {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+impl AsRef<str> for ArticleSlug {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 
@@ -98,11 +120,22 @@ impl ArticleBody {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Consume the value object and return the inner String.
+    pub fn into_inner(self) -> String {
+        self.0
+    }
 }
 
 impl fmt::Display for ArticleBody {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+impl AsRef<str> for ArticleBody {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 

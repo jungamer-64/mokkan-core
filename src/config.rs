@@ -8,6 +8,7 @@ pub struct AppConfig {
     listen_addr: String,
     biscuit_private_key: String,
     token_ttl: Duration,
+    allowed_origins: Vec<String>,
 }
 
 #[derive(Debug, Error)]
@@ -18,11 +19,31 @@ pub enum ConfigError {
     Invalid(String),
 }
 
+fn default_database_url() -> String {
+    "postgres://postgres:postgres@localhost:5432/cms".into()
+}
+
+fn default_listen_addr() -> String {
+    "127.0.0.1:8080".into()
+}
+
+fn default_token_ttl() -> u64 {
+    3600
+}
+
+fn default_allowed_origins() -> Vec<String> {
+    vec!["http://localhost:3000".into()]
+}
+
 impl AppConfig {
+    /// Build configuration from environment variables. Uses sensible defaults
+    /// for optional values and validates required keys.
     pub fn from_env() -> Result<Self, ConfigError> {
-        let database_url = env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5432/cms".to_string());
-        let listen_addr = env::var("LISTEN_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string());
+        // Allow dotenv files to populate env vars when present.
+        dotenvy::dotenv().ok();
+
+        let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| default_database_url());
+        let listen_addr = env::var("LISTEN_ADDR").unwrap_or_else(|_| default_listen_addr());
         let biscuit_private_key = env::var("BISCUIT_ROOT_PRIVATE_KEY")
             .map_err(|_| ConfigError::Missing("BISCUIT_ROOT_PRIVATE_KEY"))?;
 
@@ -32,16 +53,22 @@ impl AppConfig {
             ));
         }
 
-        let token_ttl = env::var("TOKEN_TTL_SECONDS")
+        let token_ttl_secs = env::var("TOKEN_TTL_SECONDS")
             .ok()
-            .and_then(|val| val.parse::<u64>().ok())
-            .unwrap_or(3_600);
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or_else(default_token_ttl);
+
+        let allowed_origins = env::var("ALLOWED_ORIGINS")
+            .ok()
+            .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
+            .unwrap_or_else(default_allowed_origins);
 
         Ok(Self {
             database_url,
             listen_addr,
             biscuit_private_key,
-            token_ttl: Duration::from_secs(token_ttl),
+            token_ttl: Duration::from_secs(token_ttl_secs),
+            allowed_origins,
         })
     }
 
@@ -61,20 +88,17 @@ impl AppConfig {
         self.token_ttl
     }
 
-    pub fn allowed_origins(&self) -> Vec<String> {
-        std::env::var("ALLOWED_ORIGINS")
-            .unwrap_or_else(|_| "http://localhost:3000".to_string())
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .collect()
+    /// Return the allowed CORS origins as configured (cached on AppConfig).
+    pub fn allowed_origins(&self) -> &[String] {
+        &self.allowed_origins
     }
 
-    /// Read allowed origins directly from environment without requiring full AppConfig
+    /// Backwards-compatible helper used by router construction in a few places
+    /// where creating a full `AppConfig` is unnecessary for tests.
     pub fn allowed_origins_from_env() -> Vec<String> {
-        std::env::var("ALLOWED_ORIGINS")
-            .unwrap_or_else(|_| "http://localhost:3000".to_string())
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .collect()
+        env::var("ALLOWED_ORIGINS")
+            .ok()
+            .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
+            .unwrap_or_else(default_allowed_origins)
     }
 }

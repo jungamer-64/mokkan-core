@@ -22,8 +22,14 @@ impl HttpError {
             ApplicationError::Conflict(msg) => Self::new(StatusCode::CONFLICT, msg),
             ApplicationError::Unauthorized(msg) => Self::new(StatusCode::UNAUTHORIZED, msg),
             ApplicationError::Forbidden(msg) => Self::new(StatusCode::FORBIDDEN, msg),
-            ApplicationError::Infrastructure(msg) => {
-                Self::new(StatusCode::INTERNAL_SERVER_ERROR, msg)
+            ApplicationError::Infrastructure(err) => {
+                // Log the detailed internal error for observability, but return a
+                // generic message to the client to avoid leaking internals.
+                tracing::error!(error = %err, "infrastructure error");
+                Self::new(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "internal server error".to_string(),
+                )
             }
             ApplicationError::Domain(domain_err) => {
                 Self::new(StatusCode::BAD_REQUEST, domain_err.to_string())

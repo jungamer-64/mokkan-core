@@ -20,6 +20,44 @@ pub struct CreateArticleCommand {
     pub publish: bool,
 }
 
+impl CreateArticleCommand {
+    pub fn builder() -> CreateArticleCommandBuilder {
+        CreateArticleCommandBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct CreateArticleCommandBuilder {
+    title: Option<String>,
+    body: Option<String>,
+    publish: bool,
+}
+
+impl CreateArticleCommandBuilder {
+    pub fn title(mut self, title: impl Into<String>) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+
+    pub fn body(mut self, body: impl Into<String>) -> Self {
+        self.body = Some(body.into());
+        self
+    }
+
+    pub fn publish(mut self, publish: bool) -> Self {
+        self.publish = publish;
+        self
+    }
+
+    pub fn build(self) -> Result<CreateArticleCommand, &'static str> {
+        Ok(CreateArticleCommand {
+            title: self.title.ok_or("title is required")?,
+            body: self.body.ok_or("body is required")?,
+            publish: self.publish,
+        })
+    }
+}
+
 pub struct UpdateArticleCommand {
     pub id: i64,
     pub title: Option<String>,
