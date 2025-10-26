@@ -7,8 +7,10 @@ use mokkan_core::application::{
         security::{PasswordHasher, TokenManager},
         time::Clock,
     },
-    services::ApplicationServices,
+    services::{ApplicationServices, ApplicationDependencies},
 };
+use mokkan_core::infrastructure::security::authorization_code_store::into_arc as into_auth_code_store;
+use mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore;
 use mokkan_core::config::AppConfig;
 use mokkan_core::domain::{
     article::{ArticleReadRepository, ArticleRevisionRepository, ArticleWriteRepository},
@@ -128,16 +130,22 @@ fn build_services_and_state(
         Arc::new(PostgresAuditLogRepository::new(pool.clone()));
 
     let session_store = init_session_store(config);
+    let auth_code_store = into_auth_code_store(InMemoryAuthorizationCodeStore::new());
+
+    let deps = ApplicationDependencies {
+        user_repo: Arc::clone(&user_repo),
+        article_write_repo: Arc::clone(&article_write_repo),
+        article_read_repo: Arc::clone(&article_read_repo),
+        article_revision_repo: Arc::clone(&article_revision_repo),
+        audit_log_repo: Arc::clone(&audit_log_repo),
+    };
 
     let services = Arc::new(ApplicationServices::new(
-        Arc::clone(&user_repo),
-        Arc::clone(&article_write_repo),
-        Arc::clone(&article_read_repo),
-        Arc::clone(&article_revision_repo),
+        deps,
         Arc::clone(&password_hasher),
         Arc::clone(&token_manager),
         Arc::clone(&session_store),
-        Arc::clone(&audit_log_repo),
+        Arc::clone(&auth_code_store),
         Arc::clone(&clock),
         Arc::clone(&slugger),
     ));
