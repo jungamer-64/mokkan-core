@@ -152,6 +152,11 @@ impl UserCommandService {
         let refresh_token = URL_SAFE_NO_PAD.encode(raw_refresh.as_bytes());
         token.refresh_token = Some(refresh_token);
 
+        // Track this session as belonging to the user for later listing/revocation.
+        self.session_revocation_store
+            .add_session_for_user(i64::from(user.id), session_id)
+            .await?;
+
         Ok(token)
     }
 
@@ -379,8 +384,36 @@ impl UserCommandService {
         session_id: &str,
         expected_nonce: &str,
     ) -> ApplicationResult<AuthTokenDto> {
-        // Atomically rotate nonce: compare stored nonce with presented one and swap to a new one
-        let new_nonce = self.rotate_session_nonce_atomic(session_id, expected_nonce).await?;
+        // Atomically rotate nonce: attempt an atomic compare-and-swap. If the
+        // CAS succeeds we mark the presented nonce as used. If it fails and the
+        // nonce was previously used, treat this as a reuse attack and revoke
+        // all sessions for the user.
+        let new_nonce = Uuid::new_v4().to_string();
+        let swapped = self
+            .session_revocation_store
+            .compare_and_swap_session_refresh_nonce(session_id, expected_nonce, &new_nonce)
+            .await?;
+
+        if swapped {
+            // CAS succeeded; the store implementations (Redis/InMemory)
+            // already mark the presented nonce as used as part of the
+            // atomic swap, so no-op here.
+        } else {
+            // CAS failed; check whether this nonce has been used before
+            let used = self
+                .session_revocation_store
+                .is_session_refresh_nonce_used(session_id, expected_nonce)
+                .await?;
+
+            if used {
+                // Detected reuse: revoke all sessions for the user to contain
+                // the compromise.
+                self.session_revocation_store.revoke_sessions_for_user(i64::from(user.id)).await?;
+                return Err(ApplicationError::forbidden("refresh token reused"));
+            } else {
+                return Err(ApplicationError::forbidden("refresh token invalid or rotated"));
+            }
+        }
         // Build token subject and issue an access token
         let subject = self.make_token_subject(user, session_id);
         let mut new_access = self.token_manager.issue(subject).await?;
@@ -504,6 +537,7 @@ impl UserCommandService {
     }
 
     // Helper: atomically rotate the session nonce only if the expected nonce matches.
+    #[allow(dead_code)]
     async fn rotate_session_nonce_atomic(&self, session_id: &str, expected: &str) -> ApplicationResult<String> {
         // Generate new nonce
         let new_nonce = Uuid::new_v4().to_string();

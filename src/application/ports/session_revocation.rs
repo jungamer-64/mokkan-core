@@ -33,4 +33,22 @@ pub trait SessionRevocationStore: Send + Sync {
         expected: &str,
         new_nonce: &str,
     ) -> ApplicationResult<bool>;
+
+    /// Mark a specific refresh nonce for a session as used (so that later reuse can be detected).
+    async fn mark_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<()>;
+
+    /// Return true if the given nonce for the session has been used before.
+    async fn is_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<bool>;
+
+    /// Track that a session id belongs to a user (used for per-user session listing and bulk revocation).
+    async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()>;
+
+    /// Remove the association of a session id from a user.
+    async fn remove_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()>;
+
+    /// List session ids for a given user.
+    async fn list_sessions_for_user(&self, user_id: i64) -> ApplicationResult<Vec<String>>;
+
+    /// Revoke all sessions for a given user (used when refresh reuse is detected).
+    async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()>;
 }

@@ -6,6 +6,9 @@ use async_trait::async_trait;
 use deadpool_redis::{Config as DeadpoolConfig, Pool, Runtime};
 use redis::AsyncCommands;
 
+// TTL for used refresh-nonce markers (in seconds). 7 days by default.
+const USED_NONCE_TTL_SECS: usize = 60 * 60 * 24 * 7; // 604800
+
 #[derive(Clone)]
 pub struct RedisSessionRevocationStore {
     pool: Pool,
@@ -125,12 +128,19 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
         let key = format!("session_refresh_nonce:{}", session_id);
+        // used-nonce key for the presented (expected) nonce. We set this when a
+        // successful rotation occurs so that later reuse can be detected.
+        let used_key = format!("used_refresh_nonce:{}:{}", session_id, expected);
 
-        // Lua script: compare current value with expected, if equal set to new and return 1, else return 0
+        // Lua script: Atomically compares the current session refresh nonce with the expected value.
+        // If equal, replaces it with the new nonce, marks the presented nonce as used (with TTL), and returns 1.
+        // Otherwise, returns 0. The TTL for the used nonce marker is provided as ARGV[3].
         let script = r#"
             local cur = redis.call('GET', KEYS[1])
             if cur == ARGV[1] then
                 redis.call('SET', KEYS[1], ARGV[2])
+                redis.call('SET', KEYS[2], 1)
+                redis.call('EXPIRE', KEYS[2], ARGV[3])
                 return 1
             else
                 return 0
@@ -139,15 +149,146 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
 
         let replaced: i32 = redis::cmd("EVAL")
             .arg(script)
-            .arg(1)
+            .arg(2)
             .arg(&key)
+            .arg(&used_key)
             .arg(expected)
             .arg(new_nonce)
+            .arg(USED_NONCE_TTL_SECS)
             .query_async(&mut conn)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
         Ok(replaced == 1)
+    }
+
+    async fn mark_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let used_key = format!("used_refresh_nonce:{}:{}", session_id, nonce);
+        // default TTL
+        conn.set::<_, _, ()>(&used_key, 1)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        // Use explicit EXPIRE command to avoid type inference issues with the
+        // high-level helper and to use the shared TTL constant.
+        let _: i32 = redis::cmd("EXPIRE")
+            .arg(&used_key)
+            .arg(USED_NONCE_TTL_SECS)
+            .query_async(&mut conn)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        Ok(())
+    }
+
+    async fn is_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<bool> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let used_key = format!("used_refresh_nonce:{}:{}", session_id, nonce);
+        let exists: bool = conn
+            .exists(used_key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        Ok(exists)
+    }
+
+    async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let key = format!("user_sessions:{}", user_id);
+        conn.sadd::<_, _, ()>(key, session_id)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        Ok(())
+    }
+
+    async fn remove_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let key = format!("user_sessions:{}", user_id);
+        conn.srem::<_, _, ()>(key, session_id)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        Ok(())
+    }
+
+    async fn list_sessions_for_user(&self, user_id: i64) -> ApplicationResult<Vec<String>> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let key = format!("user_sessions:{}", user_id);
+        let members: Vec<String> = conn
+            .smembers(key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        Ok(members)
+    }
+
+    async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let key = format!("user_sessions:{}", user_id);
+        let sessions: Vec<String> = conn
+            .smembers(&key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        if sessions.is_empty() {
+            return Ok(());
+        }
+
+        // Atomically mark each session revoked and remove the user's session
+        // set using a Lua script. Instead of re-reading the set server-side
+        // (SMEMBERS), pass the session IDs we already fetched as ARGV to the
+        // script. This avoids a redundant read and keeps the operation atomic.
+        // The script expects the key in KEYS[1] and session IDs in ARGV.
+        let script = r#"
+            if #ARGV == 0 then
+                return 0
+            end
+            for i=1,#ARGV do
+                local sid = ARGV[i]
+                redis.call('SET', 'revoked:session:' .. sid, 1)
+            end
+            redis.call('DEL', KEYS[1])
+            return #ARGV
+        "#;
+
+        let mut cmd = redis::cmd("EVAL");
+        cmd.arg(script).arg(1).arg(&key);
+        for sid in &sessions {
+            cmd.arg(sid);
+        }
+
+        let _processed: i32 = cmd
+            .query_async(&mut conn)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        Ok(())
     }
 }
 
