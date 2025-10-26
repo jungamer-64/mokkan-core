@@ -159,7 +159,7 @@ impl ApplicationServices {
                     let mut hasher = Sha256::new();
                     hasher.update(verifier.as_bytes());
                     let digest = hasher.finalize();
-                    let encoded = URL_SAFE_NO_PAD.encode(digest.as_slice());
+                    let encoded = URL_SAFE_NO_PAD.encode(&digest[..]);
                     if &encoded != challenge {
                         return Err(ApplicationError::validation("invalid code_verifier"));
                     }
