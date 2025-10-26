@@ -11,18 +11,20 @@ jobs:
     name: Redis Integration & E2E Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     services:
       redis:
         image: redis:7-alpine
         ports:
-          - 6379:6379
+          - 6379/tcp
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
-      REDIS_URL: redis://127.0.0.1:6379
+      REDIS_URL: redis://127.0.0.1:${{ job.services.redis.ports[6379] }}
       REDIS_USED_NONCE_TTL_SECS: 604800
       REDIS_PRELOAD_CAS_SCRIPT: "true"
       CARGO_TERM_COLOR: always
@@ -32,11 +34,13 @@ jobs:
         uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@<pin-a-commit-sha>
         with:
           toolchain: stable
-          profile: minimal
-          override: true
+
+      - name: Detect rustc
+        id: rustv
+        run: echo "version=$(rustc -V)" >> "$GITHUB_OUTPUT"
 
       - name: Cache cargo
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
@@ -45,20 +49,11 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ steps.rustv.outputs.version }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Wait for Redis
-        run: |
-          for i in {1..30}; do
-            if redis-cli -h 127.0.0.1 ping | grep -q PONG; then
-              echo "Redis is up"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Redis did not start" && exit 1
+      # Wait for Redis は削除（services の healthcheck に任せる）
 
       - name: Run Redis E2E tests
         run: |
@@ -73,10 +68,10 @@ jobs:
           name: redis-test-log
           path: redis-test.log
 
-      - name: Run full test suite
+      - name: Run unit & bin tests (avoid duplicate E2E)
         run: |
           set -o pipefail
-          cargo test --all --jobs 2 2>&1 | tee full-test.log
+          cargo test --workspace --lib --bins 2>&1 | tee full-test.log
 
       - name: Upload full test logs
         if: always()
