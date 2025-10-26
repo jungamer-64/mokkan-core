@@ -1,7 +1,7 @@
 // src/presentation/http/routes.rs
 use crate::presentation::http::state::HttpState;
 use crate::presentation::http::{
-    controllers::{articles, auth},
+    controllers::{articles, auth, discovery},
     middleware::{rate_limit, require_capabilities},
     openapi::{self, StatusResponse},
 };
@@ -84,7 +84,9 @@ fn audit_routes() -> Router {
 }
 
 fn system_routes() -> Router {
-    Router::new().route("/health", get(health))
+    Router::new()
+    .route("/health", get(health))
+    .route("/.well-known/openid-configuration", get(discovery::openid_configuration))
 }
 
 fn auth_routes() -> Router {

@@ -126,4 +126,11 @@ impl AppConfig {
     pub fn redis_preload_cas_script(&self) -> bool {
         self.redis_preload_cas_script
     }
+
+    /// Determine the issuer URL for OIDC discovery. Prefer explicit env var
+    /// `OIDC_ISSUER` if present; otherwise derive a sensible default using
+    /// the configured listen address.
+    pub fn oidc_issuer_from_env() -> String {
+        std::env::var("OIDC_ISSUER").unwrap_or_else(|_| format!("http://{}", default_listen_addr()))
+    }
 }
