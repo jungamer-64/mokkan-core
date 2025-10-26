@@ -20,7 +20,17 @@ impl mokkan_core::application::ports::security::TokenManager for DummyTokenManag
         &self,
         _subject: mokkan_core::application::dto::TokenSubject,
     ) -> mokkan_core::application::ApplicationResult<mokkan_core::application::dto::AuthTokenDto> {
-        Err(mokkan_core::application::error::ApplicationError::infrastructure("not implemented"))
+        // For tests return a deterministic token payload so exchange flows can be tested
+        let now = super::time::fixed_now();
+        let expires_at = now + chrono::Duration::hours(1);
+        Ok(mokkan_core::application::dto::AuthTokenDto {
+            token: format!("issued-{}", i64::from(_subject.user_id)),
+            issued_at: now,
+            expires_at,
+            expires_in: (expires_at.signed_duration_since(now).num_seconds()),
+            session_id: _subject.session_id.clone(),
+            refresh_token: None,
+        })
     }
 
     async fn authenticate(
