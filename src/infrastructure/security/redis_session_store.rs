@@ -179,7 +179,7 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
         // Use explicit EXPIRE command to avoid type inference issues with the
         // high-level helper and to use the shared TTL constant.
-        let _ : i32 = redis::cmd("EXPIRE")
+        let _: i32 = redis::cmd("EXPIRE")
             .arg(&used_key)
             .arg(USED_NONCE_TTL_SECS)
             .query_async(&mut conn)
