@@ -125,12 +125,19 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
         let key = format!("session_refresh_nonce:{}", session_id);
+        // used-nonce key for the presented (expected) nonce. We set this when a
+        // successful rotation occurs so that later reuse can be detected.
+        let used_key = format!("used_refresh_nonce:{}:{}", session_id, expected);
 
-        // Lua script: compare current value with expected, if equal set to new and return 1, else return 0
+        // Lua script: compare current value with expected, if equal set to new,
+        // set the used marker and expire it, and return 1; else return 0.
+        // TTL for used markers: 7 days (604800 seconds).
         let script = r#"
             local cur = redis.call('GET', KEYS[1])
             if cur == ARGV[1] then
                 redis.call('SET', KEYS[1], ARGV[2])
+                redis.call('SET', KEYS[2], 1)
+                redis.call('EXPIRE', KEYS[2], 604800)
                 return 1
             else
                 return 0
@@ -139,8 +146,9 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
 
         let replaced: i32 = redis::cmd("EVAL")
             .arg(script)
-            .arg(1)
+            .arg(2)
             .arg(&key)
+            .arg(&used_key)
             .arg(expected)
             .arg(new_nonce)
             .query_async(&mut conn)
@@ -148,6 +156,114 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
         Ok(replaced == 1)
+    }
+
+    async fn mark_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let used_key = format!("used_refresh_nonce:{}:{}", session_id, nonce);
+        // default TTL: 7 days
+        conn.set::<_, _, ()>(&used_key, 1)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        // Use explicit EXPIRE command to avoid type inference issues with the
+        // high-level helper.
+        let _ : i32 = redis::cmd("EXPIRE")
+            .arg(&used_key)
+            .arg(604800)
+            .query_async(&mut conn)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        Ok(())
+    }
+
+    async fn is_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<bool> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let used_key = format!("used_refresh_nonce:{}:{}", session_id, nonce);
+        let exists: bool = conn
+            .exists(used_key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        Ok(exists)
+    }
+
+    async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let key = format!("user_sessions:{}", user_id);
+        conn.sadd::<_, _, ()>(key, session_id)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        Ok(())
+    }
+
+    async fn remove_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let key = format!("user_sessions:{}", user_id);
+        conn.srem::<_, _, ()>(key, session_id)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        Ok(())
+    }
+
+    async fn list_sessions_for_user(&self, user_id: i64) -> ApplicationResult<Vec<String>> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let key = format!("user_sessions:{}", user_id);
+        let members: Vec<String> = conn
+            .smembers(key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        Ok(members)
+    }
+
+    async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let key = format!("user_sessions:{}", user_id);
+        let sessions: Vec<String> = conn
+            .smembers(&key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        for sid in sessions.iter() {
+            let rkey = format!("revoked:session:{}", sid);
+            conn.set::<_, _, ()>(rkey, 1)
+                .await
+                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            // remove from set
+            conn.srem::<_, _, ()>(&key, sid)
+                .await
+                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        }
+
+        Ok(())
     }
 }
 

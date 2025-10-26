@@ -12,6 +12,10 @@ pub struct InMemorySessionRevocationStore {
     min_versions: Mutex<HashMap<i64, u32>>,
     // per-session refresh nonce storage (session_id -> nonce)
     session_nonces: Mutex<HashMap<String, String>>,
+    // per-session used nonces (session_id -> set of used nonces)
+    used_nonces: Mutex<HashMap<String, HashSet<String>>>,
+    // per-user sessions (user_id -> set of session_ids)
+    user_sessions: Mutex<HashMap<i64, HashSet<String>>>,
 }
 
 impl InMemorySessionRevocationStore {
@@ -65,10 +69,67 @@ impl SessionRevocationStore for InMemorySessionRevocationStore {
         match guard.get(session_id) {
             Some(cur) if cur == expected => {
                 guard.insert(session_id.to_string(), new_nonce.to_string());
+                // mark the expected as used for later reuse detection
+                let mut used_guard = self.used_nonces.lock().unwrap();
+                let entry = used_guard.entry(session_id.to_string()).or_default();
+                entry.insert(expected.to_string());
                 Ok(true)
             }
             _ => Ok(false),
         }
+    }
+
+    async fn mark_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<()> {
+        let mut used_guard = self.used_nonces.lock().unwrap();
+        let entry = used_guard.entry(session_id.to_string()).or_default();
+        entry.insert(nonce.to_string());
+        Ok(())
+    }
+
+    async fn is_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<bool> {
+        let used_guard = self.used_nonces.lock().unwrap();
+        Ok(used_guard.get(session_id).map(|s| s.contains(nonce)).unwrap_or(false))
+    }
+
+    async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()> {
+        let mut guard = self.user_sessions.lock().unwrap();
+        let entry = guard.entry(user_id).or_default();
+        entry.insert(session_id.to_string());
+        Ok(())
+    }
+
+    async fn remove_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()> {
+        let mut guard = self.user_sessions.lock().unwrap();
+        if let Some(set) = guard.get_mut(&user_id) {
+            set.remove(session_id);
+        }
+        Ok(())
+    }
+
+    async fn list_sessions_for_user(&self, user_id: i64) -> ApplicationResult<Vec<String>> {
+        let guard = self.user_sessions.lock().unwrap();
+        if let Some(set) = guard.get(&user_id) {
+            Ok(set.iter().cloned().collect())
+        } else {
+            Ok(vec![])
+        }
+    }
+
+    async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()> {
+        let sessions = {
+            let mut guard = self.user_sessions.lock().unwrap();
+            match guard.remove(&user_id) {
+                Some(s) => s.into_iter().collect::<Vec<_>>(),
+                None => vec![],
+            }
+        };
+
+        for sid in sessions {
+            let mut revoked_guard = self.revoked.lock().unwrap();
+            revoked_guard.insert(sid);
+        }
+
+        Ok(())
     }
 }
 
