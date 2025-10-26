@@ -24,7 +24,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      REDIS_URL: redis://127.0.0.1:${{ job.services.redis.ports[6379] }}
       REDIS_USED_NONCE_TTL_SECS: 604800
       REDIS_PRELOAD_CAS_SCRIPT: "true"
       CARGO_TERM_COLOR: always
@@ -56,6 +55,8 @@ jobs:
       # Wait for Redis は削除（services の healthcheck に任せる）
 
       - name: Run Redis E2E tests
+        env:
+          REDIS_URL: redis://127.0.0.1:${{ job.services.redis.ports[6379] }}
         run: |
           set -o pipefail
           cargo test --test e2e_refresh_rotation_redis -- --nocapture 2>&1 | tee redis-test.log
