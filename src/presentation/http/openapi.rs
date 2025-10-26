@@ -49,10 +49,10 @@ pub struct ArticleListResponse {
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        crate::presentation::http::controllers::auth::register,
-        crate::presentation::http::controllers::auth::login,
-        crate::presentation::http::controllers::auth::list_sessions,
-        crate::presentation::http::controllers::auth::revoke_session,
+    crate::presentation::http::controllers::auth::register,
+    crate::presentation::http::controllers::auth::login,
+    crate::presentation::http::controllers::auth_sessions::list_sessions,
+    crate::presentation::http::controllers::auth_sessions::revoke_session,
         crate::presentation::http::controllers::auth::refresh_token,
         crate::presentation::http::controllers::auth::profile,
         crate::presentation::http::controllers::auth::list_users,

@@ -1,7 +1,7 @@
 // src/presentation/http/routes.rs
 use crate::presentation::http::state::HttpState;
 use crate::presentation::http::{
-    controllers::{articles, auth, discovery},
+    controllers::{articles, auth, discovery, auth_sessions, auth_oidc},
     middleware::{rate_limit, require_capabilities},
     openapi::{self, StatusResponse},
 };
@@ -87,6 +87,7 @@ fn system_routes() -> Router {
     Router::new()
     .route("/health", get(health))
     .route("/.well-known/openid-configuration", get(discovery::openid_configuration))
+    .route("/.well-known/jwks.json", get(crate::presentation::http::controllers::auth::keys))
 }
 
 fn auth_routes() -> Router {
@@ -94,11 +95,14 @@ fn auth_routes() -> Router {
         .route("/api/v1/auth/register", post(auth::register))
     .route("/api/v1/auth/keys", get(auth::keys))
         .route("/api/v1/auth/login", post(auth::login))
+    .route("/api/v1/auth/authorize", get(auth_oidc::authorize))
+    .route("/api/v1/auth/introspect", post(auth_oidc::introspect))
+    .route("/api/v1/auth/revoke", post(auth_oidc::revoke))
         .route("/api/v1/auth/logout", post(auth::logout))
         .route("/api/v1/auth/refresh", post(auth::refresh_token))
         .route("/api/v1/auth/me", get(auth::profile))
-        .route("/api/v1/auth/sessions", get(auth::list_sessions))
-        .route("/api/v1/auth/sessions/{id}", delete(auth::revoke_session))
+    .route("/api/v1/auth/sessions", get(auth_sessions::list_sessions))
+    .route("/api/v1/auth/sessions/{id}", delete(auth_sessions::revoke_session))
 }
 
 fn user_routes() -> Router {

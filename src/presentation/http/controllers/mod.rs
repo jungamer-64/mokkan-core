@@ -4,3 +4,5 @@ pub mod auth;
 pub mod audit;
 pub mod discovery;
 pub mod user_requests;
+pub mod auth_oidc;
+pub mod auth_sessions;

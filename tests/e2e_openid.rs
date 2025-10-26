@@ -38,3 +38,36 @@ async fn openid_discovery_returns_document() {
     let grants = json.get("grant_types_supported").and_then(|v| v.as_array()).expect("grant_types present");
     assert!(grants.iter().any(|g| g.as_str() == Some("authorization_code")), "grant_types_supported should include 'authorization_code'");
 }
+
+
+#[tokio::test]
+async fn introspect_and_revoke_endpoints_behave() {
+    let app = support::make_test_router().await;
+
+    // Introspect with an invalid token should return active=false
+    let body = serde_json::json!({ "token": "invalid" }).to_string();
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/v1/auth/introspect")
+        .header("content-type", "application/json")
+        .body(Body::from(body))
+        .unwrap();
+
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let (_h, json) = to_json_async!(resp).await;
+    let active = json.get("active").and_then(|v| v.as_bool()).expect("active field");
+    assert!(!active, "invalid token should be inactive");
+
+    // Revoke with an invalid token should still return 200 OK
+    let body = serde_json::json!({ "token": "invalid" }).to_string();
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/api/v1/auth/revoke")
+        .header("content-type", "application/json")
+        .body(Body::from(body))
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
