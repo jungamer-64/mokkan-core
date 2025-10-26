@@ -46,13 +46,16 @@ impl mokkan_core::application::ports::security::TokenManager for DummyTokenManag
 }
 
 fn admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::dto::AuthenticatedUser {
+    // For tests, treat the admin test-token as having the Admin role's default capabilities
+    // plus the audit:read capability so it can access audit endpoints used in tests.
+    let mut caps = mokkan_core::domain::user::value_objects::Role::Admin.default_capabilities();
+    caps.insert(mokkan_core::domain::user::value_objects::Capability::new("audit", "read"));
+
     mokkan_core::application::dto::AuthenticatedUser {
         id: mokkan_core::domain::user::value_objects::UserId::new(1).expect("invalid user id"),
         username: "tester".into(),
         role: mokkan_core::domain::user::value_objects::Role::Admin,
-        capabilities: HashSet::from([
-            mokkan_core::domain::user::value_objects::Capability::new("audit", "read"),
-        ]),
+        capabilities: caps,
         issued_at: now,
         expires_at: now + Duration::hours(1),
         session_id: None,
