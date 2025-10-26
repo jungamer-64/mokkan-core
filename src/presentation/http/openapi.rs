@@ -536,6 +536,7 @@ mod tests {
         assert!(resp.headers().get(header::ETAG).is_some());
     }
 
+    #[allow(clippy::option_env_unwrap)]
     #[tokio::test]
     async fn get_openapi_returns_not_modified_on_ims() {
         // Skip if BUILD_DATE not embedded during build
@@ -564,6 +565,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
     }
 
+    #[allow(clippy::option_env_unwrap)]
     #[tokio::test]
     async fn get_openapi_returns_ok_when_inm_mismatch_even_if_ims_matches() {
         // Only meaningful when BUILD_DATE is present (we compare against it)
