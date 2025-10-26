@@ -15,7 +15,7 @@ use axum::{
     Extension, Json,
     extract::{Path, Query},
 };
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{Utc, TimeZone};
 use serde_json::Value as JsonValue;
 use serde::{Deserialize, Serialize};
 use utoipa::IntoParams;
@@ -222,7 +222,11 @@ pub async fn list_sessions(
         .into_iter()
         .map(|si| {
             let created = if si.created_at_unix > 0 {
-                DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp_opt(si.created_at_unix, 0).unwrap_or_else(|| NaiveDateTime::from_timestamp(0, 0)), Utc)
+                // Use the TimeZone::timestamp_opt API which returns a LocalResult.
+                // Prefer `.single()` to get an Option<DateTime<Utc>> and fall back to now if invalid.
+                Utc.timestamp_opt(si.created_at_unix, 0)
+                    .single()
+                    .unwrap_or_else(|| Utc::now())
             } else {
                 Utc::now()
             };

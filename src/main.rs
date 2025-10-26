@@ -91,9 +91,9 @@ async fn init_config_and_db() -> Result<(AppConfig, PgPool)> {
     Ok((config, pool))
 }
 
-fn init_session_store() -> Arc<dyn SessionRevocationStore> {
+fn init_session_store(config: &AppConfig) -> Arc<dyn SessionRevocationStore> {
     if let Ok(redis_url) = std::env::var("REDIS_URL") {
-        match RedisSessionRevocationStore::from_url(&redis_url) {
+        match RedisSessionRevocationStore::from_url_with_options(&redis_url, config.redis_used_nonce_ttl_secs(), config.redis_preload_cas_script()) {
             Ok(store) => Arc::new(store),
             Err(err) => {
                 tracing::error!(error = %err, "failed to initialise redis session store, falling back to in-memory store");
@@ -127,7 +127,7 @@ fn build_services_and_state(
     let audit_log_repo: Arc<dyn mokkan_core::domain::audit::repository::AuditLogRepository> =
         Arc::new(PostgresAuditLogRepository::new(pool.clone()));
 
-    let session_store = init_session_store();
+    let session_store = init_session_store(config);
 
     let services = Arc::new(ApplicationServices::new(
         Arc::clone(&user_repo),

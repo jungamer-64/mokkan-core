@@ -25,3 +25,14 @@ Notes
 
 - The test performs a quick PING to the configured Redis endpoint and will skip itself when
   Redis is not available. This keeps CI and local runs flexible.
+
+Configuration
+
+- `REDIS_URL`: connection URL used by the tests (default: `redis://127.0.0.1:6379`).
+- `REDIS_USED_NONCE_TTL_SECS`: TTL (in seconds) for the "used refresh nonce" markers created when
+  refresh tokens are rotated. Defaults to 604800 (7 days). You can set this to a smaller value for
+  local testing or a longer retention period in production.
+- `REDIS_PRELOAD_CAS_SCRIPT`: when set to `1` or `true`, the application will attempt to `SCRIPT LOAD`
+  the CAS Lua script at startup to avoid first-request latency caused by `SCRIPT LOAD` on demand.
+  Note: preloading runs in a background task and requires a Tokio runtime (the store constructor will
+  still succeed if preloading fails).

@@ -9,6 +9,9 @@ pub struct AppConfig {
     biscuit_private_key: String,
     token_ttl: Duration,
     allowed_origins: Vec<String>,
+    // Redis-related runtime options
+    redis_used_nonce_ttl_secs: usize,
+    redis_preload_cas_script: bool,
 }
 
 #[derive(Debug, Error)]
@@ -63,12 +66,24 @@ impl AppConfig {
             .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
             .unwrap_or_else(default_allowed_origins);
 
+        let redis_used_nonce_ttl_secs = env::var("REDIS_USED_NONCE_TTL_SECS")
+            .ok()
+            .and_then(|v| v.parse::<usize>().ok())
+            .unwrap_or(60 * 60 * 24 * 7);
+
+        let redis_preload_cas_script = env::var("REDIS_PRELOAD_CAS_SCRIPT")
+            .ok()
+            .map(|v| v == "1" || v.to_lowercase() == "true")
+            .unwrap_or(false);
+
         Ok(Self {
             database_url,
             listen_addr,
             biscuit_private_key,
             token_ttl: Duration::from_secs(token_ttl_secs),
             allowed_origins,
+            redis_used_nonce_ttl_secs,
+            redis_preload_cas_script,
         })
     }
 
@@ -100,5 +115,15 @@ impl AppConfig {
             .ok()
             .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
             .unwrap_or_else(default_allowed_origins)
+    }
+
+    /// TTL for used refresh nonces (seconds)
+    pub fn redis_used_nonce_ttl_secs(&self) -> usize {
+        self.redis_used_nonce_ttl_secs
+    }
+
+    /// Whether to attempt preloading CAS lua scripts at startup
+    pub fn redis_preload_cas_script(&self) -> bool {
+        self.redis_preload_cas_script
     }
 }

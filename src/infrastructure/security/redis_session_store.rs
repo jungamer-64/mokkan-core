@@ -5,24 +5,182 @@ use crate::application::ports::session_revocation::SessionRevocationStore;
 use async_trait::async_trait;
 use deadpool_redis::{Config as DeadpoolConfig, Pool, Runtime};
 use redis::AsyncCommands;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 // TTL for used refresh-nonce markers (in seconds). 7 days by default.
 const USED_NONCE_TTL_SECS: usize = 60 * 60 * 24 * 7; // 604800
 
+// Lua script used to atomically rotate the refresh nonce and mark the old
+// nonce as used (with a TTL). Extracted as a constant so helpers can reuse
+// it without inflating function bodies (also helps with Lizard line-count).
+const CAS_LUA_SCRIPT: &str = r#"
+    local cur = redis.call('GET', KEYS[1])
+    if cur == ARGV[1] then
+        redis.call('SET', KEYS[1], ARGV[2])
+        redis.call('SET', KEYS[2], 1)
+        redis.call('EXPIRE', KEYS[2], ARGV[3])
+        return 1
+    else
+        return 0
+    end
+"#;
+
 #[derive(Clone)]
 pub struct RedisSessionRevocationStore {
     pool: Pool,
+    /// Cached SHA for the compare-and-swap lua script. Loaded lazily.
+    cas_script_sha: Arc<Mutex<Option<String>>>,
+    /// TTL for used refresh nonce markers (seconds). Configurable via env REDIS_USED_NONCE_TTL_SECS.
+    used_nonce_ttl_secs: usize,
 }
 
 impl RedisSessionRevocationStore {
     /// Create a new Redis backed session store from a redis URL (e.g. redis://:password@host:6379/0)
     pub fn from_url(url: &str) -> Result<Self, ApplicationError> {
+        // Delegate to the options based constructor using environment defaults.
+        let used_nonce_ttl_secs = std::env::var("REDIS_USED_NONCE_TTL_SECS")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(USED_NONCE_TTL_SECS);
+
+        let preload = std::env::var("REDIS_PRELOAD_CAS_SCRIPT").map(|v| v == "1" || v.to_lowercase() == "true").unwrap_or(false);
+
+        Self::from_url_with_options(url, used_nonce_ttl_secs, preload)
+    }
+
+    /// Create a RedisSessionRevocationStore from a URL but allow configuration of
+    /// the used-nonce TTL and whether to preload the CAS script at startup.
+    pub fn from_url_with_options(
+        url: &str,
+        used_nonce_ttl_secs: usize,
+        preload_cas_script: bool,
+    ) -> Result<Self, ApplicationError> {
         let cfg = DeadpoolConfig::from_url(url);
         let pool = cfg
             .create_pool(Some(Runtime::Tokio1))
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        Ok(Self { pool })
+        let store = Self { pool: pool.clone(), cas_script_sha: Arc::new(Mutex::new(None)), used_nonce_ttl_secs };
+
+        if preload_cas_script {
+            let pool_clone = pool.clone();
+            let sha_clone = store.cas_script_sha.clone();
+            tokio::spawn(async move {
+                if let Ok(mut conn) = pool_clone.get().await {
+                    match redis::cmd("SCRIPT").arg("LOAD").arg(CAS_LUA_SCRIPT).query_async::<_, String>(&mut conn).await {
+                        Ok(sha) => {
+                            let mut g = sha_clone.lock().await;
+                            *g = Some(sha);
+                            tracing::info!("preloaded redis CAS lua script");
+                        }
+                        Err(err) => tracing::warn!(error = %err, "failed to preload redis CAS lua script"),
+                    }
+                }
+            });
+        }
+
+        Ok(store)
+    }
+
+    /// Helper that executes the CAS lua script using a cached SHA when possible.
+    /// Loads the script (SCRIPT LOAD) on first use or when a NOSCRIPT is returned.
+    pub async fn run_cas_script(
+        &self,
+        key: &str,
+        used_key: &str,
+        expected: &str,
+        new_nonce: &str,
+    ) -> ApplicationResult<i32> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        // 1) Try using the cached SHA (if present). This helper will clear the
+        // cached value on NOSCRIPT and return None so we can fall back.
+        if let Some(v) = self.try_cached_eval(&mut conn, key, used_key, expected, new_nonce).await? {
+            return Ok(v);
+        }
+
+        // 2) Load the script and cache the SHA, then evaluate with the loaded SHA.
+        let sha = self.load_script_and_cache(&mut conn).await?;
+        let replaced = self.evalsha_by_sha(&mut conn, &sha, key, used_key, expected, new_nonce).await?;
+        Ok(replaced)
+    }
+
+    async fn try_cached_eval(
+        &self,
+        conn: &mut redis::aio::Connection,
+        key: &str,
+        used_key: &str,
+        expected: &str,
+        new_nonce: &str,
+    ) -> ApplicationResult<Option<i32>> {
+        let mut sha_guard = self.cas_script_sha.lock().await;
+        if let Some(sha) = sha_guard.clone() {
+            let res: Result<i32, redis::RedisError> = redis::cmd("EVALSHA")
+                .arg(sha)
+                .arg(2)
+                .arg(key)
+                .arg(used_key)
+                .arg(expected)
+                .arg(new_nonce)
+                .arg(self.used_nonce_ttl_secs)
+                .query_async(conn)
+                .await;
+
+            match res {
+                Ok(v) => return Ok(Some(v)),
+                Err(err) => {
+                    let msg = err.to_string();
+                    if msg.contains("NOSCRIPT") {
+                        *sha_guard = None;
+                        return Ok(None);
+                    } else {
+                        return Err(ApplicationError::infrastructure(err.to_string()));
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    async fn load_script_and_cache(&self, conn: &mut redis::aio::Connection) -> ApplicationResult<String> {
+        let loaded_sha: String = redis::cmd("SCRIPT")
+            .arg("LOAD")
+            .arg(CAS_LUA_SCRIPT)
+            .query_async(conn)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let mut sha_guard = self.cas_script_sha.lock().await;
+        *sha_guard = Some(loaded_sha.clone());
+        Ok(loaded_sha)
+    }
+
+    async fn evalsha_by_sha(
+        &self,
+        conn: &mut redis::aio::Connection,
+        sha: &str,
+        key: &str,
+        used_key: &str,
+        expected: &str,
+        new_nonce: &str,
+    ) -> ApplicationResult<i32> {
+        let replaced: i32 = redis::cmd("EVALSHA")
+            .arg(sha)
+            .arg(2)
+            .arg(key)
+            .arg(used_key)
+            .arg(expected)
+            .arg(new_nonce)
+            .arg(self.used_nonce_ttl_secs)
+            .query_async(conn)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        Ok(replaced)
     }
 }
 
@@ -121,46 +279,17 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         expected: &str,
         new_nonce: &str,
     ) -> ApplicationResult<bool> {
-        let mut conn = self
-            .pool
-            .get()
-            .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
-
         let key = format!("session_refresh_nonce:{}", session_id);
-        // used-nonce key for the presented (expected) nonce. We set this when a
-        // successful rotation occurs so that later reuse can be detected.
         let used_key = format!("used_refresh_nonce:{}:{}", session_id, expected);
 
-        // Lua script: Atomically compares the current session refresh nonce with the expected value.
-        // If equal, replaces it with the new nonce, marks the presented nonce as used (with TTL), and returns 1.
-        // Otherwise, returns 0. The TTL for the used nonce marker is provided as ARGV[3].
-        let script = r#"
-            local cur = redis.call('GET', KEYS[1])
-            if cur == ARGV[1] then
-                redis.call('SET', KEYS[1], ARGV[2])
-                redis.call('SET', KEYS[2], 1)
-                redis.call('EXPIRE', KEYS[2], ARGV[3])
-                return 1
-            else
-                return 0
-            end
-        "#;
-
-        let replaced: i32 = redis::cmd("EVAL")
-            .arg(script)
-            .arg(2)
-            .arg(&key)
-            .arg(&used_key)
-            .arg(expected)
-            .arg(new_nonce)
-            .arg(USED_NONCE_TTL_SECS)
-            .query_async(&mut conn)
-            .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        let replaced = self
+            .run_cas_script(&key, &used_key, expected, new_nonce)
+            .await?;
 
         Ok(replaced == 1)
     }
+
+    
 
     async fn mark_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<()> {
         let mut conn = self
@@ -178,7 +307,7 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         // high-level helper and to use the shared TTL constant.
         let _: i32 = redis::cmd("EXPIRE")
             .arg(&used_key)
-            .arg(USED_NONCE_TTL_SECS)
+            .arg(self.used_nonce_ttl_secs)
             .query_async(&mut conn)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;

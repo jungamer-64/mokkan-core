@@ -1,4 +1,4 @@
-name: Redis integration tests
+name: Redis Integration Tests
 
 on:
   push:
@@ -7,12 +7,13 @@ on:
     branches: [ master ]
 
 jobs:
-  test-redis:
-    name: Redis integration tests
+  redis-tests:
+    name: Redis Integration & E2E Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       redis:
-        image: redis:7
+        image: redis:7-alpine
         ports:
           - 6379:6379
         options: >-
@@ -22,20 +23,23 @@ jobs:
           --health-retries 5
     env:
       REDIS_URL: redis://127.0.0.1:6379
+      REDIS_USED_NONCE_TTL_SECS: 604800
+      REDIS_PRELOAD_CAS_SCRIPT: "true"
+      CARGO_TERM_COLOR: always
+
     steps:
       - name: Checkout
-        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955
+        uses: actions/checkout@v4
 
-      - name: Setup Rust (install if missing)
-        run: |
-          if ! command -v rustc > /dev/null; then
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-            echo "source $HOME/.cargo/env" >> $GITHUB_ENV
-          fi
-          rustup default stable
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
 
       - name: Cache cargo
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
@@ -45,31 +49,38 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Show Rust version
-        run: rustc --version
+      - name: Wait for Redis
+        run: |
+          for i in {1..30}; do
+            if redis-cli -h 127.0.0.1 ping | grep -q PONG; then
+              echo "Redis is up"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Redis did not start" && exit 1
 
-      - name: Run Redis integration tests (capture logs)
+      - name: Run Redis E2E tests
         run: |
           set -o pipefail
-          # Run both Redis-backed e2e tests and capture logs into a single file
           cargo test --test e2e_refresh_rotation_redis -- --nocapture 2>&1 | tee redis-test.log
           cargo test --test e2e_refresh_reuse_redis -- --nocapture 2>&1 | tee -a redis-test.log
 
-      - name: Upload Redis test logs
+      - name: Upload Redis logs
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@v4
         with:
           name: redis-test-log
           path: redis-test.log
 
-      - name: Run full test suite (capture logs)
+      - name: Run full test suite
         run: |
           set -o pipefail
           cargo test --all --jobs 2 2>&1 | tee full-test.log
 
       - name: Upload full test logs
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@v4
         with:
           name: full-test-log
           path: full-test.log
