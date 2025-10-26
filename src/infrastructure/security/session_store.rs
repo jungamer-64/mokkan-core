@@ -124,9 +124,10 @@ impl SessionRevocationStore for InMemorySessionRevocationStore {
             }
         };
 
-        for sid in sessions {
+        // Batch-insert into the revoked set while holding the lock only once.
+        if !sessions.is_empty() {
             let mut revoked_guard = self.revoked.lock().unwrap();
-            revoked_guard.insert(sid);
+            revoked_guard.extend(sessions.into_iter());
         }
 
         Ok(())

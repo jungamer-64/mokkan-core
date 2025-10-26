@@ -15,6 +15,32 @@ pub struct Authenticated(pub AuthenticatedUser);
 #[derive(Debug, Clone)]
 pub struct MaybeAuthenticated(pub Option<AuthenticatedUser>);
 
+// Validate that the authenticated user/session is not revoked and that the
+// token version in the token is greater-or-equal to the user's minimum
+// allowed token version. This centralizes the logic used by both the
+// `Authenticated` and `MaybeAuthenticated` extractors.
+async fn validate_not_revoked(app_state: &HttpState, user: &AuthenticatedUser) -> Result<(), HttpError> {
+    // Session-level revocation check
+    if let Some(session_id) = &user.session_id {
+        let session_store = app_state.services.session_revocation_store();
+        if session_store.is_revoked(session_id).await.map_err(HttpError::from_error)? {
+            return Err(HttpError::from_error(ApplicationError::unauthorized("session revoked")));
+        }
+    }
+
+    // Global token-version check
+    if let Some(token_ver) = user.token_version {
+        let session_store = app_state.services.session_revocation_store();
+        if let Some(min_ver) = session_store.get_min_token_version(user.id.into()).await.map_err(HttpError::from_error)? {
+            if token_ver < min_ver {
+                return Err(HttpError::from_error(ApplicationError::unauthorized("token revoked")));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 impl FromRequestParts<()> for Authenticated {
     type Rejection = HttpError;
 
@@ -46,35 +72,8 @@ impl FromRequestParts<()> for Authenticated {
                 .await
                 .map_err(HttpError::from_error)?;
 
-            // Enforce session revocation and minimum token version checks here as
-            // well so that routes which use the `Authenticated` extractor
-            // (instead of the capability middleware) still observe revocation.
-            if let Some(session_id) = &user.session_id {
-                let session_store = app_state.services.session_revocation_store();
-                match session_store.is_revoked(session_id).await {
-                    Ok(true) => {
-                        return Err(HttpError::from_error(ApplicationError::unauthorized("session revoked")));
-                    }
-                    Ok(false) => {}
-                    Err(err) => {
-                        return Err(HttpError::from_error(err));
-                    }
-                }
-            }
-
-            if let Some(token_ver) = user.token_version {
-                let session_store = app_state.services.session_revocation_store();
-                match session_store.get_min_token_version(user.id.into()).await {
-                    Ok(Some(min_ver)) if token_ver < min_ver => {
-                        return Err(HttpError::from_error(ApplicationError::unauthorized("token revoked")));
-                    }
-                    Ok(_) => {}
-                    Err(err) => {
-                        return Err(HttpError::from_error(err));
-                    }
-                }
-            }
-
+            // Validate revocation/token-version using the shared helper
+            validate_not_revoked(&app_state, &user).await?;
             Ok(Self(user))
         }
     }
@@ -103,35 +102,8 @@ impl FromRequestParts<()> for MaybeAuthenticated {
                     .authenticate(token)
                     .await
                     .map_err(HttpError::from_error)?;
-                // Perform the same revocation / token-version checks as in
-                // the strict `Authenticated` extractor so that presence of a
-                // valid token also implies it is not revoked.
-                if let Some(session_id) = &user.session_id {
-                    let session_store = app_state.services.session_revocation_store();
-                    match session_store.is_revoked(session_id).await {
-                        Ok(true) => {
-                            return Err(HttpError::from_error(ApplicationError::unauthorized("session revoked")));
-                        }
-                        Ok(false) => {}
-                        Err(err) => {
-                            return Err(HttpError::from_error(err));
-                        }
-                    }
-                }
-
-                if let Some(token_ver) = user.token_version {
-                    let session_store = app_state.services.session_revocation_store();
-                    match session_store.get_min_token_version(user.id.into()).await {
-                        Ok(Some(min_ver)) if token_ver < min_ver => {
-                            return Err(HttpError::from_error(ApplicationError::unauthorized("token revoked")));
-                        }
-                        Ok(_) => {}
-                        Err(err) => {
-                            return Err(HttpError::from_error(err));
-                        }
-                    }
-                }
-
+                // Validate revocation/token-version using the shared helper
+                validate_not_revoked(&app_state, &user).await?;
                 Ok(Self(Some(user)))
             } else {
                 Ok(Self(None))

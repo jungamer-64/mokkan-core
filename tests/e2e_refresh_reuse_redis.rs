@@ -177,9 +177,19 @@ async fn concurrent_refresh_one_success(svc: Arc<UserCommandService>, token: Str
 #[tokio::test]
 async fn refresh_token_reuse_triggers_revocation_redis() {
     let url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into());
-    sleep(Duration::from_millis(200)).await; // grace for Redis startup
 
-    if !ensure_redis_available(&url).await {
+    // Wait for Redis to become available with a small retry loop. This is
+    // more robust than a single fixed sleep and avoids flaky CI behavior.
+    let mut ready = false;
+    for _ in 0..10 {
+        if ensure_redis_available(&url).await {
+            ready = true;
+            break;
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    if !ready {
         eprintln!("Skipping Redis integration test because Redis is unreachable at {}", url);
         return;
     }

@@ -395,10 +395,9 @@ impl UserCommandService {
             .await?;
 
         if swapped {
-            // mark the presented nonce as used so later reuse can be detected
-            self.session_revocation_store
-                .mark_session_refresh_nonce_used(session_id, expected_nonce)
-                .await?;
+            // CAS succeeded; the store implementations (Redis/InMemory)
+            // already mark the presented nonce as used as part of the
+            // atomic swap, so no-op here.
         } else {
             // CAS failed; check whether this nonce has been used before
             let used = self

@@ -57,28 +57,60 @@ async fn refresh_token_reuse_triggers_revocation_in_memory() {
     users.insert(300, user.clone());
 
     // simple in-memory user repo
-    struct InMemoryUserRepo { inner: std::sync::Mutex<HashMap<i64, User>> }
-    impl InMemoryUserRepo { fn new(users: HashMap<i64, User>) -> Self { Self { inner: std::sync::Mutex::new(users) } } }
+    struct InMemoryUserRepo {
+        inner: std::sync::Mutex<HashMap<i64, User>>,
+    }
+
+    impl InMemoryUserRepo {
+        fn new(users: HashMap<i64, User>) -> Self {
+            Self { inner: std::sync::Mutex::new(users) }
+        }
+    }
 
     #[async_trait]
     impl mokkan_core::domain::user::repository::UserRepository for InMemoryUserRepo {
         async fn count(&self) -> mokkan_core::domain::errors::DomainResult<u64> {
-            let map = self.inner.lock().unwrap(); Ok(map.len() as u64)
+            let map = self.inner.lock().unwrap();
+            Ok(map.len() as u64)
         }
+
         async fn insert(&self, _new_user: mokkan_core::domain::user::entity::NewUser) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User> {
             Err(mokkan_core::domain::errors::DomainError::NotFound("not implemented".into()))
         }
+
         async fn find_by_username(&self, username: &mokkan_core::domain::user::value_objects::Username) -> mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>> {
             let map = self.inner.lock().unwrap();
-            for u in map.values() { if u.username.as_str() == username.as_str() { return Ok(Some(u.clone())); } }
+            for u in map.values() {
+                if u.username.as_str() == username.as_str() {
+                    return Ok(Some(u.clone()));
+                }
+            }
             Ok(None)
         }
+
         async fn find_by_id(&self, id: mokkan_core::domain::user::value_objects::UserId) -> mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>> {
-            let map = self.inner.lock().unwrap(); Ok(map.get(&i64::from(id)).cloned())
+            let map = self.inner.lock().unwrap();
+            Ok(map.get(&i64::from(id)).cloned())
         }
+
         async fn update(&self, update: mokkan_core::domain::user::entity::UserUpdate) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User> {
-            let mut map = self.inner.lock().unwrap(); let id = i64::from(update.id); let user = map.get_mut(&id).ok_or_else(|| mokkan_core::domain::errors::DomainError::NotFound("user not found".into()))?; if let Some(is_active) = update.is_active { user.is_active = is_active; } if let Some(role) = update.role { user.role = role; } if let Some(password_hash) = update.password_hash { user.password_hash = password_hash; } Ok(user.clone())
+            let mut map = self.inner.lock().unwrap();
+            let id = i64::from(update.id);
+            let user = map.get_mut(&id).ok_or_else(|| mokkan_core::domain::errors::DomainError::NotFound("user not found".into()))?;
+
+            if let Some(is_active) = update.is_active {
+                user.is_active = is_active;
+            }
+            if let Some(role) = update.role {
+                user.role = role;
+            }
+            if let Some(password_hash) = update.password_hash {
+                user.password_hash = password_hash;
+            }
+
+            Ok(user.clone())
         }
+
         async fn list_page(&self, _limit: u32, _cursor: Option<mokkan_core::domain::user::value_objects::UserListCursor>, _search: Option<&str>) -> mokkan_core::domain::errors::DomainResult<(Vec<mokkan_core::domain::user::entity::User>, Option<mokkan_core::domain::user::value_objects::UserListCursor>)> {
             Ok((vec![], None))
         }

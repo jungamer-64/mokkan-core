@@ -6,6 +6,9 @@ use async_trait::async_trait;
 use deadpool_redis::{Config as DeadpoolConfig, Pool, Runtime};
 use redis::AsyncCommands;
 
+// TTL for used refresh-nonce markers (in seconds). 7 days by default.
+const USED_NONCE_TTL_SECS: usize = 60 * 60 * 24 * 7; // 604800
+
 #[derive(Clone)]
 pub struct RedisSessionRevocationStore {
     pool: Pool,
@@ -131,13 +134,16 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
 
         // Lua script: compare current value with expected, if equal set to new,
         // set the used marker and expire it, and return 1; else return 0.
-        // TTL for used markers: 7 days (604800 seconds).
+        // Lua script: compare current value with expected, if equal replace
+        // and mark the presented nonce as used (with TTL). The TTL is
+        // provided as ARGV[3] so it can be kept consistent with other
+        // calls.
         let script = r#"
             local cur = redis.call('GET', KEYS[1])
             if cur == ARGV[1] then
                 redis.call('SET', KEYS[1], ARGV[2])
                 redis.call('SET', KEYS[2], 1)
-                redis.call('EXPIRE', KEYS[2], 604800)
+                redis.call('EXPIRE', KEYS[2], ARGV[3])
                 return 1
             else
                 return 0
@@ -151,6 +157,7 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
             .arg(&used_key)
             .arg(expected)
             .arg(new_nonce)
+            .arg(USED_NONCE_TTL_SECS)
             .query_async(&mut conn)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
@@ -166,15 +173,15 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
         let used_key = format!("used_refresh_nonce:{}:{}", session_id, nonce);
-        // default TTL: 7 days
+        // default TTL
         conn.set::<_, _, ()>(&used_key, 1)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
         // Use explicit EXPIRE command to avoid type inference issues with the
-        // high-level helper.
+        // high-level helper and to use the shared TTL constant.
         let _ : i32 = redis::cmd("EXPIRE")
             .arg(&used_key)
-            .arg(604800)
+            .arg(USED_NONCE_TTL_SECS)
             .query_async(&mut conn)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
@@ -252,16 +259,24 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
+        if sessions.is_empty() {
+            return Ok(());
+        }
+
+        // Pipeline the SET (revoked) commands and a DEL of the set key to
+        // reduce round-trips. Using a pipeline here improves performance when
+        // users have many active sessions.
+        let mut pipe = redis::pipe();
         for sid in sessions.iter() {
             let rkey = format!("revoked:session:{}", sid);
-            conn.set::<_, _, ()>(rkey, 1)
-                .await
-                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
-            // remove from set
-            conn.srem::<_, _, ()>(&key, sid)
-                .await
-                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            pipe.set(rkey, 1).ignore();
         }
+        // Remove the user_sessions set in one call
+        pipe.del(&key);
+
+        pipe.query_async::<_, ()>(&mut conn)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
         Ok(())
     }
