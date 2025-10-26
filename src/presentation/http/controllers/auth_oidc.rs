@@ -4,7 +4,6 @@ use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use utoipa::ToSchema;
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct TokenRequest {
@@ -99,4 +98,19 @@ pub async fn authorize(
     Extension(_state): Extension<HttpState>,
 ) -> HttpResult<Json<JsonValue>> {
     Ok(Json(serde_json::json!({"message":"authorization endpoint not implemented"})))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/authorize",
+    responses(
+        (status = 200, description = "Authorization endpoint (placeholder).", body = crate::presentation::http::openapi::StatusResponse),
+    ),
+    security([]),
+    tag = "Auth"
+)]
+pub async fn authorize_openapi_stub(
+    Extension(_state): Extension<HttpState>,
+) -> HttpResult<Json<crate::presentation::http::openapi::StatusResponse>> {
+    Ok(Json(crate::presentation::http::openapi::StatusResponse { status: "not_implemented".into() }))
 }

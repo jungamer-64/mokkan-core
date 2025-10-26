@@ -30,7 +30,8 @@ async fn e2e_create_article_forbidden_returns_403() {
     let req = Request::builder()
         .method(Method::POST)
         .uri("/api/v1/articles")
-        .header(AUTHORIZATION, "Bearer test-token")
+        // Use a token that represents an author with no capabilities in the test mocks
+        .header(AUTHORIZATION, "Bearer no-audit")
         .header("content-type", "application/json")
         .body(Body::from(body))
         .unwrap();

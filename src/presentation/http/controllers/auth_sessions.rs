@@ -3,7 +3,6 @@ use crate::presentation::http::state::HttpState;
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::Authenticated;
 use axum::{Extension, Json, extract::Path};
-use utoipa::ToSchema;
 use chrono::{Utc, TimeZone};
 
 #[utoipa::path(

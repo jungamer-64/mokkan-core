@@ -15,10 +15,7 @@ use axum::{
     Extension, Json,
     extract::{Path, Query},
 };
-use chrono::{Utc, TimeZone};
 use serde_json::Value as JsonValue;
-use serde::{Deserialize, Serialize};
-use utoipa::IntoParams;
 use crate::presentation::http::controllers::user_requests::{
     RegisterRequest, LoginRequest, RefreshTokenRequest, LoginResponse,
     ListUsersParams, UpdateUserRequest, ChangePasswordRequest, GrantRoleRequest,

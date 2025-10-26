@@ -4,7 +4,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::time::{sleep, Duration};
 use std::env;
-use redis::AsyncCommands;
 
 mod support;
 
@@ -42,19 +41,73 @@ impl mokkan_core::application::ports::security::TokenManager for FakeTokenManage
     }
 }
 
-#[tokio::test]
-async fn refresh_token_single_use_with_redis_store() {
-    // Use REDIS_URL env if set, otherwise default to localhost:6379
-    let url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into());
+// A simple in-memory user repo used by the Redis integration test. Kept at
+// module level to avoid long test function bodies and satisfy static analysis
+// metrics.
+struct InMemoryUserRepo {
+    inner: std::sync::Mutex<HashMap<i64, User>>,
+}
 
-    // Give a small grace period in case the test runner starts Redis concurrently
-    sleep(Duration::from_millis(200)).await;
+impl InMemoryUserRepo {
+    fn new(users: HashMap<i64, User>) -> Self {
+        Self { inner: std::sync::Mutex::new(users) }
+    }
+}
 
-    // Quick connectivity check: try a TCP connect to the Redis host:port. If it
-    // fails, skip the test. This avoids depending on a specific redis crate
-    // async API which varies between crate versions.
+#[async_trait]
+impl mokkan_core::domain::user::repository::UserRepository for InMemoryUserRepo {
+    async fn count(&self) -> mokkan_core::domain::errors::DomainResult<u64> {
+        let map = self.inner.lock().unwrap();
+        Ok(map.len() as u64)
+    }
+
+    async fn insert(&self, _new_user: mokkan_core::domain::user::entity::NewUser) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User> {
+        Err(mokkan_core::domain::errors::DomainError::NotFound("not implemented".into()))
+    }
+
+    async fn find_by_username(&self, username: &mokkan_core::domain::user::value_objects::Username) -> mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>> {
+        let map = self.inner.lock().unwrap();
+        for u in map.values() {
+            if u.username.as_str() == username.as_str() {
+                return Ok(Some(u.clone()));
+            }
+        }
+        Ok(None)
+    }
+
+    async fn find_by_id(&self, id: mokkan_core::domain::user::value_objects::UserId) -> mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>> {
+        let map = self.inner.lock().unwrap();
+        Ok(map.get(&i64::from(id)).cloned())
+    }
+
+    async fn update(&self, update: mokkan_core::domain::user::entity::UserUpdate) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User> {
+        let mut map = self.inner.lock().unwrap();
+        let id = i64::from(update.id);
+        let user = map.get_mut(&id).ok_or_else(|| mokkan_core::domain::errors::DomainError::NotFound("user not found".into()))?;
+
+        if let Some(is_active) = update.is_active {
+            user.is_active = is_active;
+        }
+        if let Some(role) = update.role {
+            user.role = role;
+        }
+        if let Some(password_hash) = update.password_hash {
+            user.password_hash = password_hash;
+        }
+
+        Ok(user.clone())
+    }
+
+    async fn list_page(&self, _limit: u32, _cursor: Option<mokkan_core::domain::user::value_objects::UserListCursor>, _search: Option<&str>) -> mokkan_core::domain::errors::DomainResult<(Vec<mokkan_core::domain::user::entity::User>, Option<mokkan_core::domain::user::value_objects::UserListCursor>)> {
+        Ok((vec![], None))
+    }
+}
+
+// Helper to check whether Redis is reachable at the given URL. Kept separate
+// so the test body stays short for static analysis.
+async fn redis_available(url: &str) -> bool {
     let host_port = {
-        let mut s = url.as_str();
+        let mut s = url;
         if let Some(i) = s.find("://") { s = &s[i+3..]; }
         if let Some(i) = s.rfind('/') { s = &s[..i]; }
         if let Some(i) = s.rfind('@') { s = &s[i+1..]; }
@@ -62,15 +115,22 @@ async fn refresh_token_single_use_with_redis_store() {
     };
 
     match tokio::time::timeout(Duration::from_secs(2), tokio::net::TcpStream::connect(host_port.clone())).await {
-        Ok(Ok(_)) => {}
-        Ok(Err(e)) => {
-            eprintln!("Skipping Redis integration test because connection failed: {}", e);
-            return;
-        }
-        Err(_) => {
-            eprintln!("Skipping Redis integration test because connection timed out");
-            return;
-        }
+        Ok(Ok(_)) => true,
+        _ => false,
+    }
+}
+
+#[tokio::test]
+async fn refresh_token_single_use_with_redis_store() {
+    // Use REDIS_URL env if set, otherwise default to localhost:6379
+    let url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".into());
+
+    // Give a small grace period in case the test runner starts Redis concurrently
+    sleep(Duration::from_millis(200)).await;
+    // Quick connectivity check: skip the test if Redis is not reachable.
+    if !redis_available(&url).await {
+        eprintln!("Skipping Redis integration test because Redis is not reachable");
+        return;
     }
 
     // Build a Redis-backed session revocation store
@@ -92,64 +152,7 @@ async fn refresh_token_single_use_with_redis_store() {
     users.insert(200, user.clone());
 
     // A simple in-memory user repo for this test
-    struct InMemoryUserRepo {
-        inner: std::sync::Mutex<HashMap<i64, User>>,
-    }
-
-    impl InMemoryUserRepo {
-        fn new(users: HashMap<i64, User>) -> Self {
-            Self { inner: std::sync::Mutex::new(users) }
-        }
-    }
-
-    #[async_trait]
-    impl mokkan_core::domain::user::repository::UserRepository for InMemoryUserRepo {
-        async fn count(&self) -> mokkan_core::domain::errors::DomainResult<u64> {
-            let map = self.inner.lock().unwrap();
-            Ok(map.len() as u64)
-        }
-
-        async fn insert(&self, _new_user: mokkan_core::domain::user::entity::NewUser) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User> {
-            Err(mokkan_core::domain::errors::DomainError::NotFound("not implemented".into()))
-        }
-
-        async fn find_by_username(&self, username: &mokkan_core::domain::user::value_objects::Username) -> mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>> {
-            let map = self.inner.lock().unwrap();
-            for u in map.values() {
-                if u.username.as_str() == username.as_str() {
-                    return Ok(Some(u.clone()));
-                }
-            }
-            Ok(None)
-        }
-
-        async fn find_by_id(&self, id: mokkan_core::domain::user::value_objects::UserId) -> mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>> {
-            let map = self.inner.lock().unwrap();
-            Ok(map.get(&i64::from(id)).cloned())
-        }
-
-        async fn update(&self, update: mokkan_core::domain::user::entity::UserUpdate) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User> {
-            let mut map = self.inner.lock().unwrap();
-            let id = i64::from(update.id);
-            let user = map.get_mut(&id).ok_or_else(|| mokkan_core::domain::errors::DomainError::NotFound("user not found".into()))?;
-
-            if let Some(is_active) = update.is_active {
-                user.is_active = is_active;
-            }
-            if let Some(role) = update.role {
-                user.role = role;
-            }
-            if let Some(password_hash) = update.password_hash {
-                user.password_hash = password_hash;
-            }
-
-            Ok(user.clone())
-        }
-
-        async fn list_page(&self, _limit: u32, _cursor: Option<mokkan_core::domain::user::value_objects::UserListCursor>, _search: Option<&str>) -> mokkan_core::domain::errors::DomainResult<(Vec<mokkan_core::domain::user::entity::User>, Option<mokkan_core::domain::user::value_objects::UserListCursor>)> {
-            Ok((vec![], None))
-        }
-    }
+    // InMemoryUserRepo is defined below at module-level to keep this test function short.
 
     let repo: Arc<dyn mokkan_core::domain::user::repository::UserRepository> = Arc::new(InMemoryUserRepo::new(users));
     let password_hasher: Arc<dyn mokkan_core::application::ports::security::PasswordHasher> = Arc::new(support::mocks::DummyPasswordHasher);
