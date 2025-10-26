@@ -97,6 +97,7 @@ fn auth_routes() -> Router {
         .route("/api/v1/auth/login", post(auth::login))
     .route("/api/v1/auth/authorize", get(auth_oidc::authorize))
     .route("/api/v1/auth/introspect", post(auth_oidc::introspect))
+    .route("/api/v1/auth/token", post(auth_oidc::token))
     .route("/api/v1/auth/revoke", post(auth_oidc::revoke))
         .route("/api/v1/auth/logout", post(auth::logout))
         .route("/api/v1/auth/refresh", post(auth::refresh_token))

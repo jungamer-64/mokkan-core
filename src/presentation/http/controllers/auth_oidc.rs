@@ -1,13 +1,67 @@
 // src/presentation/http/controllers/auth_oidc.rs
 use crate::presentation::http::state::HttpState;
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
-use axum::{Extension, Json};
+use axum::{Extension, Json, extract::Query};
+use crate::presentation::http::extractors::MaybeAuthenticated;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use chrono::Utc;
+use uuid::Uuid;
+use crate::application::ports::authorization_code::AuthorizationCode;
+use crate::application::dto::TokenSubject;
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct TokenRequest {
     pub token: String,
+}
+
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct TokenExchangeRequest {
+    pub grant_type: String,
+    pub code: Option<String>,
+    pub redirect_uri: Option<String>,
+    pub code_verifier: Option<String>,
+    pub client_id: Option<String>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/token",
+    request_body = TokenExchangeRequest,
+    responses(
+        (status = 200, description = "Tokens issued", body = crate::application::dto::AuthTokenDto),
+        (status = 400, description = "Bad request", body = crate::presentation::http::error::ErrorResponse),
+    ),
+    security([]),
+    tag = "Auth"
+)]
+pub async fn token(
+    Extension(state): Extension<HttpState>,
+    Json(payload): Json<TokenExchangeRequest>,
+) -> HttpResult<Json<crate::application::dto::AuthTokenDto>> {
+    if payload.grant_type != "authorization_code" {
+        return Err(crate::presentation::http::error::HttpError::from_error(
+            crate::application::error::ApplicationError::validation("unsupported grant_type"),
+        ));
+    }
+
+    let code = payload.code.as_deref().ok_or_else(|| {
+        crate::presentation::http::error::HttpError::from_error(
+            crate::application::error::ApplicationError::validation("code required"),
+        )
+    })?;
+
+    let token = state
+        .services
+        .exchange_authorization_code(
+            code,
+            payload.code_verifier.as_deref(),
+            payload.redirect_uri.as_deref(),
+        )
+        .await
+        .into_http()?;
+
+    Ok(Json(token))
 }
 
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -94,10 +148,128 @@ pub async fn revoke(
     Ok(Json(crate::presentation::http::openapi::StatusResponse { status: "revoked".into() }))
 }
 
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct AuthorizeRequest {
+    pub response_type: Option<String>,
+    pub client_id: Option<String>,
+    pub redirect_uri: Option<String>,
+    pub scope: Option<String>,
+    pub state: Option<String>,
+    pub code_challenge: Option<String>,
+    pub code_challenge_method: Option<String>,
+    /// For programmatic test flows you can pass consent=approve (otherwise a consent prompt JSON is returned)
+    pub consent: Option<String>,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/authorize",
+    responses(
+        (status = 302, description = "Redirect back to client with authorization code"),
+        (status = 200, description = "Consent required / prompt", body = crate::presentation::http::openapi::StatusResponse),
+        (status = 400, description = "Bad request", body = crate::presentation::http::error::ErrorResponse),
+    ),
+    security([]),
+    tag = "Auth"
+)]
 pub async fn authorize(
-    Extension(_state): Extension<HttpState>,
+    Extension(state): Extension<HttpState>,
+    Query(params): Query<AuthorizeRequest>,
+    MaybeAuthenticated(maybe_user): MaybeAuthenticated,
 ) -> HttpResult<Json<JsonValue>> {
-    Ok(Json(serde_json::json!({"message":"authorization endpoint not implemented"})))
+    // Basic validation
+    if params.response_type.as_deref() != Some("code") {
+        return Err(crate::presentation::http::error::HttpError::from_error(
+            crate::application::error::ApplicationError::validation("unsupported response_type"),
+        ));
+    }
+
+    let user = maybe_user.ok_or_else(|| crate::presentation::http::error::HttpError::from_error(
+        crate::application::error::ApplicationError::unauthorized("login required"),
+    ))?;
+
+    // If consent wasn't explicitly granted, return a minimal consent prompt response so
+    // clients (or a UI) can render a consent screen. For automated tests, client may pass
+    // `consent=approve`.
+    if let Some(prompt) = maybe_consent_prompt(&params, &user) {
+        return Ok(Json(prompt));
+    }
+
+    // Create and persist the authorization code (delegated to helper)
+    let code = create_and_store_code(&state, &user, &params).await.into_http()?;
+
+    // Redirect back to client (per OAuth2). If redirect_uri isn't provided, return the code in JSON.
+    if let Some(redirect) = params.redirect_uri.as_deref() {
+        let uri = build_redirect_uri(redirect, &code, params.state.as_ref());
+        return Ok(Json(serde_json::json!({"redirect": uri})));
+    }
+
+    Ok(Json(serde_json::json!({"code": code, "state": params.state})))
+}
+
+// Helper: create an authorization code and persist it using the configured store.
+async fn create_and_store_code(
+    state: &HttpState,
+    user: &crate::application::dto::AuthenticatedUser,
+    params: &AuthorizeRequest,
+) -> crate::application::ApplicationResult<String> {
+    let code = Uuid::new_v4().to_string();
+    let now = Utc::now();
+    let expires = now + chrono::Duration::minutes(5);
+
+    let subject = TokenSubject::from_authenticated(user);
+
+    let auth_code = AuthorizationCode {
+        code: code.clone(),
+        client_id: params.client_id.clone(),
+        redirect_uri: params.redirect_uri.clone(),
+        subject,
+        scope: params.scope.clone(),
+        code_challenge: params.code_challenge.clone(),
+        code_challenge_method: params.code_challenge_method.clone(),
+        created_at: now,
+        expires_at: expires,
+    };
+
+    state
+        .services
+        .authorization_code_store()
+        .create_code(auth_code)
+        .await?;
+
+    Ok(code)
+}
+
+// Return a consent prompt JSON when consent hasn't been granted yet.
+fn maybe_consent_prompt(
+    params: &AuthorizeRequest,
+    user: &crate::application::dto::AuthenticatedUser,
+) -> Option<JsonValue> {
+    if params.consent.as_deref() != Some("approve") {
+        Some(serde_json::json!({
+            "consent_required": true,
+            "user": { "id": i64::from(user.id), "username": user.username },
+            "scopes": params.scope,
+            "message": "Set consent=approve to grant and receive an authorization code"
+        }))
+    } else {
+        None
+    }
+}
+
+// Build a simple redirect URL (avoid adding a heavy URL parser dependency here).
+fn build_redirect_uri(redirect: &str, code: &str, state: Option<&String>) -> String {
+    let mut uri = redirect.to_string();
+    if uri.contains('?') {
+        uri.push_str(&format!("&code={}", code));
+    } else {
+        uri.push_str(&format!("?code={}", code));
+    }
+    if let Some(s) = state {
+        uri.push_str(&format!("&state={}", s));
+    }
+
+    uri
 }
 
 #[utoipa::path(

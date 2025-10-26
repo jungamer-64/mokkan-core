@@ -52,7 +52,7 @@ pub async fn openid_configuration(
 
     // Map discovery endpoints to our existing (or conventional) routes
     let authorization_endpoint = format!("{}/api/v1/auth/authorize", base);
-    let token_endpoint = format!("{}/api/v1/auth/refresh", base);
+    let token_endpoint = format!("{}/api/v1/auth/token", base);
     let userinfo_endpoint = format!("{}/api/v1/auth/me", base);
     let end_session_endpoint = format!("{}/api/v1/auth/logout", base);
     let jwks_uri = format!("{}/api/v1/auth/keys", base);

@@ -117,15 +117,20 @@ fn make_services(audit_repo: Arc<AuditRepo>) -> Arc<mokkan_core::application::se
         slugger,
     ) = default_dependencies();
 
-    Arc::new(mokkan_core::application::services::ApplicationServices::new(
+    let deps = mokkan_core::application::services::ApplicationDependencies {
         user_repo,
-        article_write,
-        article_read,
-        article_rev,
+        article_write_repo: article_write,
+        article_read_repo: article_read,
+        article_revision_repo: article_rev,
+        audit_log_repo: audit_repo,
+    };
+
+    Arc::new(mokkan_core::application::services::ApplicationServices::new(
+        deps,
         password_hasher,
         token_manager,
         Arc::new(mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new()),
-        audit_repo,
+        Arc::new(mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore::new()),
         clock,
         slugger,
     ))
