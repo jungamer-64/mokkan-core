@@ -25,43 +25,10 @@ pub async fn require_capability(
 
         // Get application state from request extensions
         if let Some(state) = req.extensions().get::<HttpState>() {
-            let manager = state.services.token_manager();
-
-            // Authenticate token
-            match manager.authenticate(token).await {
-                Ok(user) => {
-                    // Session revocation and token-version checks
-                    if let Some(session_id) = &user.session_id {
-                        let session_store = state.services.session_revocation_store();
-                        match session_store.is_revoked(session_id).await {
-                            Ok(true) => {
-                                return HttpError::from_error(ApplicationError::unauthorized("session revoked")).into_response();
-                            }
-                            Ok(false) => {}
-                            Err(err) => {
-                                return HttpError::from_error(err).into_response();
-                            }
-                        }
-                    }
-
-                    if let Some(token_ver) = user.token_version {
-                        let session_store = state.services.session_revocation_store();
-                        match session_store.get_min_token_version(user.id.into()).await {
-                            Ok(Some(min_ver)) if token_ver < min_ver => {
-                                return HttpError::from_error(ApplicationError::unauthorized("token revoked")).into_response();
-                            }
-                            Ok(_) => {}
-                            Err(err) => {
-                                return HttpError::from_error(err).into_response();
-                            }
-                        }
-                    }
-                    if user.has_capability(resource, action) {
-                        // authorized, continue
-                        return next.run(req).await;
-                    } else {
-                        return HttpError::from_error(ApplicationError::forbidden(format!("missing capability {resource}:{action}"))).into_response();
-                    }
+            // Delegate to application services for authentication + authorization
+            match state.services.authenticate_and_authorize(token, resource, action).await {
+                Ok(_user) => {
+                    return next.run(req).await;
                 }
                 Err(err) => {
                     return HttpError::from_error(err).into_response();
