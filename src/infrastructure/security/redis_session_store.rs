@@ -260,18 +260,28 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
             return Ok(());
         }
 
-        // Pipeline the SET (revoked) commands and a DEL of the set key to
-        // reduce round-trips. Using a pipeline here improves performance when
-        // users have many active sessions.
-        let mut pipe = redis::pipe();
-        for sid in sessions.iter() {
-            let rkey = format!("revoked:session:{}", sid);
-            pipe.set(rkey, 1).ignore();
-        }
-        // Remove the user_sessions set in one call
-        pipe.del(&key);
+        // Atomically mark each session revoked and remove the user's session
+        // set using a Lua script. This avoids races and ensures that clients
+        // won't see partially applied state if the process is interrupted.
+        // The script returns the number of sessions processed.
+        let script = r#"
+            local members = redis.call('SMEMBERS', KEYS[1])
+            if next(members) == nil then
+                return 0
+            end
+            for i=1,#members do
+                local sid = members[i]
+                redis.call('SET', 'revoked:session:' .. sid, 1)
+            end
+            redis.call('DEL', KEYS[1])
+            return #members
+        "#;
 
-        pipe.query_async::<_, ()>(&mut conn)
+        let _processed: i32 = redis::cmd("EVAL")
+            .arg(script)
+            .arg(1)
+            .arg(&key)
+            .query_async(&mut conn)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
