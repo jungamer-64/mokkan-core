@@ -132,12 +132,9 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         // successful rotation occurs so that later reuse can be detected.
         let used_key = format!("used_refresh_nonce:{}:{}", session_id, expected);
 
-        // Lua script: compare current value with expected, if equal set to new,
-        // set the used marker and expire it, and return 1; else return 0.
-        // Lua script: compare current value with expected, if equal replace
-        // and mark the presented nonce as used (with TTL). The TTL is
-        // provided as ARGV[3] so it can be kept consistent with other
-        // calls.
+        // Lua script: Atomically compares the current session refresh nonce with the expected value.
+        // If equal, replaces it with the new nonce, marks the presented nonce as used (with TTL), and returns 1.
+        // Otherwise, returns 0. The TTL for the used nonce marker is provided as ARGV[3].
         let script = r#"
             local cur = redis.call('GET', KEYS[1])
             if cur == ARGV[1] then
