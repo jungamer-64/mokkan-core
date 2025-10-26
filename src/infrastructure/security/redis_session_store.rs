@@ -261,26 +261,29 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         }
 
         // Atomically mark each session revoked and remove the user's session
-        // set using a Lua script. This avoids races and ensures that clients
-        // won't see partially applied state if the process is interrupted.
-        // The script returns the number of sessions processed.
+        // set using a Lua script. Instead of re-reading the set server-side
+        // (SMEMBERS), pass the session IDs we already fetched as ARGV to the
+        // script. This avoids a redundant read and keeps the operation atomic.
+        // The script expects the key in KEYS[1] and session IDs in ARGV.
         let script = r#"
-            local members = redis.call('SMEMBERS', KEYS[1])
-            if next(members) == nil then
+            if #ARGV == 0 then
                 return 0
             end
-            for i=1,#members do
-                local sid = members[i]
+            for i=1,#ARGV do
+                local sid = ARGV[i]
                 redis.call('SET', 'revoked:session:' .. sid, 1)
             end
             redis.call('DEL', KEYS[1])
-            return #members
+            return #ARGV
         "#;
 
-        let _processed: i32 = redis::cmd("EVAL")
-            .arg(script)
-            .arg(1)
-            .arg(&key)
+        let mut cmd = redis::cmd("EVAL");
+        cmd.arg(script).arg(1).arg(&key);
+        for sid in &sessions {
+            cmd.arg(sid);
+        }
+
+        let _processed: i32 = cmd
             .query_async(&mut conn)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
