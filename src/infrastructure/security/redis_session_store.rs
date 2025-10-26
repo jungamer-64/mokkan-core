@@ -3,9 +3,10 @@ use crate::application::ApplicationResult;
 use crate::application::error::ApplicationError;
 use crate::application::ports::session_revocation::SessionRevocationStore;
 use async_trait::async_trait;
-use deadpool_redis::{Config as DeadpoolConfig, Pool, Runtime};
+use deadpool_redis::{Config as DeadpoolConfig, Pool, Runtime, Connection};
 use redis::AsyncCommands;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Mutex;
 
 // TTL for used refresh-nonce markers (in seconds). 7 days by default.
@@ -31,6 +32,9 @@ pub struct RedisSessionRevocationStore {
     pool: Pool,
     /// Cached SHA for the compare-and-swap lua script. Loaded lazily.
     cas_script_sha: Arc<Mutex<Option<String>>>,
+    /// Number of times the CAS script was loaded into Redis (SCRIPT LOAD).
+    /// Used by tests to assert EVALSHA caching behavior.
+    script_load_count: Arc<AtomicUsize>,
     /// TTL for used refresh nonce markers (seconds). Configurable via env REDIS_USED_NONCE_TTL_SECS.
     used_nonce_ttl_secs: usize,
 }
@@ -61,14 +65,19 @@ impl RedisSessionRevocationStore {
             .create_pool(Some(Runtime::Tokio1))
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let store = Self { pool: pool.clone(), cas_script_sha: Arc::new(Mutex::new(None)), used_nonce_ttl_secs };
+        let store = Self {
+            pool: pool.clone(),
+            cas_script_sha: Arc::new(Mutex::new(None)),
+            script_load_count: Arc::new(AtomicUsize::new(0)),
+            used_nonce_ttl_secs,
+        };
 
         if preload_cas_script {
             let pool_clone = pool.clone();
             let sha_clone = store.cas_script_sha.clone();
             tokio::spawn(async move {
                 if let Ok(mut conn) = pool_clone.get().await {
-                    match redis::cmd("SCRIPT").arg("LOAD").arg(CAS_LUA_SCRIPT).query_async::<_, String>(&mut conn).await {
+                    match redis::cmd("SCRIPT").arg("LOAD").arg(CAS_LUA_SCRIPT).query_async::<String>(&mut conn).await {
                         Ok(sha) => {
                             let mut g = sha_clone.lock().await;
                             *g = Some(sha);
@@ -112,7 +121,7 @@ impl RedisSessionRevocationStore {
 
     async fn try_cached_eval(
         &self,
-        conn: &mut redis::aio::Connection,
+        conn: &mut Connection,
         key: &str,
         used_key: &str,
         expected: &str,
@@ -147,7 +156,7 @@ impl RedisSessionRevocationStore {
         Ok(None)
     }
 
-    async fn load_script_and_cache(&self, conn: &mut redis::aio::Connection) -> ApplicationResult<String> {
+    async fn load_script_and_cache(&self, conn: &mut Connection) -> ApplicationResult<String> {
         let loaded_sha: String = redis::cmd("SCRIPT")
             .arg("LOAD")
             .arg(CAS_LUA_SCRIPT)
@@ -155,14 +164,22 @@ impl RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
+        // Count the script load for observability/testing.
+        self.script_load_count.fetch_add(1, Ordering::SeqCst);
+
         let mut sha_guard = self.cas_script_sha.lock().await;
         *sha_guard = Some(loaded_sha.clone());
         Ok(loaded_sha)
     }
 
+    /// Return the number of times we've called SCRIPT LOAD (test hook).
+    pub fn script_loads(&self) -> usize {
+        self.script_load_count.load(Ordering::SeqCst)
+    }
+
     async fn evalsha_by_sha(
         &self,
-        conn: &mut redis::aio::Connection,
+        conn: &mut Connection,
         sha: &str,
         key: &str,
         used_key: &str,

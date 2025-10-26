@@ -50,26 +50,25 @@ async fn refresh_token_single_use_with_redis_store() {
     // Give a small grace period in case the test runner starts Redis concurrently
     sleep(Duration::from_millis(200)).await;
 
-    // Quick connectivity check: try a PING to Redis. If it fails, skip the test.
-    match redis::Client::open(url.clone()) {
-        Ok(client) => {
-            let conn_res = client.get_async_connection().await;
-            match conn_res {
-                Ok(mut conn) => {
-                    let ping_res: redis::RedisResult<String> = redis::cmd("PING").query_async(&mut conn).await;
-                    if let Err(e) = ping_res {
-                        eprintln!("Skipping Redis integration test because PING failed: {}", e);
-                        return;
-                    }
-                }
-                Err(e) => {
-                    eprintln!("Skipping Redis integration test because connection failed: {}", e);
-                    return;
-                }
-            }
+    // Quick connectivity check: try a TCP connect to the Redis host:port. If it
+    // fails, skip the test. This avoids depending on a specific redis crate
+    // async API which varies between crate versions.
+    let host_port = {
+        let mut s = url.as_str();
+        if let Some(i) = s.find("://") { s = &s[i+3..]; }
+        if let Some(i) = s.rfind('/') { s = &s[..i]; }
+        if let Some(i) = s.rfind('@') { s = &s[i+1..]; }
+        s.to_string()
+    };
+
+    match tokio::time::timeout(Duration::from_secs(2), tokio::net::TcpStream::connect(host_port.clone())).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(e)) => {
+            eprintln!("Skipping Redis integration test because connection failed: {}", e);
+            return;
         }
-        Err(e) => {
-            eprintln!("Skipping Redis integration test because URL was invalid: {}", e);
+        Err(_) => {
+            eprintln!("Skipping Redis integration test because connection timed out");
             return;
         }
     }

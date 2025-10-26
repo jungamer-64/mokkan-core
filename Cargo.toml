@@ -34,8 +34,8 @@ governor = "0.10"
 httpdate = "1"
 
 # Redis-backed session store
-redis = { version = "0.21", features = ["aio", "tokio-comp"] }
-deadpool-redis = "0.10"
+redis = { version = "0.32", features = ["aio", "tokio-comp"] }
+deadpool-redis = "0.22"
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
 

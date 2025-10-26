@@ -18,4 +18,4 @@
 
 ### 参照
 
-- https://rustsec.org/advisories/RUSTSEC-2023-0071
+- [RUSTSEC-2023-0071 (RustSec advisory)](https://rustsec.org/advisories/RUSTSEC-2023-0071)
