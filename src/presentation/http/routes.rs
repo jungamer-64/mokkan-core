@@ -109,6 +109,18 @@ fn user_routes() -> Router {
             "/api/v1/users/{id}/change-password",
             post(auth::change_password),
         )
+        .route(
+            "/api/v1/users/{id}/grant-role",
+            post(auth::grant_role).layer(axum::middleware::from_fn(
+                move |req, next| require_capabilities::require_capability(req, next, "users", "update"),
+            )),
+        )
+        .route(
+            "/api/v1/users/{id}/revoke-role",
+            post(auth::revoke_role).layer(axum::middleware::from_fn(
+                move |req, next| require_capabilities::require_capability(req, next, "users", "update"),
+            )),
+        )
 }
 
 fn article_routes() -> Router {
