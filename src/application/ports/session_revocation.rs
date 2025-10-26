@@ -1,5 +1,18 @@
 use crate::application::ApplicationResult;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+/// Information about a session stored in the backing store.
+/// `created_at_unix` is seconds since epoch (UTC).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionInfo {
+    pub user_id: i64,
+    pub session_id: String,
+    pub user_agent: Option<String>,
+    pub ip_address: Option<String>,
+    pub created_at_unix: i64,
+    pub revoked: bool,
+}
 
 #[async_trait]
 pub trait SessionRevocationStore: Send + Sync {
@@ -48,6 +61,25 @@ pub trait SessionRevocationStore: Send + Sync {
 
     /// List session ids for a given user.
     async fn list_sessions_for_user(&self, user_id: i64) -> ApplicationResult<Vec<String>>;
+
+    /// List sessions for a given user including stored metadata (user agent, ip, created_at, revoked).
+    async fn list_sessions_for_user_with_meta(&self, user_id: i64) -> ApplicationResult<Vec<SessionInfo>>;
+
+    /// Store or update session metadata. `created_at_unix` is seconds since epoch UTC.
+    async fn set_session_metadata(
+        &self,
+        user_id: i64,
+        session_id: &str,
+        user_agent: Option<&str>,
+        ip_address: Option<&str>,
+        created_at_unix: i64,
+    ) -> ApplicationResult<()>;
+
+    /// Get session metadata for a given session id.
+    async fn get_session_metadata(&self, session_id: &str) -> ApplicationResult<Option<SessionInfo>>;
+
+    /// Delete session metadata (e.g. when a session is removed from the user's list).
+    async fn delete_session_metadata(&self, session_id: &str) -> ApplicationResult<()>;
 
     /// Revoke all sessions for a given user (used when refresh reuse is detected).
     async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()>;

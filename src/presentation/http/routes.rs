@@ -95,6 +95,8 @@ fn auth_routes() -> Router {
         .route("/api/v1/auth/logout", post(auth::logout))
         .route("/api/v1/auth/refresh", post(auth::refresh_token))
         .route("/api/v1/auth/me", get(auth::profile))
+        .route("/api/v1/auth/sessions", get(auth::list_sessions))
+        .route("/api/v1/auth/sessions/{id}", delete(auth::revoke_session))
 }
 
 fn user_routes() -> Router {

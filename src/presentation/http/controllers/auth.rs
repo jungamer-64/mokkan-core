@@ -15,6 +15,7 @@ use axum::{
     Extension, Json,
     extract::{Path, Query},
 };
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde_json::Value as JsonValue;
 use serde::{Deserialize, Serialize};
 use utoipa::IntoParams;
@@ -194,6 +195,95 @@ pub async fn profile(
         .await
         .into_http()
         .map(Json)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/sessions",
+    responses(
+        (status = 200, description = "List of sessions for the current user", body = [crate::application::dto::SessionInfoDto]),
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+    ),
+    security(("bearerAuth" = [])),
+    tag = "Auth"
+)]
+pub async fn list_sessions(
+    Extension(state): Extension<HttpState>,
+    Authenticated(user): Authenticated,
+) -> HttpResult<Json<Vec<crate::application::dto::SessionInfoDto>>> {
+    let store = state.services.session_revocation_store();
+    let infos = store
+        .list_sessions_for_user_with_meta(user.id.into())
+        .await
+        .into_http()?;
+
+    let dtos: Vec<crate::application::dto::SessionInfoDto> = infos
+        .into_iter()
+        .map(|si| {
+            let created = if si.created_at_unix > 0 {
+                DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp_opt(si.created_at_unix, 0).unwrap_or_else(|| NaiveDateTime::from_timestamp(0, 0)), Utc)
+            } else {
+                Utc::now()
+            };
+
+            crate::application::dto::SessionInfoDto {
+                session_id: si.session_id,
+                user_agent: si.user_agent,
+                ip_address: si.ip_address,
+                created_at: created,
+                revoked: si.revoked,
+            }
+        })
+        .collect();
+
+    Ok(Json(dtos))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/auth/sessions/{id}",
+    params(("id" = String, Path, description = "Session identifier")),
+    responses(
+        (status = 200, description = "Session revoked.", body = crate::presentation::http::openapi::StatusResponse),
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+    ),
+    security(("bearerAuth" = [])),
+    tag = "Auth"
+)]
+pub async fn revoke_session(
+    Extension(state): Extension<HttpState>,
+    Authenticated(user): Authenticated,
+    Path(id): Path<String>,
+) -> HttpResult<Json<crate::presentation::http::openapi::StatusResponse>> {
+    let store = state.services.session_revocation_store();
+
+    // Allow owners to revoke their own sessions, or admins with users:update capability
+    let is_owner = {
+        let sessions = store.list_sessions_for_user(user.id.into()).await.into_http()?;
+        sessions.contains(&id)
+    };
+
+    if !is_owner && !user.has_capability("users", "update") {
+        return Err(crate::presentation::http::error::HttpError::from_error(
+            crate::application::error::ApplicationError::forbidden("not authorized to revoke this session"),
+        ));
+    }
+
+    // Revoke the session and remove metadata/association
+    store.revoke(&id).await.into_http()?;
+
+    // If metadata contains owner user_id, remove association there as well.
+    if let Some(meta) = store.get_session_metadata(&id).await.into_http()? {
+        if meta.user_id != 0 {
+            let _ = store.remove_session_for_user(meta.user_id, &id).await;
+        }
+    }
+    let _ = store.delete_session_metadata(&id).await;
+
+    Ok(Json(crate::presentation::http::openapi::StatusResponse { status: "session_revoked".into() }))
 }
 
 #[utoipa::path(

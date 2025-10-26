@@ -243,6 +243,162 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         Ok(members)
     }
 
+    async fn list_sessions_for_user_with_meta(&self, user_id: i64) -> ApplicationResult<Vec<crate::application::ports::session_revocation::SessionInfo>> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let key = format!("user_sessions:{}", user_id);
+        let sessions: Vec<String> = conn
+            .smembers(&key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let mut out = Vec::with_capacity(sessions.len());
+        for sid in sessions {
+            let meta_key = format!("session:meta:{}", sid);
+            // read fields individually to be robust to missing values
+            let ua: Option<String> = conn
+                .hget(&meta_key, "user_agent")
+                .await
+                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            let ip: Option<String> = conn
+                .hget(&meta_key, "ip")
+                .await
+                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            let created_str: Option<String> = conn
+                .hget(&meta_key, "created_at")
+                .await
+                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            let created_at_unix: i64 = created_str
+                .and_then(|s| s.parse::<i64>().ok())
+                .unwrap_or(0);
+
+            let revoked_key = format!("revoked:session:{}", sid);
+            let revoked: bool = conn
+                .exists(&revoked_key)
+                .await
+                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+            out.push(crate::application::ports::session_revocation::SessionInfo {
+                user_id,
+                session_id: sid,
+                user_agent: ua,
+                ip_address: ip,
+                created_at_unix,
+                revoked,
+            });
+        }
+
+        Ok(out)
+    }
+
+    async fn set_session_metadata(
+        &self,
+        user_id: i64,
+        session_id: &str,
+        user_agent: Option<&str>,
+        ip_address: Option<&str>,
+        created_at_unix: i64,
+    ) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let user_sessions_key = format!("user_sessions:{}", user_id);
+        conn.sadd::<_, _, ()>(user_sessions_key, session_id)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let meta_key = format!("session:meta:{}", session_id);
+        // Use a single HSET invocation to reduce branching and RTTs. Store empty string
+        // for optional fields when absent.
+        let ua_val = user_agent.unwrap_or("");
+        let ip_val = ip_address.unwrap_or("");
+
+        let mut cmd = redis::cmd("HSET");
+        cmd.arg(&meta_key)
+            .arg("user_agent")
+            .arg(ua_val)
+            .arg("ip")
+            .arg(ip_val)
+            .arg("created_at")
+            .arg(created_at_unix)
+            .arg("user_id")
+            .arg(user_id);
+
+        let _: i32 = cmd
+            .query_async(&mut conn)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_session_metadata(&self, session_id: &str) -> ApplicationResult<Option<crate::application::ports::session_revocation::SessionInfo>> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let meta_key = format!("session:meta:{}", session_id);
+        // If the meta hash does not exist, return None
+        let exists: bool = conn
+            .exists(&meta_key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        if !exists {
+            return Ok(None);
+        }
+
+        // Retrieve multiple fields at once
+        let (ua, ip, created_opt, user_id_val): (Option<String>, Option<String>, Option<String>, Option<i64>) =
+            conn
+                .hget(&meta_key, ("user_agent", "ip", "created_at", "user_id"))
+                .await
+                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let created_at_unix: i64 = created_opt
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0);
+
+        let revoked_key = format!("revoked:session:{}", session_id);
+        let revoked: bool = conn
+            .exists(&revoked_key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        Ok(Some(crate::application::ports::session_revocation::SessionInfo {
+            user_id: user_id_val.unwrap_or(0),
+            session_id: session_id.to_string(),
+            user_agent: ua,
+            ip_address: ip,
+            created_at_unix,
+            revoked,
+        }))
+    }
+
+    async fn delete_session_metadata(&self, session_id: &str) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let meta_key = format!("session:meta:{}", session_id);
+        let _: () = conn
+            .del(&meta_key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        Ok(())
+    }
+
     async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()> {
         let mut conn = self
             .pool

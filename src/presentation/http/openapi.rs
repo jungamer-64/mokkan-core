@@ -51,6 +51,8 @@ pub struct ArticleListResponse {
     paths(
         crate::presentation::http::controllers::auth::register,
         crate::presentation::http::controllers::auth::login,
+        crate::presentation::http::controllers::auth::list_sessions,
+        crate::presentation::http::controllers::auth::revoke_session,
         crate::presentation::http::controllers::auth::refresh_token,
         crate::presentation::http::controllers::auth::profile,
         crate::presentation::http::controllers::auth::list_users,
@@ -75,6 +77,7 @@ pub struct ArticleListResponse {
             crate::presentation::http::controllers::auth::LoginRequest,
             crate::presentation::http::controllers::auth::LoginResponse,
             crate::presentation::http::controllers::auth::RefreshTokenRequest,
+            crate::application::dto::SessionInfoDto,
             crate::presentation::http::controllers::auth::ListUsersParams,
             crate::presentation::http::controllers::auth::UpdateUserRequest,
             crate::presentation::http::controllers::auth::ChangePasswordRequest,

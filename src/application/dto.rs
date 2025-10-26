@@ -160,6 +160,16 @@ pub struct AuthTokenDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+pub struct SessionInfoDto {
+    pub session_id: String,
+    pub user_agent: Option<String>,
+    pub ip_address: Option<String>,
+    #[serde(with = "serde_time")]
+    pub created_at: DateTime<Utc>,
+    pub revoked: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UserProfileDto {
     pub user: UserDto,
     pub capabilities: Vec<CapabilityView>,
