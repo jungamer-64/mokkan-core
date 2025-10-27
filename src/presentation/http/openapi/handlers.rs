@@ -6,22 +6,24 @@ use axum::{
 
 /// Build a 304 Not Modified response including the current ETag header.
 fn not_modified_response() -> Response {
-    Response::builder()
-        .status(StatusCode::NOT_MODIFIED)
-        .header(header::ETAG, super::openapi_etag())
-        .body(Body::empty())
-        .unwrap()
+    let mut b = Response::builder().status(StatusCode::NOT_MODIFIED);
+    b = b.header(header::ETAG, super::openapi_etag());
+    if let Some(lm) = super::openapi_meta::last_modified_str() {
+        b = b.header(header::LAST_MODIFIED, lm);
+    }
+    b.body(Body::empty()).unwrap()
 }
 
 /// Build a 200 OK response with consistent OpenAPI headers.
 fn ok_response(body: Body) -> Response {
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::ETAG, super::openapi_etag())
-        .header(header::CONTENT_TYPE, super::OPENAPI_CONTENT_TYPE_JSON)
-        .header(header::CONTENT_LENGTH, super::openapi_content_length_str())
-        .body(body)
-        .unwrap()
+    let mut b = Response::builder().status(StatusCode::OK);
+    b = b.header(header::ETAG, super::openapi_etag());
+    b = b.header(header::CONTENT_TYPE, super::OPENAPI_CONTENT_TYPE_JSON);
+    b = b.header(header::CONTENT_LENGTH, super::openapi_content_length_str());
+    if let Some(lm) = super::openapi_meta::last_modified_str() {
+        b = b.header(header::LAST_MODIFIED, lm);
+    }
+    b.body(body).unwrap()
 }
 
 /// GET /openapi.json handler.
