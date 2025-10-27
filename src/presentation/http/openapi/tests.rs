@@ -35,9 +35,32 @@ fn inm_matches_comma_separated_values() {
 }
 
 #[test]
+fn inm_matches_handles_escaped_values() {
+    let mut headers = HeaderMap::new();
+    // INM with a comma-separated list containing an escaped value and another token
+    headers.insert(
+        header::IF_NONE_MATCH,
+        HeaderValue::from_static("W/\"a\\\"b\" , \"other\""),
+    );
+
+    // The actual value (as returned by openapi_etag() style) should match the
+    // first candidate when normalized.
+    assert!(inm_matches(&headers, "\"a\\\"b\""));
+}
+
+#[test]
 fn weak_match_handles_lowercase_prefix() {
     assert!(weak_match(r#"w/\"abc\""#, r#"\"abc\""#));
     assert!(weak_match(r#"\"abc\""#, r#"w/\"abc\""#));
+}
+
+#[test]
+fn weak_match_handles_inner_escaped_quote() {
+    // Two textual representations that should normalize to the same opaque value
+    // - a weak-tag form with an escaped inner quote: W/"a\"b"
+    // - the equivalent strong-tag form: "a\"b"
+    assert!(weak_match("W/\"a\\\"b\"", "\"a\\\"b\""));
+    assert!(weak_match("\"a\\\"b\"", "W/\"a\\\"b\""));
 }
 
 #[tokio::test]

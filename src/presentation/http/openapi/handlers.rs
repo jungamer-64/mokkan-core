@@ -4,7 +4,10 @@ use axum::{
     response::Response,
 };
 
-// Small helper: strip optional weak prefix from a token
+/// Small helper: strip optional weak prefix (`W/` or `w/`) from a token.
+///
+/// Does not alter surrounding quotes — it only removes the weak prefix when
+/// present to simplify downstream normalization.
 fn strip_weak_prefix_str(s: &str) -> &str {
     if s.len() > 2 && (s.starts_with("W/") || s.starts_with("w/")) {
         &s[2..]
@@ -13,7 +16,10 @@ fn strip_weak_prefix_str(s: &str) -> &str {
     }
 }
 
-// Small helper: unescape simple backslash-escapes ("\\" + any char -> that char)
+/// Unescape simple backslash escapes ("\\" + any char -> that char).
+///
+/// This handles common ETag encodings like `\"` -> `"` used in some
+/// header representations.
 fn unescape_simple(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars();
@@ -29,10 +35,11 @@ fn unescape_simple(s: &str) -> String {
     out
 }
 
-// Extract the ETag opaque value from a token, handling an optional weak
-// prefix (W/ or w/), optional surrounding quotes, and simple backslash
-// escapes such as `\"` used in some string representations. This
-// produces a canonical value suitable for semantic comparison.
+/// Extract the ETag opaque value from a token.
+///
+/// Strips an optional weak prefix (`W/`), removes surrounding quotes, and
+/// unescapes simple backslash escapes so that semantically-equal ETags such
+/// as `W/"bar"` and `"bar"` normalize to the same value.
 fn extract_etag_value(token: &str) -> String {
     let t = strip_weak_prefix_str(token).trim();
 
@@ -57,10 +64,16 @@ fn extract_etag_value(token: &str) -> String {
     out
 }
 
+/// Compare two ETag tokens for weak-equivalence. Both inputs are normalized
+/// via `extract_etag_value` before comparison so different textual forms of
+/// the same opaque value compare equal.
 pub fn weak_match(a: &str, b: &str) -> bool {
     extract_etag_value(a) == extract_etag_value(b)
 }
 
+/// Check whether the request `If-None-Match` header matches the `actual`
+/// ETag value. Supports the `*` wildcard and comma-separated candidate
+/// lists. Returns `true` if any candidate weakly matches `actual`.
 pub fn inm_matches(headers: &HeaderMap, actual: &str) -> bool {
     if let Some(v) = headers.get(header::IF_NONE_MATCH)
         && let Ok(sv) = v.to_str()
@@ -78,6 +91,11 @@ pub fn inm_matches(headers: &HeaderMap, actual: &str) -> bool {
     false
 }
 
+/// GET /openapi.json handler.
+///
+/// Honors `If-None-Match` (INM) with precedence over `If-Modified-Since` (IMS)
+/// per RFC. Returns `304 Not Modified` when appropriate or the full JSON
+/// representation with ETag and Content-Length headers.
 pub async fn serve_openapi(headers: HeaderMap) -> Response {
     // If If-None-Match header is present, it takes precedence over
     // If-Modified-Since (RFC): if INM matches -> 304, if INM is present but
@@ -119,6 +137,7 @@ pub async fn serve_openapi(headers: HeaderMap) -> Response {
         .unwrap()
 }
 
+/// HEAD /openapi.json handler. Same semantics as GET but with an empty body.
 pub async fn head_openapi(headers: HeaderMap) -> Response {
     // similar to GET but with no body
     if inm_matches(&headers, super::openapi_etag()) {

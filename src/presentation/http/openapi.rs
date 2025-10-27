@@ -19,12 +19,16 @@ static OPENAPI_CONTENT_LENGTH: OnceLock<usize> = OnceLock::new();
 static OPENAPI_JSON_BYTES: &[u8] = b"{\"openapi\":\"3.0.0\",\"info\":{\"title\":\"mokkan_core\",\"version\":\"0.1.0\"},\"paths\":{}}";
 
 // Minimal OpenAPI JSON bytes used for tests (stable across calls)
+/// Return a reference to the canonical OpenAPI JSON bytes used by the
+/// application and tests. The value is cached in a `OnceLock` so repeated
+/// calls are cheap and return the same `Bytes` instance.
 pub fn openapi_bytes() -> &'static Bytes {
     OPENAPI_BYTES.get_or_init(|| Bytes::from_static(OPENAPI_JSON_BYTES))
 }
 
 pub mod openapi_types;
 pub use openapi_types::{ArticleListResponse, StatusResponse, UserListResponse};
+/// Return the content length (in bytes) of the OpenAPI JSON payload.
 pub fn openapi_content_length() -> usize {
     *OPENAPI_CONTENT_LENGTH.get_or_init(|| openapi_bytes().len())
 }
@@ -84,6 +88,9 @@ pub fn docs_router_with_options(_serve_ui: bool, write_snapshot: bool) -> Router
 /// returned by `openapi_bytes()` to `spec/openapi.json` relative to the
 /// repository root. It returns an std::io::Result so callers can decide how to
 /// react when writing fails.
+/// Write the canonical OpenAPI snapshot to `spec/openapi.json` relative to
+/// the repository root. This is used by CI and local tooling to persist the
+/// generated OpenAPI spec.
 pub fn write_openapi_snapshot() -> std::io::Result<()> {
     let out_path = std::path::Path::new("spec").join("openapi.json");
     if let Some(parent) = out_path.parent() {
