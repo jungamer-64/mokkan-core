@@ -39,7 +39,7 @@ pub(crate) fn compute_simple_etag(b: &Bytes) -> String {
 ///
 /// Does not alter surrounding quotes — it only removes the weak prefix when
 /// present to simplify downstream normalization.
-pub fn strip_weak_prefix_str(s: &str) -> &str {
+pub(crate) fn strip_weak_prefix_str(s: &str) -> &str {
     if s.len() > 2 && (s.starts_with("W/") || s.starts_with("w/")) {
         &s[2..]
     } else {
