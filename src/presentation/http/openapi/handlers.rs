@@ -100,6 +100,20 @@ fn not_modified_response() -> Response {
         .unwrap()
 }
 
+/// Build a 200 OK response with consistent OpenAPI headers.
+fn ok_response(body: Body) -> Response {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::ETAG, super::openapi_etag())
+        .header(header::CONTENT_TYPE, "application/json")
+        .header(
+            header::CONTENT_LENGTH,
+            super::openapi_content_length().to_string(),
+        )
+        .body(body)
+        .unwrap()
+}
+
 /// GET /openapi.json handler.
 ///
 /// Honors `If-None-Match` (INM) with precedence over `If-Modified-Since` (IMS)
@@ -126,16 +140,7 @@ pub async fn serve_openapi(headers: HeaderMap) -> Response {
     }
 
     let bytes = super::openapi_bytes();
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::ETAG, super::openapi_etag())
-        .header(header::CONTENT_TYPE, "application/json")
-        .header(
-            header::CONTENT_LENGTH,
-            super::openapi_content_length().to_string(),
-        )
-        .body(Body::from(bytes.clone()))
-        .unwrap()
+    ok_response(Body::from(bytes.clone()))
 }
 
 /// HEAD /openapi.json handler. Same semantics as GET but with an empty body.
@@ -153,14 +158,5 @@ pub async fn head_openapi(headers: HeaderMap) -> Response {
         return not_modified_response();
     }
 
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::ETAG, super::openapi_etag())
-        .header(header::CONTENT_TYPE, "application/json")
-        .header(
-            header::CONTENT_LENGTH,
-            super::openapi_content_length().to_string(),
-        )
-        .body(Body::empty())
-        .unwrap()
+    ok_response(Body::empty())
 }
