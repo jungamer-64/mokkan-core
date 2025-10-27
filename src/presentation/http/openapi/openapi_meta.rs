@@ -1,5 +1,6 @@
 use axum::http::{HeaderMap, header};
 use bytes::Bytes;
+use std::borrow::Cow;
 use std::sync::OnceLock;
 use std::time::SystemTime;
 
@@ -68,7 +69,7 @@ pub fn unescape_simple(s: &str) -> String {
 /// Strips an optional weak prefix (`W/`), removes surrounding quotes, and
 /// unescapes simple backslash escapes so that semantically-equal ETags such
 /// as `W/\"bar\"` and `\"bar\"` normalize to the same value.
-pub fn extract_etag_value(token: &str) -> String {
+pub fn extract_etag_value(token: &str) -> Cow<'_, str> {
     let t = strip_weak_prefix_str(token).trim();
 
     // if the token is quoted, strip the surrounding quotes before
@@ -79,15 +80,24 @@ pub fn extract_etag_value(token: &str) -> String {
         t
     };
 
-    let mut out = unescape_simple(inner);
+    // Fast path: if there are no backslash escapes we can borrow the slice
+    // directly which avoids allocating a new String in the common case.
+    if !inner.contains('\\') {
+        // If the inner slice itself still has surrounding quotes (possible
+        // when the value was written with escaped quotes), return an owned
+        // stripped string; otherwise borrow.
+        if inner.len() >= 2 && inner.starts_with('"') && inner.ends_with('"') {
+            return Cow::Owned(inner[1..inner.len() - 1].to_string());
+        }
+        return Cow::Borrowed(inner);
+    }
 
-    // If after unescaping we still have surrounding quotes, strip them so
-    // both representations normalize to the same opaque value.
+    // Slow path: unescape into a new String and strip any remaining quotes.
+    let mut out = unescape_simple(inner);
     if out.len() >= 2 && out.starts_with('"') && out.ends_with('"') {
         out = out[1..out.len() - 1].to_string();
     }
-
-    out
+    Cow::Owned(out)
 }
 
 /// Compare two ETag tokens for weak-equivalence. Both inputs are normalized
