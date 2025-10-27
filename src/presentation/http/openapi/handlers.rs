@@ -18,11 +18,8 @@ fn ok_response(body: Body) -> Response {
     Response::builder()
         .status(StatusCode::OK)
         .header(header::ETAG, super::openapi_etag())
-        .header(header::CONTENT_TYPE, "application/json")
-        .header(
-            header::CONTENT_LENGTH,
-            super::openapi_content_length().to_string(),
-        )
+        .header(header::CONTENT_TYPE, super::OPENAPI_CONTENT_TYPE_JSON)
+        .header(header::CONTENT_LENGTH, super::openapi_content_length_str())
         .body(body)
         .unwrap()
 }

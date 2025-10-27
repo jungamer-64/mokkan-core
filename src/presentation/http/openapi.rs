@@ -12,6 +12,10 @@ use std::sync::OnceLock;
 static OPENAPI_BYTES: OnceLock<Bytes> = OnceLock::new();
 static OPENAPI_ETAG: OnceLock<String> = OnceLock::new();
 static OPENAPI_CONTENT_LENGTH: OnceLock<usize> = OnceLock::new();
+static OPENAPI_CONTENT_LENGTH_STR: OnceLock<String> = OnceLock::new();
+
+/// Content-Type used for the OpenAPI JSON representation.
+pub const OPENAPI_CONTENT_TYPE_JSON: &str = "application/json";
 
 // Canonical minimal OpenAPI JSON as a static byte slice so the `openapi_bytes`
 // accessor can stay very small (this also keeps static analysis tools happy).
@@ -30,6 +34,14 @@ pub use openapi_types::{ArticleListResponse, StatusResponse, UserListResponse};
 /// Return the content length (in bytes) of the OpenAPI JSON payload.
 pub fn openapi_content_length() -> usize {
     *OPENAPI_CONTENT_LENGTH.get_or_init(|| openapi_bytes().len())
+}
+
+/// Return a shared string value for the OpenAPI Content-Length header so
+/// callers can pass a &'static str without allocating repeatedly.
+pub fn openapi_content_length_str() -> &'static str {
+    OPENAPI_CONTENT_LENGTH_STR
+        .get_or_init(|| openapi_content_length().to_string())
+        .as_str()
 }
 
 pub fn openapi_etag() -> &'static str {
