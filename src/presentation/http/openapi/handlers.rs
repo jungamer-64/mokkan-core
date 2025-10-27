@@ -91,6 +91,20 @@ pub fn inm_matches(headers: &HeaderMap, actual: &str) -> bool {
     false
 }
 
+/// Check whether the request `If-Modified-Since` header matches the
+/// server's Last-Modified value. Returns `true` when the header is present
+/// and equal to the canonical last-modified string.
+fn ims_matches(headers: &HeaderMap) -> bool {
+    if let Some(v) = headers.get(header::IF_MODIFIED_SINCE) {
+        if let Ok(s) = v.to_str() {
+            if let Some(lm) = super::openapi_meta::last_modified_str() {
+                return s == lm;
+            }
+        }
+    }
+    false
+}
+
 /// Build a 304 Not Modified response including the current ETag header.
 fn not_modified_response() -> Response {
     Response::builder()
@@ -130,11 +144,7 @@ pub async fn serve_openapi(headers: HeaderMap) -> Response {
         // INM present and didn't match: fall-through to return representation
     } else {
         // No INM header: safe to consult If-Modified-Since
-        if let Some(v) = headers.get(header::IF_MODIFIED_SINCE)
-            && let Ok(s) = v.to_str()
-            && let Some(lm) = super::openapi_meta::last_modified_str()
-            && s == lm
-        {
+        if ims_matches(&headers) {
             return not_modified_response();
         }
     }
@@ -150,11 +160,7 @@ pub async fn head_openapi(headers: HeaderMap) -> Response {
         return not_modified_response();
     }
 
-    if let Some(v) = headers.get(header::IF_MODIFIED_SINCE)
-        && let Ok(s) = v.to_str()
-        && let Some(lm) = super::openapi_meta::last_modified_str()
-        && s == lm
-    {
+    if ims_matches(&headers) {
         return not_modified_response();
     }
 
