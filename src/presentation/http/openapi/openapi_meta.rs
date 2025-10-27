@@ -26,6 +26,7 @@ pub fn last_modified_str() -> Option<&'static str> {
 /// minimal to avoid adding dependencies; the resulting hex value is quoted
 /// to be a valid ETag token (e.g. `"abc123"`).
 pub(crate) fn compute_simple_etag(b: &Bytes) -> String {
+    // FNV-1a 64-bit offset basis (see https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function)
     let mut h: u64 = 1469598103934665603u64;
     for &byte in b.iter() {
         h = h.wrapping_mul(1099511628211u64) ^ (byte as u64);
