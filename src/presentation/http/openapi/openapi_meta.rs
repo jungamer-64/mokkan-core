@@ -71,7 +71,7 @@ pub(crate) fn unescape_simple(s: &str) -> String {
 /// Strips an optional weak prefix (`W/`), removes surrounding quotes, and
 /// unescapes simple backslash escapes so that semantically-equal ETags such
 /// as `W/\"bar\"` and `\"bar\"` normalize to the same value.
-pub fn extract_etag_value(token: &str) -> Cow<'_, str> {
+pub(crate) fn extract_etag_value(token: &str) -> Cow<'_, str> {
     let t = strip_weak_prefix_str(token).trim();
 
     // if the token is quoted, strip the surrounding quotes before
