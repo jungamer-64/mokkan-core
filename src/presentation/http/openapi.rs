@@ -38,7 +38,8 @@ pub fn openapi_etag() -> &'static str {
         .as_str()
 }
 pub mod handlers;
-pub use handlers::{head_openapi, inm_matches, serve_openapi, weak_match};
+pub use handlers::{head_openapi, serve_openapi};
+pub use openapi_meta::{inm_matches, weak_match};
 
 /// Minimal docs router used by the application router builder. Tests don't need the UI
 /// served, only that this returns a Router that can be merged.

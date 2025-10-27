@@ -1,3 +1,4 @@
+use axum::http::{HeaderMap, header};
 use bytes::Bytes;
 use std::sync::OnceLock;
 use std::time::SystemTime;
@@ -29,4 +30,102 @@ pub(crate) fn compute_simple_etag(b: &Bytes) -> String {
         h = h.wrapping_mul(1099511628211u64) ^ (byte as u64);
     }
     format!("\"{:x}\"", h)
+}
+
+/// Small helper: strip optional weak prefix (`W/` or `w/`) from a token.
+///
+/// Does not alter surrounding quotes — it only removes the weak prefix when
+/// present to simplify downstream normalization.
+pub fn strip_weak_prefix_str(s: &str) -> &str {
+    if s.len() > 2 && (s.starts_with("W/") || s.starts_with("w/")) {
+        &s[2..]
+    } else {
+        s
+    }
+}
+
+/// Unescape simple backslash escapes ("\\" + any char -> that char).
+///
+/// This handles common ETag encodings like `\"` -> `"` used in some
+/// header representations.
+pub fn unescape_simple(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            if let Some(nc) = chars.next() {
+                out.push(nc);
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Extract the ETag opaque value from a token.
+///
+/// Strips an optional weak prefix (`W/`), removes surrounding quotes, and
+/// unescapes simple backslash escapes so that semantically-equal ETags such
+/// as `W/\"bar\"` and `\"bar\"` normalize to the same value.
+pub fn extract_etag_value(token: &str) -> String {
+    let t = strip_weak_prefix_str(token).trim();
+
+    // if the token is quoted, strip the surrounding quotes before
+    // unescaping; otherwise unescape directly
+    let inner = if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
+        &t[1..t.len() - 1]
+    } else {
+        t
+    };
+
+    let mut out = unescape_simple(inner);
+
+    // If after unescaping we still have surrounding quotes, strip them so
+    // both representations normalize to the same opaque value.
+    if out.len() >= 2 && out.starts_with('"') && out.ends_with('"') {
+        out = out[1..out.len() - 1].to_string();
+    }
+
+    out
+}
+
+/// Compare two ETag tokens for weak-equivalence. Both inputs are normalized
+/// via `extract_etag_value` before comparison so different textual forms of
+/// the same opaque value compare equal.
+pub fn weak_match(a: &str, b: &str) -> bool {
+    extract_etag_value(a) == extract_etag_value(b)
+}
+
+/// Check whether the request `If-None-Match` header matches the `actual`
+/// ETag value. Supports the `*` wildcard and comma-separated candidate
+/// lists. Returns `true` if any candidate weakly matches `actual`.
+pub fn inm_matches(headers: &HeaderMap, actual: &str) -> bool {
+    if let Some(v) = headers.get(header::IF_NONE_MATCH) {
+        if let Ok(sv) = v.to_str() {
+            let s = sv.trim();
+            if s == "*" {
+                return true;
+            }
+            for candidate in s.split(',').map(str::trim) {
+                if weak_match(candidate, actual) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Check whether the request `If-Modified-Since` header matches the
+/// server's Last-Modified value. Returns `true` when present and equal.
+pub fn ims_matches(headers: &HeaderMap) -> bool {
+    if let Some(v) = headers.get(header::IF_MODIFIED_SINCE) {
+        if let Ok(s) = v.to_str() {
+            if let Some(lm) = last_modified_str() {
+                return s == lm;
+            }
+        }
+    }
+    false
 }
