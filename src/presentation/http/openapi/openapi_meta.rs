@@ -51,7 +51,7 @@ pub(crate) fn strip_weak_prefix_str(s: &str) -> &str {
 ///
 /// This handles common ETag encodings like `\"` -> `"` used in some
 /// header representations.
-pub fn unescape_simple(s: &str) -> String {
+pub(crate) fn unescape_simple(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars();
     while let Some(c) = chars.next() {
