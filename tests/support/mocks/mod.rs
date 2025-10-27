@@ -4,13 +4,13 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-pub mod time;
-pub mod security;
+pub mod article_repos;
 pub mod audit;
 pub mod repos;
-pub mod util;
+pub mod security;
+pub mod time;
 pub mod user_repo;
-pub mod article_repos;
+pub mod util;
 
 /* -------------------------------- 後方互換性のための再エクスポート -------------------------------- */
 
@@ -19,8 +19,8 @@ pub use time::fixed_now;
 
 // セキュリティ関連
 pub use security::{
-    DummyPasswordHasher, DummyTokenManager, StrictPasswordHasher,
-    EXPIRED_TOKEN, NO_AUDIT_TOKEN, TEST_TOKEN, SESSION_TOKEN,
+    DummyPasswordHasher, DummyTokenManager, EXPIRED_TOKEN, NO_AUDIT_TOKEN, SESSION_TOKEN,
+    StrictPasswordHasher, TEST_TOKEN,
 };
 
 // 監査ログ関連

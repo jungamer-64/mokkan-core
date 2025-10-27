@@ -6,9 +6,9 @@ use crate::{
         commands::{articles::ArticleCommandService, users::UserCommandService},
         ports::{
             security::{PasswordHasher, TokenManager},
+            session_revocation::SessionRevocationStore,
             time::Clock,
             util::SlugGenerator,
-            session_revocation::SessionRevocationStore,
         },
         queries::{articles::ArticleQueryService, users::UserQueryService},
     },
@@ -21,11 +21,11 @@ use crate::{
     },
 };
 
-use crate::application::error::ApplicationError;
 use crate::application::dto::AuthTokenDto;
+use crate::application::error::ApplicationError;
 use crate::application::ports::authorization_code::AuthorizationCode;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 
 pub struct ApplicationServices {
     pub user_commands: Arc<UserCommandService>,
@@ -34,7 +34,8 @@ pub struct ApplicationServices {
     pub user_queries: Arc<UserQueryService>,
     token_manager: Arc<dyn TokenManager>,
     session_revocation_store: Arc<dyn SessionRevocationStore>,
-    authorization_code_store: Arc<dyn crate::application::ports::authorization_code::AuthorizationCodeStore>,
+    authorization_code_store:
+        Arc<dyn crate::application::ports::authorization_code::AuthorizationCodeStore>,
     audit_log_repo: Arc<dyn crate::domain::audit::repository::AuditLogRepository>,
 }
 
@@ -57,7 +58,9 @@ impl ApplicationServices {
         password_hasher: Arc<dyn PasswordHasher>,
         token_manager: Arc<dyn TokenManager>,
         session_revocation_store: Arc<dyn SessionRevocationStore>,
-        authorization_code_store: Arc<dyn crate::application::ports::authorization_code::AuthorizationCodeStore>,
+        authorization_code_store: Arc<
+            dyn crate::application::ports::authorization_code::AuthorizationCodeStore,
+        >,
         clock: Arc<dyn Clock>,
         slugger: Arc<dyn SlugGenerator>,
     ) -> Self {
@@ -108,7 +111,9 @@ impl ApplicationServices {
         Arc::clone(&self.session_revocation_store)
     }
 
-    pub fn authorization_code_store(&self) -> Arc<dyn crate::application::ports::authorization_code::AuthorizationCodeStore> {
+    pub fn authorization_code_store(
+        &self,
+    ) -> Arc<dyn crate::application::ports::authorization_code::AuthorizationCodeStore> {
         Arc::clone(&self.authorization_code_store)
     }
 
@@ -120,7 +125,8 @@ impl ApplicationServices {
     ) -> crate::application::ApplicationResult<AuthTokenDto> {
         // consume the code (single-use)
         let stored_opt = self.authorization_code_store.consume_code(code).await?;
-        let stored = stored_opt.ok_or_else(|| ApplicationError::validation("invalid or expired code"))?;
+        let stored =
+            stored_opt.ok_or_else(|| ApplicationError::validation("invalid or expired code"))?;
 
         // validate redirect_uri and PKCE using helpers to keep complexity low
         self.validate_redirect_uri(&stored, redirect_uri)?;
@@ -153,7 +159,8 @@ impl ApplicationServices {
         code_verifier: Option<&str>,
     ) -> crate::application::ApplicationResult<()> {
         if let Some(challenge) = stored.code_challenge.as_ref() {
-            let verifier = code_verifier.ok_or_else(|| ApplicationError::validation("code_verifier required"))?;
+            let verifier = code_verifier
+                .ok_or_else(|| ApplicationError::validation("code_verifier required"))?;
             match stored.code_challenge_method.as_deref().unwrap_or("plain") {
                 "S256" | "s256" => {
                     let mut hasher = Sha256::new();
@@ -169,7 +176,11 @@ impl ApplicationServices {
                         return Err(ApplicationError::validation("invalid code_verifier"));
                     }
                 }
-                other => return Err(ApplicationError::validation(format!("unsupported code_challenge_method {other}"))),
+                other => {
+                    return Err(ApplicationError::validation(format!(
+                        "unsupported code_challenge_method {other}"
+                    )));
+                }
             }
         }
 
@@ -250,7 +261,9 @@ impl ApplicationServices {
         if user.has_capability(resource, action) {
             Ok(())
         } else {
-            Err(ApplicationError::forbidden(format!("missing capability {resource}:{action}")))
+            Err(ApplicationError::forbidden(format!(
+                "missing capability {resource}:{action}"
+            )))
         }
     }
 }

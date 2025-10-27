@@ -1,7 +1,7 @@
 // src/application/error.rs
 use crate::domain::errors::DomainError;
-use thiserror::Error;
 use anyhow::Error as AnyhowError;
+use thiserror::Error;
 
 pub type ApplicationResult<T> = Result<T, ApplicationError>;
 

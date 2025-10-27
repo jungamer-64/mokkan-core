@@ -19,7 +19,8 @@ impl mokkan_core::application::ports::security::TokenManager for DummyTokenManag
     async fn issue(
         &self,
         _subject: mokkan_core::application::dto::TokenSubject,
-    ) -> mokkan_core::application::ApplicationResult<mokkan_core::application::dto::AuthTokenDto> {
+    ) -> mokkan_core::application::ApplicationResult<mokkan_core::application::dto::AuthTokenDto>
+    {
         // For tests return a deterministic token payload so exchange flows can be tested
         let now = super::time::fixed_now();
         let expires_at = now + chrono::Duration::hours(1);
@@ -36,15 +37,20 @@ impl mokkan_core::application::ports::security::TokenManager for DummyTokenManag
     async fn authenticate(
         &self,
         token: &str,
-    ) -> mokkan_core::application::ApplicationResult<mokkan_core::application::dto::AuthenticatedUser> {
+    ) -> mokkan_core::application::ApplicationResult<mokkan_core::application::dto::AuthenticatedUser>
+    {
         let now = super::time::fixed_now();
         match token {
             TEST_TOKEN => Ok(admin_audit_user(now)),
             SESSION_TOKEN => Ok(session_user(now)),
             NO_AUDIT_TOKEN => Ok(author_user(now)),
             // Expired tokens should be rejected at authentication time
-            EXPIRED_TOKEN => Err(mokkan_core::application::error::ApplicationError::unauthorized("expired token")),
-            _ => Err(mokkan_core::application::error::ApplicationError::unauthorized("invalid token")),
+            EXPIRED_TOKEN => Err(
+                mokkan_core::application::error::ApplicationError::unauthorized("expired token"),
+            ),
+            _ => Err(
+                mokkan_core::application::error::ApplicationError::unauthorized("invalid token"),
+            ),
         }
     }
 
@@ -59,7 +65,9 @@ fn admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::dto::Authen
     // For tests, treat the admin test-token as having the Admin role's default capabilities
     // plus the audit:read capability so it can access audit endpoints used in tests.
     let mut caps = mokkan_core::domain::user::value_objects::Role::Admin.default_capabilities();
-    caps.insert(mokkan_core::domain::user::value_objects::Capability::new("audit", "read"));
+    caps.insert(mokkan_core::domain::user::value_objects::Capability::new(
+        "audit", "read",
+    ));
 
     mokkan_core::application::dto::AuthenticatedUser {
         id: mokkan_core::domain::user::value_objects::UserId::new(1).expect("invalid user id"),
@@ -91,9 +99,9 @@ fn session_user(now: DateTime<Utc>) -> mokkan_core::application::dto::Authentica
         id: mokkan_core::domain::user::value_objects::UserId::new(4).expect("invalid user id"),
         username: "sessioned".into(),
         role: mokkan_core::domain::user::value_objects::Role::Author,
-        capabilities: HashSet::from([
-            mokkan_core::domain::user::value_objects::Capability::new("articles", "create"),
-        ]),
+        capabilities: HashSet::from([mokkan_core::domain::user::value_objects::Capability::new(
+            "articles", "create",
+        )]),
         issued_at: now,
         expires_at: now + Duration::hours(1),
         session_id: Some("sid-1".into()),
@@ -102,14 +110,16 @@ fn session_user(now: DateTime<Utc>) -> mokkan_core::application::dto::Authentica
 }
 
 #[allow(dead_code)]
-fn expired_admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::dto::AuthenticatedUser {
+fn expired_admin_audit_user(
+    now: DateTime<Utc>,
+) -> mokkan_core::application::dto::AuthenticatedUser {
     mokkan_core::application::dto::AuthenticatedUser {
         id: mokkan_core::domain::user::value_objects::UserId::new(3).expect("invalid user id"),
         username: "expired".into(),
         role: mokkan_core::domain::user::value_objects::Role::Admin,
-        capabilities: HashSet::from([
-            mokkan_core::domain::user::value_objects::Capability::new("audit", "read"),
-        ]),
+        capabilities: HashSet::from([mokkan_core::domain::user::value_objects::Capability::new(
+            "audit", "read",
+        )]),
         issued_at: now - Duration::hours(2),
         expires_at: now - Duration::hours(1),
         session_id: None,
@@ -129,7 +139,11 @@ impl mokkan_core::application::ports::security::PasswordHasher for DummyPassword
         Ok("hash".into())
     }
 
-    async fn verify(&self, _password: &str, _expected_hash: &str) -> mokkan_core::application::ApplicationResult<()> {
+    async fn verify(
+        &self,
+        _password: &str,
+        _expected_hash: &str,
+    ) -> mokkan_core::application::ApplicationResult<()> {
         Ok(())
     }
 }
@@ -144,7 +158,11 @@ impl mokkan_core::application::ports::security::PasswordHasher for StrictPasswor
         Ok(format!("hash::{}", password))
     }
 
-    async fn verify(&self, password: &str, expected_hash: &str) -> mokkan_core::application::ApplicationResult<()> {
+    async fn verify(
+        &self,
+        password: &str,
+        expected_hash: &str,
+    ) -> mokkan_core::application::ApplicationResult<()> {
         if format!("hash::{}", password) == expected_hash {
             Ok(())
         } else {

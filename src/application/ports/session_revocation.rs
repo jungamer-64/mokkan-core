@@ -30,10 +30,17 @@ pub trait SessionRevocationStore: Send + Sync {
     async fn set_min_token_version(&self, user_id: i64, min_version: u32) -> ApplicationResult<()>;
 
     /// Store the current refresh nonce for a session (used for refresh-token rotation).
-    async fn set_session_refresh_nonce(&self, session_id: &str, nonce: &str) -> ApplicationResult<()>;
+    async fn set_session_refresh_nonce(
+        &self,
+        session_id: &str,
+        nonce: &str,
+    ) -> ApplicationResult<()>;
 
     /// Get the current refresh nonce for a session.
-    async fn get_session_refresh_nonce(&self, session_id: &str) -> ApplicationResult<Option<String>>;
+    async fn get_session_refresh_nonce(
+        &self,
+        session_id: &str,
+    ) -> ApplicationResult<Option<String>>;
 
     /// Atomically compare-and-swap the session's refresh nonce.
     ///
@@ -48,22 +55,37 @@ pub trait SessionRevocationStore: Send + Sync {
     ) -> ApplicationResult<bool>;
 
     /// Mark a specific refresh nonce for a session as used (so that later reuse can be detected).
-    async fn mark_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<()>;
+    async fn mark_session_refresh_nonce_used(
+        &self,
+        session_id: &str,
+        nonce: &str,
+    ) -> ApplicationResult<()>;
 
     /// Return true if the given nonce for the session has been used before.
-    async fn is_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<bool>;
+    async fn is_session_refresh_nonce_used(
+        &self,
+        session_id: &str,
+        nonce: &str,
+    ) -> ApplicationResult<bool>;
 
     /// Track that a session id belongs to a user (used for per-user session listing and bulk revocation).
     async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()>;
 
     /// Remove the association of a session id from a user.
-    async fn remove_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()>;
+    async fn remove_session_for_user(
+        &self,
+        user_id: i64,
+        session_id: &str,
+    ) -> ApplicationResult<()>;
 
     /// List session ids for a given user.
     async fn list_sessions_for_user(&self, user_id: i64) -> ApplicationResult<Vec<String>>;
 
     /// List sessions for a given user including stored metadata (user agent, ip, created_at, revoked).
-    async fn list_sessions_for_user_with_meta(&self, user_id: i64) -> ApplicationResult<Vec<SessionInfo>>;
+    async fn list_sessions_for_user_with_meta(
+        &self,
+        user_id: i64,
+    ) -> ApplicationResult<Vec<SessionInfo>>;
 
     /// Store or update session metadata. `created_at_unix` is seconds since epoch UTC.
     async fn set_session_metadata(
@@ -76,7 +98,10 @@ pub trait SessionRevocationStore: Send + Sync {
     ) -> ApplicationResult<()>;
 
     /// Get session metadata for a given session id.
-    async fn get_session_metadata(&self, session_id: &str) -> ApplicationResult<Option<SessionInfo>>;
+    async fn get_session_metadata(
+        &self,
+        session_id: &str,
+    ) -> ApplicationResult<Option<SessionInfo>>;
 
     /// Delete session metadata (e.g. when a session is removed from the user's list).
     async fn delete_session_metadata(&self, session_id: &str) -> ApplicationResult<()>;

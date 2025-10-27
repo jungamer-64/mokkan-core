@@ -19,21 +19,36 @@ pub struct MaybeAuthenticated(pub Option<AuthenticatedUser>);
 // token version in the token is greater-or-equal to the user's minimum
 // allowed token version. This centralizes the logic used by both the
 // `Authenticated` and `MaybeAuthenticated` extractors.
-async fn validate_not_revoked(app_state: &HttpState, user: &AuthenticatedUser) -> Result<(), HttpError> {
+async fn validate_not_revoked(
+    app_state: &HttpState,
+    user: &AuthenticatedUser,
+) -> Result<(), HttpError> {
     // Session-level revocation check
     if let Some(session_id) = &user.session_id {
         let session_store = app_state.services.session_revocation_store();
-        if session_store.is_revoked(session_id).await.map_err(HttpError::from_error)? {
-            return Err(HttpError::from_error(ApplicationError::unauthorized("session revoked")));
+        if session_store
+            .is_revoked(session_id)
+            .await
+            .map_err(HttpError::from_error)?
+        {
+            return Err(HttpError::from_error(ApplicationError::unauthorized(
+                "session revoked",
+            )));
         }
     }
 
     // Global token-version check
     if let Some(token_ver) = user.token_version {
         let session_store = app_state.services.session_revocation_store();
-        if let Some(min_ver) = session_store.get_min_token_version(user.id.into()).await.map_err(HttpError::from_error)? {
+        if let Some(min_ver) = session_store
+            .get_min_token_version(user.id.into())
+            .await
+            .map_err(HttpError::from_error)?
+        {
             if token_ver < min_ver {
-                return Err(HttpError::from_error(ApplicationError::unauthorized("token revoked")));
+                return Err(HttpError::from_error(ApplicationError::unauthorized(
+                    "token revoked",
+                )));
             }
         }
     }
@@ -52,17 +67,19 @@ impl FromRequestParts<()> for Authenticated {
             let Extension(app_state) = Extension::<HttpState>::from_request_parts(parts, state)
                 .await
                 .map_err(|_| {
-                    HttpError::from_error(ApplicationError::infrastructure("application state missing"))
+                    HttpError::from_error(ApplicationError::infrastructure(
+                        "application state missing",
+                    ))
                 })?;
-
 
             let header = parts
                 .headers
                 .typed_get::<Authorization<Bearer>>()
                 .ok_or_else(|| {
-                    HttpError::from_error(ApplicationError::unauthorized("missing Authorization header"))
+                    HttpError::from_error(ApplicationError::unauthorized(
+                        "missing Authorization header",
+                    ))
                 })?;
-
 
             let token = header.token();
             let manager = app_state.services.token_manager();
@@ -90,7 +107,9 @@ impl FromRequestParts<()> for MaybeAuthenticated {
             let Extension(app_state) = Extension::<HttpState>::from_request_parts(parts, state)
                 .await
                 .map_err(|_| {
-                    HttpError::from_error(ApplicationError::infrastructure("application state missing"))
+                    HttpError::from_error(ApplicationError::infrastructure(
+                        "application state missing",
+                    ))
                 })?;
 
             // MaybeAuthenticated: proceed if header present

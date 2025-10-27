@@ -9,6 +9,10 @@ pub fn last_modified_str() -> Option<&'static str> {
     if let Some(v) = option_env!("BUILD_DATE") {
         Some(v)
     } else {
-        Some(STARTUP_DATE.get_or_init(|| httpdate::fmt_http_date(SystemTime::now())).as_str())
+        Some(
+            STARTUP_DATE
+                .get_or_init(|| httpdate::fmt_http_date(SystemTime::now()))
+                .as_str(),
+        )
     }
 }

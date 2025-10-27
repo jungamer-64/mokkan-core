@@ -28,10 +28,19 @@ pub trait ArticleReadRepository: Send + Sync {
 
     /// New builder-style query API. Default implementation delegates to
     /// `list_page` so existing implementations remain compatible.
-    async fn list(&self, query: ArticleQuery) -> DomainResult<(Vec<Article>, Option<ArticleListCursor>)> {
+    async fn list(
+        &self,
+        query: ArticleQuery,
+    ) -> DomainResult<(Vec<Article>, Option<ArticleListCursor>)> {
         // Convert Option<String> -> Option<&str> for the old API
         let search = query.search.as_deref();
-        self.list_page(query.include_drafts, query.limit, query.cursor.clone(), search).await
+        self.list_page(
+            query.include_drafts,
+            query.limit,
+            query.cursor.clone(),
+            search,
+        )
+        .await
     }
 }
 

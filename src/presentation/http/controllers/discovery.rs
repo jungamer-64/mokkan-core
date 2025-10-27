@@ -1,6 +1,6 @@
 // src/presentation/http/controllers/discovery.rs
-use crate::presentation::http::state::HttpState;
 use crate::presentation::http::error::HttpResult;
+use crate::presentation::http::state::HttpState;
 use axum::{Extension, Json};
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -71,13 +71,31 @@ pub async fn openid_configuration(
 
         response_types_supported: vec!["code".into(), "token".into(), "id_token".into()],
         response_modes_supported: vec!["query".into(), "fragment".into(), "form_post".into()],
-        grant_types_supported: vec!["authorization_code".into(), "refresh_token".into(), "client_credentials".into()],
+        grant_types_supported: vec![
+            "authorization_code".into(),
+            "refresh_token".into(),
+            "client_credentials".into(),
+        ],
         subject_types_supported: vec!["public".into()],
         id_token_signing_alg_values_supported: vec!["RS256".into()],
-        token_endpoint_auth_methods_supported: vec!["client_secret_basic".into(), "private_key_jwt".into()],
-        scopes_supported: vec!["openid".into(), "profile".into(), "email".into(), "offline_access".into()],
+        token_endpoint_auth_methods_supported: vec![
+            "client_secret_basic".into(),
+            "private_key_jwt".into(),
+        ],
+        scopes_supported: vec![
+            "openid".into(),
+            "profile".into(),
+            "email".into(),
+            "offline_access".into(),
+        ],
         code_challenge_methods_supported: vec!["S256".into()],
-        claims_supported: vec!["sub".into(), "name".into(), "email".into(), "email_verified".into(), "preferred_username".into()],
+        claims_supported: vec![
+            "sub".into(),
+            "name".into(),
+            "email".into(),
+            "email_verified".into(),
+            "preferred_username".into(),
+        ],
         claim_types_supported: vec!["normal".into()],
         request_parameter_supported: false,
     };

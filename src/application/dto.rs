@@ -1,9 +1,9 @@
 // src/application/dto.rs
+use crate::domain::audit::entity::AuditLog;
 use crate::domain::{
     article::{Article, ArticleRevision},
     user::{Capability, Role, User, UserId},
 };
-use crate::domain::audit::entity::AuditLog;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

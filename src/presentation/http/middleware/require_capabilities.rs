@@ -26,7 +26,11 @@ pub async fn require_capability(
         // Get application state from request extensions
         if let Some(state) = req.extensions().get::<HttpState>() {
             // Delegate to application services for authentication + authorization
-            match state.services.authenticate_and_authorize(token, resource, action).await {
+            match state
+                .services
+                .authenticate_and_authorize(token, resource, action)
+                .await
+            {
                 Ok(_user) => {
                     return next.run(req).await;
                 }
@@ -35,9 +39,15 @@ pub async fn require_capability(
                 }
             }
         } else {
-            return HttpError::from_error(ApplicationError::infrastructure("application state missing")).into_response();
+            return HttpError::from_error(ApplicationError::infrastructure(
+                "application state missing",
+            ))
+            .into_response();
         }
     } else {
-        return HttpError::from_error(ApplicationError::unauthorized("missing Authorization header")).into_response();
+        return HttpError::from_error(ApplicationError::unauthorized(
+            "missing Authorization header",
+        ))
+        .into_response();
     }
 }

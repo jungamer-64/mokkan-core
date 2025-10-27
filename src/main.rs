@@ -1,38 +1,37 @@
 // src/main.rs
 use anyhow::Result;
 use axum::{ServiceExt, body::Body};
+use mokkan_core::application::ports::session_revocation::SessionRevocationStore;
 use mokkan_core::application::ports::util::SlugGenerator;
 use mokkan_core::application::{
     ports::{
         security::{PasswordHasher, TokenManager},
         time::Clock,
     },
-    services::{ApplicationServices, ApplicationDependencies},
+    services::{ApplicationDependencies, ApplicationServices},
 };
-use mokkan_core::infrastructure::security::authorization_code_store::into_arc as into_auth_code_store;
-use mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore;
 use mokkan_core::config::AppConfig;
 use mokkan_core::domain::{
     article::{ArticleReadRepository, ArticleRevisionRepository, ArticleWriteRepository},
     user::UserRepository,
 };
+use mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore;
+use mokkan_core::infrastructure::security::authorization_code_store::into_arc as into_auth_code_store;
+use mokkan_core::infrastructure::security::redis_session_store::RedisSessionRevocationStore;
+use mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore;
 use mokkan_core::infrastructure::{
     database,
     repositories::{
         PostgresArticleReadRepository, PostgresArticleRevisionRepository,
-        PostgresArticleWriteRepository, PostgresUserRepository,
-            PostgresAuditLogRepository,
+        PostgresArticleWriteRepository, PostgresAuditLogRepository, PostgresUserRepository,
     },
     security::{password::Argon2PasswordHasher, token::BiscuitTokenManager},
     time::SystemClock,
     util::DefaultSlugGenerator,
 };
-use mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore;
-use mokkan_core::infrastructure::security::redis_session_store::RedisSessionRevocationStore;
-use mokkan_core::application::ports::session_revocation::SessionRevocationStore;
 use mokkan_core::presentation::http::{routes::build_router, state::HttpState};
-use std::{env, net::SocketAddr, sync::Arc};
 use sqlx::PgPool;
+use std::{env, net::SocketAddr, sync::Arc};
 use tokio::signal;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -95,7 +94,11 @@ async fn init_config_and_db() -> Result<(AppConfig, PgPool)> {
 
 fn init_session_store(config: &AppConfig) -> Arc<dyn SessionRevocationStore> {
     if let Ok(redis_url) = std::env::var("REDIS_URL") {
-        match RedisSessionRevocationStore::from_url_with_options(&redis_url, config.redis_used_nonce_ttl_secs(), config.redis_preload_cas_script()) {
+        match RedisSessionRevocationStore::from_url_with_options(
+            &redis_url,
+            config.redis_used_nonce_ttl_secs(),
+            config.redis_preload_cas_script(),
+        ) {
             Ok(store) => Arc::new(store),
             Err(err) => {
                 tracing::error!(error = %err, "failed to initialise redis session store, falling back to in-memory store");

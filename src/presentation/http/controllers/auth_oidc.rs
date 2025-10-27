@@ -3,9 +3,9 @@
 //! This file parses either JSON or x-www-form-urlencoded bodies for /token.
 
 use axum::{
+    Extension, Json,
     extract::Query,
     response::{IntoResponse, Redirect, Response},
-    Extension, Json,
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
@@ -38,12 +38,18 @@ pub struct TokenExchangeRequest {
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct IntrospectResponse {
     pub active: bool,
-    #[serde(skip_serializing_if = "Option::is_none")] pub scope: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub username: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub sub: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub exp: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub iat: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")] pub session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sub: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exp: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub iat: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
@@ -99,9 +105,9 @@ pub async fn token(
     }
 
     let code = payload.code.as_deref().ok_or_else(|| {
-        crate::presentation::http::error::HttpError::from_error(
-            ApplicationError::validation("code required"),
-        )
+        crate::presentation::http::error::HttpError::from_error(ApplicationError::validation(
+            "code required",
+        ))
     })?;
 
     let token = state
@@ -131,7 +137,12 @@ pub async fn introspect(
     Extension(state): Extension<HttpState>,
     Json(payload): Json<TokenRequest>,
 ) -> HttpResult<Json<IntrospectResponse>> {
-    match state.services.token_manager().authenticate(&payload.token).await {
+    match state
+        .services
+        .token_manager()
+        .authenticate(&payload.token)
+        .await
+    {
         Ok(user) => {
             let resp = IntrospectResponse {
                 active: true,
@@ -170,7 +181,12 @@ pub async fn revoke(
     Extension(state): Extension<HttpState>,
     Json(payload): Json<TokenRequest>,
 ) -> HttpResult<Json<crate::presentation::http::openapi::StatusResponse>> {
-    if let Ok(user) = state.services.token_manager().authenticate(&payload.token).await {
+    if let Ok(user) = state
+        .services
+        .token_manager()
+        .authenticate(&payload.token)
+        .await
+    {
         if let Some(session_id) = user.session_id.as_ref() {
             state
                 .services
@@ -181,7 +197,9 @@ pub async fn revoke(
         }
     }
 
-    Ok(Json(crate::presentation::http::openapi::StatusResponse { status: "revoked".into() }))
+    Ok(Json(crate::presentation::http::openapi::StatusResponse {
+        status: "revoked".into(),
+    }))
 }
 
 #[utoipa::path(
@@ -208,9 +226,9 @@ pub async fn authorize(
     }
 
     let user = maybe_user.ok_or_else(|| {
-        crate::presentation::http::error::HttpError::from_error(
-            ApplicationError::unauthorized("login required"),
-        )
+        crate::presentation::http::error::HttpError::from_error(ApplicationError::unauthorized(
+            "login required",
+        ))
     })?;
 
     // If consent wasn't explicitly granted, return a minimal consent prompt response so
@@ -221,7 +239,9 @@ pub async fn authorize(
     }
 
     // Create and persist the authorization code (delegated to helper)
-    let code = create_and_store_code(&state, &user, &params).await.into_http()?;
+    let code = create_and_store_code(&state, &user, &params)
+        .await
+        .into_http()?;
 
     // Redirect back to client (per OAuth2). If redirect_uri isn't provided, return the code in JSON.
     if let Some(redirect) = params.redirect_uri.as_deref() {
@@ -303,7 +323,9 @@ fn build_redirect_uri(redirect: &str, code: &str, state: Option<&String>) -> Str
 
 // Very small validation to reduce risk of open-redirects. This is intentionally
 // conservative: only allow http(s) schemes and refuse fragment identifiers.
-fn validate_redirect_uri(redirect: &str) -> Result<(), crate::presentation::http::error::HttpError> {
+fn validate_redirect_uri(
+    redirect: &str,
+) -> Result<(), crate::presentation::http::error::HttpError> {
     if redirect.contains('#') {
         return Err(crate::presentation::http::error::HttpError::from_error(
             ApplicationError::validation("redirect_uri must not contain fragment"),
@@ -331,5 +353,7 @@ fn validate_redirect_uri(redirect: &str) -> Result<(), crate::presentation::http
 pub async fn authorize_openapi_stub(
     Extension(_state): Extension<HttpState>,
 ) -> HttpResult<Json<crate::presentation::http::openapi::StatusResponse>> {
-    Ok(Json(crate::presentation::http::openapi::StatusResponse { status: "not_implemented".into() }))
+    Ok(Json(crate::presentation::http::openapi::StatusResponse {
+        status: "not_implemented".into(),
+    }))
 }

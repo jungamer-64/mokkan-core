@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-fn default_limit() -> u32 { 20 }
+fn default_limit() -> u32 {
+    20
+}
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct RegisterRequest {

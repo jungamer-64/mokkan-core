@@ -1,11 +1,13 @@
 // tests/e2e_rbac.rs
 use axum::body::Body;
-use axum::http::{Request, header::AUTHORIZATION, Method, StatusCode};
+use axum::http::{Method, Request, StatusCode, header::AUTHORIZATION};
 use tower::util::ServiceExt as _;
 
 mod support;
 
-fn bearer(tok: &str) -> String { format!("Bearer {}", tok) }
+fn bearer(tok: &str) -> String {
+    format!("Bearer {}", tok)
+}
 
 #[tokio::test]
 async fn grant_role_forbidden_without_capability() {

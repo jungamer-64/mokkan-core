@@ -5,15 +5,15 @@ use crate::{
         error::{ApplicationError, ApplicationResult},
         ports::{
             security::{PasswordHasher, TokenManager},
-            time::Clock,
             session_revocation::SessionRevocationStore,
+            time::Clock,
         },
     },
     domain::user::{NewUser, PasswordHash, Role, UserId, UserRepository, UserUpdate, Username},
 };
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use std::sync::Arc;
 use uuid::Uuid;
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 
 pub struct RegisterUserCommand {
     pub username: String,
@@ -115,7 +115,10 @@ impl UserCommandService {
         let token = self.issue_session_tokens(&user, &session_id).await?;
         let user_dto: UserDto = user.into();
 
-        Ok(LoginResult { token, user: user_dto })
+        Ok(LoginResult {
+            token,
+            user: user_dto,
+        })
     }
 
     // Helper: issue access + refresh token pair for a user/session
@@ -148,7 +151,13 @@ impl UserCommandService {
 
         let mut token = self.token_manager.issue(subject).await?;
 
-    let raw_refresh = format!("{}:{}:{}:{}", i64::from(user.id), session_id, refresh_nonce, min_version);
+        let raw_refresh = format!(
+            "{}:{}:{}:{}",
+            i64::from(user.id),
+            session_id,
+            refresh_nonce,
+            min_version
+        );
         let refresh_token = URL_SAFE_NO_PAD.encode(raw_refresh.as_bytes());
         token.refresh_token = Some(refresh_token);
 
@@ -203,7 +212,8 @@ impl UserCommandService {
             .ok_or_else(|| ApplicationError::not_found("user not found"))?;
 
         // perform authorization and verify current password when user is changing their own password
-        self.verify_change_password_self(actor, &user, command.current_password.as_deref()).await?;
+        self.verify_change_password_self(actor, &user, command.current_password.as_deref())
+            .await?;
 
         // Move validation and persistence into helper to reduce complexity
         self.validate_and_set_new_password(target_id, &command.new_password)
@@ -268,7 +278,8 @@ impl UserCommandService {
         if existing == 0 {
             return Ok(Role::Admin);
         }
-        let requester = actor.ok_or_else(|| ApplicationError::forbidden("administrative privileges are required"))?;
+        let requester = actor
+            .ok_or_else(|| ApplicationError::forbidden("administrative privileges are required"))?;
         ensure_capability(requester, "users", "create")?;
         Ok(role.unwrap_or(Role::Author))
     }
@@ -297,7 +308,11 @@ impl UserCommandService {
     }
 
     // Helper: ensure username not taken (keeps register small)
-    async fn ensure_username_available(&self, existing: u64, username: &Username) -> ApplicationResult<()> {
+    async fn ensure_username_available(
+        &self,
+        existing: u64,
+        username: &Username,
+    ) -> ApplicationResult<()> {
         if existing == 0 {
             return Ok(());
         }
@@ -327,7 +342,11 @@ impl UserCommandService {
     }
 
     // Helper: validate password and persist the new hash
-    async fn validate_and_set_new_password(&self, target_id: UserId, new_password: &str) -> ApplicationResult<()> {
+    async fn validate_and_set_new_password(
+        &self,
+        target_id: UserId,
+        new_password: &str,
+    ) -> ApplicationResult<()> {
         validate_password(new_password)?;
 
         let hashed = self.password_hasher.hash(new_password).await?;
@@ -344,10 +363,15 @@ impl UserCommandService {
         &self,
         token: &str,
     ) -> ApplicationResult<(crate::domain::user::User, String, String, u32)> {
-        let (user_id, session_id, nonce, token_ver_in_token) = self.parse_refresh_token_str(token).await?;
+        let (user_id, session_id, nonce, token_ver_in_token) =
+            self.parse_refresh_token_str(token).await?;
 
         // Ensure session has not been revoked
-        if self.session_revocation_store.is_revoked(&session_id).await? {
+        if self
+            .session_revocation_store
+            .is_revoked(&session_id)
+            .await?
+        {
             return Err(ApplicationError::forbidden("session revoked"));
         }
 
@@ -358,12 +382,17 @@ impl UserCommandService {
             .await?
             .ok_or_else(|| ApplicationError::not_found("user not found"))?;
         // Ensure token version is not globally revoked for this user
-        self.ensure_token_version_not_revoked(&user, token_ver_in_token).await?;
+        self.ensure_token_version_not_revoked(&user, token_ver_in_token)
+            .await?;
 
         Ok((user, session_id, nonce, token_ver_in_token))
     }
 
-    async fn ensure_token_version_not_revoked(&self, user: &crate::domain::user::User, token_ver_in_token: u32) -> ApplicationResult<()> {
+    async fn ensure_token_version_not_revoked(
+        &self,
+        user: &crate::domain::user::User,
+        token_ver_in_token: u32,
+    ) -> ApplicationResult<()> {
         if let Some(min_version) = self
             .session_revocation_store
             .get_min_token_version(i64::from(user.id))
@@ -408,10 +437,14 @@ impl UserCommandService {
             if used {
                 // Detected reuse: revoke all sessions for the user to contain
                 // the compromise.
-                self.session_revocation_store.revoke_sessions_for_user(i64::from(user.id)).await?;
+                self.session_revocation_store
+                    .revoke_sessions_for_user(i64::from(user.id))
+                    .await?;
                 return Err(ApplicationError::forbidden("refresh token reused"));
             } else {
-                return Err(ApplicationError::forbidden("refresh token invalid or rotated"));
+                return Err(ApplicationError::forbidden(
+                    "refresh token invalid or rotated",
+                ));
             }
         }
         // Build token subject and issue an access token
@@ -429,7 +462,11 @@ impl UserCommandService {
     }
 
     // Helper: construct a TokenSubject for issuing access tokens
-    fn make_token_subject(&self, user: &crate::domain::user::User, session_id: &str) -> TokenSubject {
+    fn make_token_subject(
+        &self,
+        user: &crate::domain::user::User,
+        session_id: &str,
+    ) -> TokenSubject {
         let capabilities = user.role.default_capabilities();
         TokenSubject {
             user_id: user.id,
@@ -442,14 +479,25 @@ impl UserCommandService {
     }
 
     // Helper: build the encoded refresh token string for a user/session/nonce
-    async fn build_refresh_token_for_user(&self, user: &crate::domain::user::User, session_id: &str, nonce: &str) -> ApplicationResult<String> {
+    async fn build_refresh_token_for_user(
+        &self,
+        user: &crate::domain::user::User,
+        session_id: &str,
+        nonce: &str,
+    ) -> ApplicationResult<String> {
         let current_min = self
             .session_revocation_store
             .get_min_token_version(i64::from(user.id))
             .await?
             .unwrap_or(0);
 
-        let raw_refresh = format!("{}:{}:{}:{}", i64::from(user.id), session_id, nonce, current_min);
+        let raw_refresh = format!(
+            "{}:{}:{}:{}",
+            i64::from(user.id),
+            session_id,
+            nonce,
+            current_min
+        );
         let new_refresh_token = URL_SAFE_NO_PAD.encode(raw_refresh.as_bytes());
         Ok(new_refresh_token)
     }
@@ -468,7 +516,8 @@ impl UserCommandService {
         &self,
         token: &str,
     ) -> ApplicationResult<(UserId, String, String, u32)> {
-        let (user_id_part, session_id, nonce, token_ver_str) = Self::decode_refresh_token_raw(token)?;
+        let (user_id_part, session_id, nonce, token_ver_str) =
+            Self::decode_refresh_token_raw(token)?;
 
         let uid: i64 = user_id_part
             .parse()
@@ -483,7 +532,9 @@ impl UserCommandService {
     }
 
     // Helper: decode and split a base64 refresh token into raw parts (uid, session, nonce, token_ver).
-    fn decode_refresh_token_raw(token: &str) -> ApplicationResult<(String, String, String, String)> {
+    fn decode_refresh_token_raw(
+        token: &str,
+    ) -> ApplicationResult<(String, String, String, String)> {
         let decoded = URL_SAFE_NO_PAD
             .decode(token)
             .map_err(|_| ApplicationError::validation("invalid refresh token"))?;
@@ -520,7 +571,9 @@ impl UserCommandService {
             .await?;
 
         if stored.as_deref() != Some(nonce) {
-            return Err(ApplicationError::forbidden("refresh token invalid or rotated"));
+            return Err(ApplicationError::forbidden(
+                "refresh token invalid or rotated",
+            ));
         }
 
         Ok(())
@@ -538,7 +591,11 @@ impl UserCommandService {
 
     // Helper: atomically rotate the session nonce only if the expected nonce matches.
     #[allow(dead_code)]
-    async fn rotate_session_nonce_atomic(&self, session_id: &str, expected: &str) -> ApplicationResult<String> {
+    async fn rotate_session_nonce_atomic(
+        &self,
+        session_id: &str,
+        expected: &str,
+    ) -> ApplicationResult<String> {
         // Generate new nonce
         let new_nonce = Uuid::new_v4().to_string();
 
@@ -549,7 +606,9 @@ impl UserCommandService {
             .await?;
 
         if !swapped {
-            return Err(ApplicationError::forbidden("refresh token invalid or rotated"));
+            return Err(ApplicationError::forbidden(
+                "refresh token invalid or rotated",
+            ));
         }
 
         Ok(new_nonce)

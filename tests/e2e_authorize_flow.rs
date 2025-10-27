@@ -1,14 +1,16 @@
 use axum::body::Body;
-use axum::http::{Request, header::AUTHORIZATION, Method, StatusCode};
-use tower::util::ServiceExt as _;
-use sha2::{Digest, Sha256};
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use axum::http::{Method, Request, StatusCode, header::AUTHORIZATION};
 use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use serde_urlencoded;
+use sha2::{Digest, Sha256};
+use tower::util::ServiceExt as _;
 
 mod support;
 
-fn bearer(tok: &str) -> String { format!("Bearer {}", tok) }
+fn bearer(tok: &str) -> String {
+    format!("Bearer {}", tok)
+}
 
 #[tokio::test]
 async fn authorize_code_flow_pkce_plain() {
@@ -27,7 +29,10 @@ async fn authorize_code_flow_pkce_plain() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let (_h, json) = to_json_async!(resp).await;
-    let code = json.get("code").and_then(|v| v.as_str()).expect("code present");
+    let code = json
+        .get("code")
+        .and_then(|v| v.as_str())
+        .expect("code present");
 
     // Exchange the code for tokens using PKCE (plain verifier)
     let body = serde_urlencoded::to_string(&[
@@ -48,12 +53,14 @@ async fn authorize_code_flow_pkce_plain() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let (_h, json) = to_json_async!(resp).await;
-    let token = json.get("token").and_then(|v| v.as_str()).expect("token present");
+    let token = json
+        .get("token")
+        .and_then(|v| v.as_str())
+        .expect("token present");
 
     // DummyTokenManager.issue returns issued-<user_id> for our test user (user id 1)
     assert_eq!(token, "issued-1");
 }
-
 
 #[tokio::test]
 async fn authorize_code_flow_pkce_s256() {
@@ -83,7 +90,10 @@ async fn authorize_code_flow_pkce_s256() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let (_h, json) = to_json_async!(resp).await;
-    let code = json.get("code").and_then(|v| v.as_str()).expect("code present");
+    let code = json
+        .get("code")
+        .and_then(|v| v.as_str())
+        .expect("code present");
 
     // Exchange the code for tokens using PKCE S256
     let body = serde_urlencoded::to_string(&[
@@ -104,6 +114,9 @@ async fn authorize_code_flow_pkce_s256() {
     assert_eq!(resp.status(), StatusCode::OK);
 
     let (_h, json) = to_json_async!(resp).await;
-    let token = json.get("token").and_then(|v| v.as_str()).expect("token present");
+    let token = json
+        .get("token")
+        .and_then(|v| v.as_str())
+        .expect("token present");
     assert_eq!(token, "issued-1");
 }

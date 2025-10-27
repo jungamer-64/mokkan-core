@@ -1,9 +1,9 @@
 // src/presentation/http/controllers/auth_sessions.rs
-use crate::presentation::http::state::HttpState;
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::Authenticated;
+use crate::presentation::http::state::HttpState;
 use axum::{Extension, Json, extract::Path};
-use chrono::{Utc, TimeZone};
+use chrono::{TimeZone, Utc};
 
 #[utoipa::path(
     get,
@@ -71,13 +71,18 @@ pub async fn revoke_session(
     let store = state.services.session_revocation_store();
 
     let is_owner = {
-        let sessions = store.list_sessions_for_user(user.id.into()).await.into_http()?;
+        let sessions = store
+            .list_sessions_for_user(user.id.into())
+            .await
+            .into_http()?;
         sessions.contains(&id)
     };
 
     if !is_owner && !user.has_capability("users", "update") {
         return Err(crate::presentation::http::error::HttpError::from_error(
-            crate::application::error::ApplicationError::forbidden("not authorized to revoke this session"),
+            crate::application::error::ApplicationError::forbidden(
+                "not authorized to revoke this session",
+            ),
         ));
     }
 
@@ -90,5 +95,7 @@ pub async fn revoke_session(
     }
     let _ = store.delete_session_metadata(&id).await;
 
-    Ok(Json(crate::presentation::http::openapi::StatusResponse { status: "session_revoked".into() }))
+    Ok(Json(crate::presentation::http::openapi::StatusResponse {
+        status: "session_revoked".into(),
+    }))
 }

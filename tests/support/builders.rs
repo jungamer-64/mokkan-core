@@ -47,7 +47,11 @@ impl ArticleBuilder {
             slug: ArticleSlug::new(self.slug).unwrap(),
             body: ArticleBody::new(self.body).unwrap(),
             published: self.published,
-            published_at: if self.published { Some(Utc::now()) } else { None },
+            published_at: if self.published {
+                Some(Utc::now())
+            } else {
+                None
+            },
             author_id: UserId::new(self.author_id).unwrap(),
             created_at: Utc::now(),
             updated_at: Utc::now(),

@@ -1,11 +1,15 @@
 // src/presentation/http/controllers/auth.rs
 use crate::application::{
     commands::users::{
-        ChangePasswordCommand, LoginUserCommand, RefreshTokenCommand, RegisterUserCommand,
-        UpdateUserCommand, GrantRoleCommand, RevokeRoleCommand,
+        ChangePasswordCommand, GrantRoleCommand, LoginUserCommand, RefreshTokenCommand,
+        RegisterUserCommand, RevokeRoleCommand, UpdateUserCommand,
     },
     dto::{AuthTokenDto, UserDto, UserProfileDto},
     queries::users::ListUsersQuery,
+};
+use crate::presentation::http::controllers::user_requests::{
+    ChangePasswordRequest, GrantRoleRequest, ListUsersParams, LoginRequest, LoginResponse,
+    RefreshTokenRequest, RegisterRequest, UpdateUserRequest,
 };
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::{Authenticated, MaybeAuthenticated};
@@ -16,10 +20,6 @@ use axum::{
     extract::{Path, Query},
 };
 use serde_json::Value as JsonValue;
-use crate::presentation::http::controllers::user_requests::{
-    RegisterRequest, LoginRequest, RefreshTokenRequest, LoginResponse,
-    ListUsersParams, UpdateUserRequest, ChangePasswordRequest, GrantRoleRequest,
-};
 
 #[utoipa::path(
     post,
@@ -285,7 +285,10 @@ pub async fn grant_role(
     Path(id): Path<i64>,
     Json(payload): Json<GrantRoleRequest>,
 ) -> HttpResult<Json<UserDto>> {
-    let command = GrantRoleCommand { user_id: id, role: payload.role };
+    let command = GrantRoleCommand {
+        user_id: id,
+        role: payload.role,
+    };
 
     state
         .services
@@ -330,9 +333,7 @@ pub async fn revoke_role(
 }
 
 // JWKS-like public keys endpoint. Returns the public key material used to verify tokens.
-pub async fn keys(
-    Extension(state): Extension<HttpState>,
-) -> HttpResult<Json<JsonValue>> {
+pub async fn keys(Extension(state): Extension<HttpState>) -> HttpResult<Json<JsonValue>> {
     state
         .services
         .token_manager()

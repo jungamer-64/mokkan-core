@@ -1,11 +1,16 @@
 // src/infrastructure/security/claims.rs
-use crate::application::{dto::AuthenticatedUser, error::{ApplicationError, ApplicationResult}};
+use crate::application::{
+    dto::AuthenticatedUser,
+    error::{ApplicationError, ApplicationResult},
+};
 use crate::domain::user::Capability;
 use chrono::DateTime;
 use chrono::Utc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub fn parse_claims(facts: Vec<biscuit_auth::builder::Fact>) -> ApplicationResult<AuthenticatedUser> {
+pub fn parse_claims(
+    facts: Vec<biscuit_auth::builder::Fact>,
+) -> ApplicationResult<AuthenticatedUser> {
     let ctx = ClaimsContext::from_facts(facts);
     build_authenticated_user(ctx)
 }
@@ -13,7 +18,8 @@ pub fn parse_claims(facts: Vec<biscuit_auth::builder::Fact>) -> ApplicationResul
 fn build_authenticated_user(ctx: ClaimsContext) -> ApplicationResult<AuthenticatedUser> {
     let (user_id_i64, username, role, issued_at, expires_at) = validate_claims(&ctx)?;
 
-    let user_id = crate::domain::user::UserId::new(user_id_i64).map_err(|err| ApplicationError::from(err))?;
+    let user_id =
+        crate::domain::user::UserId::new(user_id_i64).map_err(|err| ApplicationError::from(err))?;
 
     let mut all_caps = role.default_capabilities();
     all_caps.extend(ctx.capabilities);
@@ -30,12 +36,32 @@ fn build_authenticated_user(ctx: ClaimsContext) -> ApplicationResult<Authenticat
     })
 }
 
-fn validate_claims(ctx: &ClaimsContext) -> ApplicationResult<(i64, String, crate::domain::user::Role, SystemTime, SystemTime)> {
-    let user_id = ctx.user_id.ok_or_else(|| ApplicationError::unauthorized("missing user id"))?;
-    let username = ctx.username.clone().ok_or_else(|| ApplicationError::unauthorized("missing username"))?;
-    let role = ctx.role.clone().ok_or_else(|| ApplicationError::unauthorized("missing role"))?;
-    let issued_at = ctx.issued_at.ok_or_else(|| ApplicationError::unauthorized("missing issued_at"))?;
-    let expires_at = ctx.expires_at.ok_or_else(|| ApplicationError::unauthorized("missing expires_at"))?;
+fn validate_claims(
+    ctx: &ClaimsContext,
+) -> ApplicationResult<(
+    i64,
+    String,
+    crate::domain::user::Role,
+    SystemTime,
+    SystemTime,
+)> {
+    let user_id = ctx
+        .user_id
+        .ok_or_else(|| ApplicationError::unauthorized("missing user id"))?;
+    let username = ctx
+        .username
+        .clone()
+        .ok_or_else(|| ApplicationError::unauthorized("missing username"))?;
+    let role = ctx
+        .role
+        .clone()
+        .ok_or_else(|| ApplicationError::unauthorized("missing role"))?;
+    let issued_at = ctx
+        .issued_at
+        .ok_or_else(|| ApplicationError::unauthorized("missing issued_at"))?;
+    let expires_at = ctx
+        .expires_at
+        .ok_or_else(|| ApplicationError::unauthorized("missing expires_at"))?;
 
     Ok((user_id, username, role, issued_at, expires_at))
 }

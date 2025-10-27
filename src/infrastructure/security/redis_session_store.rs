@@ -3,7 +3,7 @@ use crate::application::ApplicationResult;
 use crate::application::error::ApplicationError;
 use crate::application::ports::session_revocation::SessionRevocationStore;
 use async_trait::async_trait;
-use deadpool_redis::{Config as DeadpoolConfig, Pool, Runtime, Connection};
+use deadpool_redis::{Config as DeadpoolConfig, Connection, Pool, Runtime};
 use redis::AsyncCommands;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -48,7 +48,9 @@ impl RedisSessionRevocationStore {
             .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(USED_NONCE_TTL_SECS);
 
-        let preload = std::env::var("REDIS_PRELOAD_CAS_SCRIPT").map(|v| v == "1" || v.to_lowercase() == "true").unwrap_or(false);
+        let preload = std::env::var("REDIS_PRELOAD_CAS_SCRIPT")
+            .map(|v| v == "1" || v.to_lowercase() == "true")
+            .unwrap_or(false);
 
         Self::from_url_with_options(url, used_nonce_ttl_secs, preload)
     }
@@ -77,13 +79,20 @@ impl RedisSessionRevocationStore {
             let sha_clone = store.cas_script_sha.clone();
             tokio::spawn(async move {
                 if let Ok(mut conn) = pool_clone.get().await {
-                    match redis::cmd("SCRIPT").arg("LOAD").arg(CAS_LUA_SCRIPT).query_async::<String>(&mut conn).await {
+                    match redis::cmd("SCRIPT")
+                        .arg("LOAD")
+                        .arg(CAS_LUA_SCRIPT)
+                        .query_async::<String>(&mut conn)
+                        .await
+                    {
                         Ok(sha) => {
                             let mut g = sha_clone.lock().await;
                             *g = Some(sha);
                             tracing::info!("preloaded redis CAS lua script");
                         }
-                        Err(err) => tracing::warn!(error = %err, "failed to preload redis CAS lua script"),
+                        Err(err) => {
+                            tracing::warn!(error = %err, "failed to preload redis CAS lua script")
+                        }
                     }
                 }
             });
@@ -109,13 +118,18 @@ impl RedisSessionRevocationStore {
 
         // 1) Try using the cached SHA (if present). This helper will clear the
         // cached value on NOSCRIPT and return None so we can fall back.
-        if let Some(v) = self.try_cached_eval(&mut conn, key, used_key, expected, new_nonce).await? {
+        if let Some(v) = self
+            .try_cached_eval(&mut conn, key, used_key, expected, new_nonce)
+            .await?
+        {
             return Ok(v);
         }
 
         // 2) Load the script and cache the SHA, then evaluate with the loaded SHA.
         let sha = self.load_script_and_cache(&mut conn).await?;
-        let replaced = self.evalsha_by_sha(&mut conn, &sha, key, used_key, expected, new_nonce).await?;
+        let replaced = self
+            .evalsha_by_sha(&mut conn, &sha, key, used_key, expected, new_nonce)
+            .await?;
         Ok(replaced)
     }
 
@@ -261,7 +275,11 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         Ok(())
     }
 
-    async fn set_session_refresh_nonce(&self, session_id: &str, nonce: &str) -> ApplicationResult<()> {
+    async fn set_session_refresh_nonce(
+        &self,
+        session_id: &str,
+        nonce: &str,
+    ) -> ApplicationResult<()> {
         let mut conn = self
             .pool
             .get()
@@ -275,7 +293,10 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         Ok(())
     }
 
-    async fn get_session_refresh_nonce(&self, session_id: &str) -> ApplicationResult<Option<String>> {
+    async fn get_session_refresh_nonce(
+        &self,
+        session_id: &str,
+    ) -> ApplicationResult<Option<String>> {
         let mut conn = self
             .pool
             .get()
@@ -306,9 +327,11 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         Ok(replaced == 1)
     }
 
-    
-
-    async fn mark_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<()> {
+    async fn mark_session_refresh_nonce_used(
+        &self,
+        session_id: &str,
+        nonce: &str,
+    ) -> ApplicationResult<()> {
         let mut conn = self
             .pool
             .get()
@@ -331,7 +354,11 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         Ok(())
     }
 
-    async fn is_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<bool> {
+    async fn is_session_refresh_nonce_used(
+        &self,
+        session_id: &str,
+        nonce: &str,
+    ) -> ApplicationResult<bool> {
         let mut conn = self
             .pool
             .get()
@@ -360,7 +387,11 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         Ok(())
     }
 
-    async fn remove_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()> {
+    async fn remove_session_for_user(
+        &self,
+        user_id: i64,
+        session_id: &str,
+    ) -> ApplicationResult<()> {
         let mut conn = self
             .pool
             .get()
@@ -389,7 +420,10 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         Ok(members)
     }
 
-    async fn list_sessions_for_user_with_meta(&self, user_id: i64) -> ApplicationResult<Vec<crate::application::ports::session_revocation::SessionInfo>> {
+    async fn list_sessions_for_user_with_meta(
+        &self,
+        user_id: i64,
+    ) -> ApplicationResult<Vec<crate::application::ports::session_revocation::SessionInfo>> {
         let mut conn = self
             .pool
             .get()
@@ -418,9 +452,7 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
                 .hget(&meta_key, "created_at")
                 .await
                 .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
-            let created_at_unix: i64 = created_str
-                .and_then(|s| s.parse::<i64>().ok())
-                .unwrap_or(0);
+            let created_at_unix: i64 = created_str.and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
 
             let revoked_key = format!("revoked:session:{}", sid);
             let revoked: bool = conn
@@ -485,7 +517,10 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         Ok(())
     }
 
-    async fn get_session_metadata(&self, session_id: &str) -> ApplicationResult<Option<crate::application::ports::session_revocation::SessionInfo>> {
+    async fn get_session_metadata(
+        &self,
+        session_id: &str,
+    ) -> ApplicationResult<Option<crate::application::ports::session_revocation::SessionInfo>> {
         let mut conn = self
             .pool
             .get()
@@ -504,15 +539,17 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         }
 
         // Retrieve multiple fields at once
-        let (ua, ip, created_opt, user_id_val): (Option<String>, Option<String>, Option<String>, Option<i64>) =
-            conn
-                .hget(&meta_key, ("user_agent", "ip", "created_at", "user_id"))
-                .await
-                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        let (ua, ip, created_opt, user_id_val): (
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+        ) = conn
+            .hget(&meta_key, ("user_agent", "ip", "created_at", "user_id"))
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let created_at_unix: i64 = created_opt
-            .and_then(|s| s.parse::<i64>().ok())
-            .unwrap_or(0);
+        let created_at_unix: i64 = created_opt.and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
 
         let revoked_key = format!("revoked:session:{}", session_id);
         let revoked: bool = conn
@@ -520,14 +557,16 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        Ok(Some(crate::application::ports::session_revocation::SessionInfo {
-            user_id: user_id_val.unwrap_or(0),
-            session_id: session_id.to_string(),
-            user_agent: ua,
-            ip_address: ip,
-            created_at_unix,
-            revoked,
-        }))
+        Ok(Some(
+            crate::application::ports::session_revocation::SessionInfo {
+                user_id: user_id_val.unwrap_or(0),
+                session_id: session_id.to_string(),
+                user_agent: ua,
+                ip_address: ip,
+                created_at_unix,
+                revoked,
+            },
+        ))
     }
 
     async fn delete_session_metadata(&self, session_id: &str) -> ApplicationResult<()> {
