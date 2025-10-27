@@ -6,6 +6,12 @@ use crate::domain::errors::DomainResult;
 use async_trait::async_trait;
 use chrono::Utc;
 use sqlx::PgPool;
+const QUERY_LIST_WITH_CURSOR: &str = "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3";
+const QUERY_LIST_NO_CURSOR: &str = "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs ORDER BY created_at DESC, id DESC LIMIT $1";
+const QUERY_FIND_BY_USER_WITH_CURSOR: &str = "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs WHERE user_id = $1 AND (created_at, id) < ($2, $3) ORDER BY created_at DESC, id DESC LIMIT $4";
+const QUERY_FIND_BY_USER_NO_CURSOR: &str = "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2";
+const QUERY_FIND_BY_RESOURCE_WITH_CURSOR: &str = "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs WHERE resource_type = $1 AND resource_id = $2 AND (created_at, id) < ($3, $4) ORDER BY created_at DESC, id DESC LIMIT $5";
+const QUERY_FIND_BY_RESOURCE_NO_CURSOR: &str = "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs WHERE resource_type = $1 AND resource_id = $2 ORDER BY created_at DESC, id DESC LIMIT $3";
 
 #[derive(Clone)]
 pub struct PostgresAuditLogRepository {
@@ -47,28 +53,22 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
         cursor: Option<AuditLogCursor>,
     ) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
         if let Some(c) = cursor {
-            let rows = sqlx::query(
-                "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at \
-                 FROM audit_logs WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3",
-            )
-            .bind(c.created_at)
-            .bind(c.id)
-            .bind((limit + 1) as i64)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(map_sqlx)?;
+            let rows = sqlx::query(QUERY_LIST_WITH_CURSOR)
+                .bind(c.created_at)
+                .bind(c.id)
+                .bind((limit + 1) as i64)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_sqlx)?;
             return Ok(map_rows_to_logs(rows, limit));
         }
 
         // no cursor
-        let rows = sqlx::query(
-            "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at \
-             FROM audit_logs ORDER BY created_at DESC, id DESC LIMIT $1",
-        )
-        .bind((limit + 1) as i64)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(map_sqlx)?;
+        let rows = sqlx::query(QUERY_LIST_NO_CURSOR)
+            .bind((limit + 1) as i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(map_sqlx)?;
 
         Ok(map_rows_to_logs(rows, limit))
     }
@@ -80,29 +80,23 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
         cursor: Option<AuditLogCursor>,
     ) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
         if let Some(c) = cursor {
-            let rows = sqlx::query(
-                "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at \
-                 FROM audit_logs WHERE user_id = $1 AND (created_at, id) < ($2, $3) ORDER BY created_at DESC, id DESC LIMIT $4",
-            )
+            let rows = sqlx::query(QUERY_FIND_BY_USER_WITH_CURSOR)
+                .bind(user_id)
+                .bind(c.created_at)
+                .bind(c.id)
+                .bind((limit + 1) as i64)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_sqlx)?;
+            return Ok(map_rows_to_logs(rows, limit));
+        }
+
+        let rows = sqlx::query(QUERY_FIND_BY_USER_NO_CURSOR)
             .bind(user_id)
-            .bind(c.created_at)
-            .bind(c.id)
             .bind((limit + 1) as i64)
             .fetch_all(&self.pool)
             .await
             .map_err(map_sqlx)?;
-            return Ok(map_rows_to_logs(rows, limit));
-        }
-
-        let rows = sqlx::query(
-            "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at \
-             FROM audit_logs WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2",
-        )
-        .bind(user_id)
-        .bind((limit + 1) as i64)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(map_sqlx)?;
 
         Ok(map_rows_to_logs(rows, limit))
     }
@@ -115,31 +109,25 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
         cursor: Option<AuditLogCursor>,
     ) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
         if let Some(c) = cursor {
-            let rows = sqlx::query(
-                "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at \
-                 FROM audit_logs WHERE resource_type = $1 AND resource_id = $2 AND (created_at, id) < ($3, $4) ORDER BY created_at DESC, id DESC LIMIT $5",
-            )
+            let rows = sqlx::query(QUERY_FIND_BY_RESOURCE_WITH_CURSOR)
+                .bind(resource_type)
+                .bind(resource_id)
+                .bind(c.created_at)
+                .bind(c.id)
+                .bind((limit + 1) as i64)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(map_sqlx)?;
+            return Ok(map_rows_to_logs(rows, limit));
+        }
+
+        let rows = sqlx::query(QUERY_FIND_BY_RESOURCE_NO_CURSOR)
             .bind(resource_type)
             .bind(resource_id)
-            .bind(c.created_at)
-            .bind(c.id)
             .bind((limit + 1) as i64)
             .fetch_all(&self.pool)
             .await
             .map_err(map_sqlx)?;
-            return Ok(map_rows_to_logs(rows, limit));
-        }
-
-        let rows = sqlx::query(
-            "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at \
-             FROM audit_logs WHERE resource_type = $1 AND resource_id = $2 ORDER BY created_at DESC, id DESC LIMIT $3",
-        )
-        .bind(resource_type)
-        .bind(resource_id)
-        .bind((limit + 1) as i64)
-        .fetch_all(&self.pool)
-        .await
-        .map_err(map_sqlx)?;
 
         Ok(map_rows_to_logs(rows, limit))
     }
