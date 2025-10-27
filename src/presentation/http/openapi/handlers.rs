@@ -91,6 +91,15 @@ pub fn inm_matches(headers: &HeaderMap, actual: &str) -> bool {
     false
 }
 
+/// Build a 304 Not Modified response including the current ETag header.
+fn not_modified_response() -> Response {
+    Response::builder()
+        .status(StatusCode::NOT_MODIFIED)
+        .header(header::ETAG, super::openapi_etag())
+        .body(Body::empty())
+        .unwrap()
+}
+
 /// GET /openapi.json handler.
 ///
 /// Honors `If-None-Match` (INM) with precedence over `If-Modified-Since` (IMS)
@@ -102,11 +111,7 @@ pub async fn serve_openapi(headers: HeaderMap) -> Response {
     // does not match -> return the full representation (do not consult IMS).
     if headers.contains_key(header::IF_NONE_MATCH) {
         if inm_matches(&headers, super::openapi_etag()) {
-            return Response::builder()
-                .status(StatusCode::NOT_MODIFIED)
-                .header(header::ETAG, super::openapi_etag())
-                .body(Body::empty())
-                .unwrap();
+            return not_modified_response();
         }
         // INM present and didn't match: fall-through to return representation
     } else {
@@ -116,11 +121,7 @@ pub async fn serve_openapi(headers: HeaderMap) -> Response {
             && let Some(lm) = super::openapi_meta::last_modified_str()
             && s == lm
         {
-            return Response::builder()
-                .status(StatusCode::NOT_MODIFIED)
-                .header(header::ETAG, super::openapi_etag())
-                .body(Body::empty())
-                .unwrap();
+            return not_modified_response();
         }
     }
 
@@ -141,11 +142,7 @@ pub async fn serve_openapi(headers: HeaderMap) -> Response {
 pub async fn head_openapi(headers: HeaderMap) -> Response {
     // similar to GET but with no body
     if inm_matches(&headers, super::openapi_etag()) {
-        return Response::builder()
-            .status(StatusCode::NOT_MODIFIED)
-            .header(header::ETAG, super::openapi_etag())
-            .body(Body::empty())
-            .unwrap();
+        return not_modified_response();
     }
 
     if let Some(v) = headers.get(header::IF_MODIFIED_SINCE)
@@ -153,11 +150,7 @@ pub async fn head_openapi(headers: HeaderMap) -> Response {
         && let Some(lm) = super::openapi_meta::last_modified_str()
         && s == lm
     {
-        return Response::builder()
-            .status(StatusCode::NOT_MODIFIED)
-            .header(header::ETAG, super::openapi_etag())
-            .body(Body::empty())
-            .unwrap();
+        return not_modified_response();
     }
 
     Response::builder()
