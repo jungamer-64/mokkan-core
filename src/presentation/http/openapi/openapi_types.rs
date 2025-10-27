@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::application::dto::{ArticleDto, CursorPage, UserDto};
+use serde::{Deserialize, Serialize};
 
 // Simple status response used by health endpoints and docs.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]

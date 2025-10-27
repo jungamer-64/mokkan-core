@@ -16,7 +16,7 @@ static OPENAPI_CONTENT_LENGTH: OnceLock<usize> = OnceLock::new();
 
 // Canonical minimal OpenAPI JSON as a static byte slice so the `openapi_bytes`
 // accessor can stay very small (this also keeps static analysis tools happy).
-static OPENAPI_JSON_BYTES: &'static [u8] = b"{\"openapi\":\"3.0.0\",\"info\":{\"title\":\"mokkan_core\",\"version\":\"0.1.0\"},\"paths\":{}}";
+static OPENAPI_JSON_BYTES: &[u8] = b"{\"openapi\":\"3.0.0\",\"info\":{\"title\":\"mokkan_core\",\"version\":\"0.1.0\"},\"paths\":{}}";
 
 // Minimal OpenAPI JSON bytes used for tests (stable across calls)
 pub fn openapi_bytes() -> &'static Bytes {
