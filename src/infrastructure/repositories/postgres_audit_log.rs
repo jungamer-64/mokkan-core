@@ -46,31 +46,29 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
         limit: u32,
         cursor: Option<AuditLogCursor>,
     ) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
-        let mut q = String::from(
-            "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs",
-        );
-
         if let Some(c) = cursor {
-            q.push_str(
-                " WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3",
-            );
-            let rows = sqlx::query(&q)
-                .bind(c.created_at)
-                .bind(c.id)
-                .bind((limit + 1) as i64)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(map_sqlx)?;
-            return Ok(map_rows_to_logs(rows, limit));
-        }
-
-        // no cursor
-        q.push_str(" ORDER BY created_at DESC, id DESC LIMIT $1");
-        let rows = sqlx::query(&q)
+            let rows = sqlx::query(
+                "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at \
+                 FROM audit_logs WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3",
+            )
+            .bind(c.created_at)
+            .bind(c.id)
             .bind((limit + 1) as i64)
             .fetch_all(&self.pool)
             .await
             .map_err(map_sqlx)?;
+            return Ok(map_rows_to_logs(rows, limit));
+        }
+
+        // no cursor
+        let rows = sqlx::query(
+            "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at \
+             FROM audit_logs ORDER BY created_at DESC, id DESC LIMIT $1",
+        )
+        .bind((limit + 1) as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
 
         Ok(map_rows_to_logs(rows, limit))
     }
@@ -81,30 +79,30 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
         limit: u32,
         cursor: Option<AuditLogCursor>,
     ) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
-        let mut q = String::from(
-            "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs WHERE user_id = $1",
-        );
         if let Some(c) = cursor {
-            q.push_str(
-                " AND (created_at, id) < ($2, $3) ORDER BY created_at DESC, id DESC LIMIT $4",
-            );
-            let rows = sqlx::query(&q)
-                .bind(user_id)
-                .bind(c.created_at)
-                .bind(c.id)
-                .bind((limit + 1) as i64)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(map_sqlx)?;
-            return Ok(map_rows_to_logs(rows, limit));
-        }
-        q.push_str(" ORDER BY created_at DESC, id DESC LIMIT $2");
-        let rows = sqlx::query(&q)
+            let rows = sqlx::query(
+                "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at \
+                 FROM audit_logs WHERE user_id = $1 AND (created_at, id) < ($2, $3) ORDER BY created_at DESC, id DESC LIMIT $4",
+            )
             .bind(user_id)
+            .bind(c.created_at)
+            .bind(c.id)
             .bind((limit + 1) as i64)
             .fetch_all(&self.pool)
             .await
             .map_err(map_sqlx)?;
+            return Ok(map_rows_to_logs(rows, limit));
+        }
+
+        let rows = sqlx::query(
+            "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at \
+             FROM audit_logs WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2",
+        )
+        .bind(user_id)
+        .bind((limit + 1) as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
 
         Ok(map_rows_to_logs(rows, limit))
     }
@@ -116,32 +114,32 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
         limit: u32,
         cursor: Option<AuditLogCursor>,
     ) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
-        let mut q = String::from(
-            "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs WHERE resource_type = $1 AND resource_id = $2",
-        );
         if let Some(c) = cursor {
-            q.push_str(
-                " AND (created_at, id) < ($3, $4) ORDER BY created_at DESC, id DESC LIMIT $5",
-            );
-            let rows = sqlx::query(&q)
-                .bind(resource_type)
-                .bind(resource_id)
-                .bind(c.created_at)
-                .bind(c.id)
-                .bind((limit + 1) as i64)
-                .fetch_all(&self.pool)
-                .await
-                .map_err(map_sqlx)?;
-            return Ok(map_rows_to_logs(rows, limit));
-        }
-        q.push_str(" ORDER BY created_at DESC, id DESC LIMIT $3");
-        let rows = sqlx::query(&q)
+            let rows = sqlx::query(
+                "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at \
+                 FROM audit_logs WHERE resource_type = $1 AND resource_id = $2 AND (created_at, id) < ($3, $4) ORDER BY created_at DESC, id DESC LIMIT $5",
+            )
             .bind(resource_type)
             .bind(resource_id)
+            .bind(c.created_at)
+            .bind(c.id)
             .bind((limit + 1) as i64)
             .fetch_all(&self.pool)
             .await
             .map_err(map_sqlx)?;
+            return Ok(map_rows_to_logs(rows, limit));
+        }
+
+        let rows = sqlx::query(
+            "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at \
+             FROM audit_logs WHERE resource_type = $1 AND resource_id = $2 ORDER BY created_at DESC, id DESC LIMIT $3",
+        )
+        .bind(resource_type)
+        .bind(resource_id)
+        .bind((limit + 1) as i64)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(map_sqlx)?;
 
         Ok(map_rows_to_logs(rows, limit))
     }

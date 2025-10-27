@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use std::sync::OnceLock;
 use std::time::SystemTime;
 
@@ -15,4 +16,17 @@ pub fn last_modified_str() -> Option<&'static str> {
                 .as_str(),
         )
     }
+}
+
+/// Compute a small deterministic ETag for the given bytes.
+///
+/// This uses a simple 64-bit FNV-1a style rolling hash. It's intentionally
+/// minimal to avoid adding dependencies; the resulting hex value is quoted
+/// to be a valid ETag token (e.g. `"abc123"`).
+pub(crate) fn compute_simple_etag(b: &Bytes) -> String {
+    let mut h: u64 = 1469598103934665603u64;
+    for &byte in b.iter() {
+        h = h.wrapping_mul(1099511628211u64) ^ (byte as u64);
+    }
+    format!("\"{:x}\"", h)
 }
