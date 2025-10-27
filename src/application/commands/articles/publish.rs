@@ -28,7 +28,6 @@ impl ArticleCommandService {
             .await?
             .ok_or_else(|| ApplicationError::not_found("article not found"))?;
         original_updated_at = article.updated_at;
-
         if article.published == command.publish {
             return Ok(article.into());
         }
@@ -40,6 +39,17 @@ impl ArticleCommandService {
             article.unpublish(now);
         }
 
+        self.persist_publish_update(id, original_updated_at, &article, actor)
+            .await
+    }
+
+    async fn persist_publish_update(
+        &self,
+        id: ArticleId,
+        original_updated_at: chrono::DateTime<chrono::Utc>,
+        article: &crate::domain::article::Article,
+        actor: &AuthenticatedUser,
+    ) -> ApplicationResult<ArticleDto> {
         let mut update = ArticleUpdate::new(id, original_updated_at)
             .with_publish_state(article.published, article.published_at);
         update.set_updated_at(article.updated_at);

@@ -17,6 +17,62 @@ impl PostgresUserRepository {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
+
+    fn build_update_query(
+        &self,
+        id: UserId,
+        is_active: Option<bool>,
+        role: Option<Role>,
+        password_hash: Option<PasswordHash>,
+    ) -> QueryBuilder<Postgres> {
+        let mut builder: QueryBuilder<Postgres> = QueryBuilder::new("UPDATE users SET ");
+        let mut first = true;
+
+        if let Some(is_active) = is_active {
+            if !first {
+                builder.push(", ");
+            }
+            first = false;
+            builder.push("is_active = ");
+            builder.push_bind(is_active);
+        }
+
+        if let Some(role) = role {
+            if !first {
+                builder.push(", ");
+            }
+            first = false;
+            builder.push("role = ");
+            builder.push_bind(role);
+        }
+
+        if let Some(password_hash) = password_hash {
+            if !first {
+                builder.push(", ");
+            }
+            first = false;
+            builder.push("password_hash = ");
+            let value: String = password_hash.into();
+            builder.push_bind(value);
+        }
+
+        builder.push(" WHERE id = ");
+        builder.push_bind(i64::from(id));
+        builder.push(" RETURNING id, username, password_hash, role, is_active, created_at");
+
+        builder
+    }
+
+    fn normalize_search(search: Option<&str>) -> Option<String> {
+        search.and_then(|s| {
+            let trimmed = s.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(format!("%{}%", trimmed))
+            }
+        })
+    }
 }
 
 #[derive(Debug, FromRow)]
@@ -120,41 +176,7 @@ impl UserRepository for PostgresUserRepository {
             ));
         }
 
-        let mut builder: QueryBuilder<Postgres> = QueryBuilder::new("UPDATE users SET ");
-        let mut first = true;
-        let mut password_hash_bind: Option<String> = None;
-
-        if let Some(is_active) = is_active {
-            if !first {
-                builder.push(", ");
-            }
-            first = false;
-            builder.push("is_active = ");
-            builder.push_bind(is_active);
-        }
-
-        if let Some(role) = role {
-            if !first {
-                builder.push(", ");
-            }
-            first = false;
-            builder.push("role = ");
-            builder.push_bind(role);
-        }
-
-        if let Some(password_hash) = password_hash {
-            if !first {
-                builder.push(", ");
-            }
-            builder.push("password_hash = ");
-            let value: String = password_hash.into();
-            password_hash_bind = Some(value);
-            builder.push_bind(password_hash_bind.as_deref().unwrap());
-        }
-
-        builder.push(" WHERE id = ");
-        builder.push_bind(i64::from(id));
-        builder.push(" RETURNING id, username, password_hash, role, is_active, created_at");
+    let mut builder = self.build_update_query(id, is_active, role, password_hash);
 
         let row = builder
             .build_query_as::<UserRow>()
@@ -175,14 +197,7 @@ impl UserRepository for PostgresUserRepository {
         let limit = limit.clamp(1, 100);
         let fetch_limit = (limit as i64) + 1;
 
-        let search = search.and_then(|s| {
-            let trimmed = s.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(format!("%{}%", trimmed))
-            }
-        });
+        let search = Self::normalize_search(search);
 
         let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(
             "SELECT id, username, password_hash, role, is_active, created_at FROM users",

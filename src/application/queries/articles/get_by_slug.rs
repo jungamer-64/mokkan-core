@@ -4,7 +4,7 @@ use crate::{
         dto::{ArticleDto, AuthenticatedUser},
         error::{ApplicationError, ApplicationResult},
     },
-    domain::article::ArticleSlug,
+    domain::article::{Article, ArticleSlug},
 };
 
 pub struct GetArticleBySlugQuery {
@@ -12,6 +12,23 @@ pub struct GetArticleBySlugQuery {
 }
 
 impl ArticleQueryService {
+    fn ensure_actor_can_view_unpublished(
+        &self,
+        actor: Option<&AuthenticatedUser>,
+        article: &Article,
+    ) -> ApplicationResult<()> {
+        if article.published {
+            return Ok(());
+        }
+
+        let actor = actor.ok_or_else(|| ApplicationError::not_found("article not found"))?;
+        if !actor.has_capability("articles", "view:drafts") && actor.id != article.author_id {
+            return Err(ApplicationError::not_found("article not found"));
+        }
+
+        Ok(())
+    }
+
     pub async fn get_article_by_slug(
         &self,
         actor: Option<&AuthenticatedUser>,
@@ -24,12 +41,7 @@ impl ArticleQueryService {
             .await?
             .ok_or_else(|| ApplicationError::not_found("article not found"))?;
 
-        if !article.published {
-            let actor = actor.ok_or_else(|| ApplicationError::not_found("article not found"))?;
-            if !actor.has_capability("articles", "view:drafts") && actor.id != article.author_id {
-                return Err(ApplicationError::not_found("article not found"));
-            }
-        }
+        self.ensure_actor_can_view_unpublished(actor, &article)?;
 
         Ok(article.into())
     }
