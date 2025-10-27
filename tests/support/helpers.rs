@@ -1,6 +1,6 @@
 // tests/support/helpers.rs
-use std::sync::Arc;
 use super::mocks;
+use std::sync::Arc;
 
 // Macros that expand at the call site so panics report the test caller location.
 // Named with `_async` to clarify these return an async block that must be awaited.
@@ -28,13 +28,17 @@ macro_rules! assert_error_response_async {
                 ct
             );
 
-            let json: serde_json::Value = serde_json::from_slice(&body_bytes)
-                .expect("expected valid json body for error");
+            let json: serde_json::Value =
+                serde_json::from_slice(&body_bytes).expect("expected valid json body for error");
 
             let err_field = json.get("error").and_then(|v| v.as_str()).unwrap_or("");
             let msg_field = json.get("message").and_then(|v| v.as_str()).unwrap_or("");
 
-            assert_eq!(err_field, $expected_error, "unexpected error field: {}", err_field);
+            assert_eq!(
+                err_field, $expected_error,
+                "unexpected error field: {}",
+                err_field
+            );
             assert!(
                 !msg_field.is_empty(),
                 "expected non-empty message field in ErrorResponse"
@@ -61,8 +65,7 @@ macro_rules! to_json_async {
 // Short aliases to keep function signatures compact for static analysis tools
 type AuditRepo =
     dyn mokkan_core::domain::audit::repository::AuditLogRepository + Send + Sync + 'static;
-type UserRepo =
-    dyn mokkan_core::domain::user::repository::UserRepository + Send + Sync + 'static;
+type UserRepo = dyn mokkan_core::domain::user::repository::UserRepository + Send + Sync + 'static;
 type ArticleWriteRepo =
     dyn mokkan_core::domain::article::repository::ArticleWriteRepository + Send + Sync + 'static;
 type ArticleReadRepo =
@@ -73,12 +76,14 @@ type PasswordHasherPort =
     dyn mokkan_core::application::ports::security::PasswordHasher + Send + Sync + 'static;
 type TokenManagerPort =
     dyn mokkan_core::application::ports::security::TokenManager + Send + Sync + 'static;
-type ClockPort =
-    dyn mokkan_core::application::ports::time::Clock + Send + Sync + 'static;
+type ClockPort = dyn mokkan_core::application::ports::time::Clock + Send + Sync + 'static;
 type SlugGeneratorPort =
     dyn mokkan_core::application::ports::util::SlugGenerator + Send + Sync + 'static;
 type SessionRevocationPort =
-    dyn mokkan_core::application::ports::session_revocation::SessionRevocationStore + Send + Sync + 'static;
+    dyn mokkan_core::application::ports::session_revocation::SessionRevocationStore
+        + Send
+        + Sync
+        + 'static;
 
 /// テスト用のHTTPステートを構築
 fn default_dependencies() -> (
@@ -90,8 +95,7 @@ fn default_dependencies() -> (
     Arc<TokenManagerPort>,
     Arc<ClockPort>,
     Arc<SlugGeneratorPort>,
-)
-{
+) {
     (
         Arc::new(mocks::DummyUserRepo),
         Arc::new(mocks::DummyArticleWrite),
@@ -104,8 +108,9 @@ fn default_dependencies() -> (
     )
 }
 
-fn make_services(audit_repo: Arc<AuditRepo>) -> Arc<mokkan_core::application::services::ApplicationServices>
-{
+fn make_services(
+    audit_repo: Arc<AuditRepo>,
+) -> Arc<mokkan_core::application::services::ApplicationServices> {
     let (
         user_repo,
         article_write,
@@ -117,15 +122,20 @@ fn make_services(audit_repo: Arc<AuditRepo>) -> Arc<mokkan_core::application::se
         slugger,
     ) = default_dependencies();
 
-    Arc::new(mokkan_core::application::services::ApplicationServices::new(
+    let deps = mokkan_core::application::services::ApplicationDependencies {
         user_repo,
-        article_write,
-        article_read,
-        article_rev,
+        article_write_repo: article_write,
+        article_read_repo: article_read,
+        article_revision_repo: article_rev,
+        audit_log_repo: audit_repo,
+    };
+
+    Arc::new(mokkan_core::application::services::ApplicationServices::new(
+        deps,
         password_hasher,
         token_manager,
         Arc::new(mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new()),
-        audit_repo,
+        Arc::new(mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore::new()),
         clock,
         slugger,
     ))

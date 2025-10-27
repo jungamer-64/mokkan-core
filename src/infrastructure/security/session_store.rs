@@ -3,8 +3,8 @@ use crate::application::ApplicationResult;
 use crate::application::ports::session_revocation::SessionRevocationStore;
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 // Local helper struct to store session metadata in-memory
 #[derive(Debug, Clone)]
@@ -25,8 +25,8 @@ pub struct InMemorySessionRevocationStore {
     used_nonces: Mutex<HashMap<String, HashSet<String>>>,
     // per-user sessions (user_id -> set of session_ids)
     user_sessions: Mutex<HashMap<i64, HashSet<String>>>,
-        // per-session metadata (session_id -> SessionMeta)
-        session_meta: Mutex<HashMap<String, SessionMeta>>,
+    // per-session metadata (session_id -> SessionMeta)
+    session_meta: Mutex<HashMap<String, SessionMeta>>,
 }
 
 impl InMemorySessionRevocationStore {
@@ -70,13 +70,20 @@ impl SessionRevocationStore for InMemorySessionRevocationStore {
         Ok(())
     }
 
-    async fn set_session_refresh_nonce(&self, session_id: &str, nonce: &str) -> ApplicationResult<()> {
+    async fn set_session_refresh_nonce(
+        &self,
+        session_id: &str,
+        nonce: &str,
+    ) -> ApplicationResult<()> {
         let mut guard = self.session_nonces.lock().unwrap();
         guard.insert(session_id.to_string(), nonce.to_string());
         Ok(())
     }
 
-    async fn get_session_refresh_nonce(&self, session_id: &str) -> ApplicationResult<Option<String>> {
+    async fn get_session_refresh_nonce(
+        &self,
+        session_id: &str,
+    ) -> ApplicationResult<Option<String>> {
         let guard = self.session_nonces.lock().unwrap();
         Ok(guard.get(session_id).cloned())
     }
@@ -101,16 +108,27 @@ impl SessionRevocationStore for InMemorySessionRevocationStore {
         }
     }
 
-    async fn mark_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<()> {
+    async fn mark_session_refresh_nonce_used(
+        &self,
+        session_id: &str,
+        nonce: &str,
+    ) -> ApplicationResult<()> {
         let mut used_guard = self.used_nonces.lock().unwrap();
         let entry = used_guard.entry(session_id.to_string()).or_default();
         entry.insert(nonce.to_string());
         Ok(())
     }
 
-    async fn is_session_refresh_nonce_used(&self, session_id: &str, nonce: &str) -> ApplicationResult<bool> {
+    async fn is_session_refresh_nonce_used(
+        &self,
+        session_id: &str,
+        nonce: &str,
+    ) -> ApplicationResult<bool> {
         let used_guard = self.used_nonces.lock().unwrap();
-        Ok(used_guard.get(session_id).map(|s| s.contains(nonce)).unwrap_or(false))
+        Ok(used_guard
+            .get(session_id)
+            .map(|s| s.contains(nonce))
+            .unwrap_or(false))
     }
 
     async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()> {
@@ -149,7 +167,11 @@ impl SessionRevocationStore for InMemorySessionRevocationStore {
         Ok(())
     }
 
-    async fn remove_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()> {
+    async fn remove_session_for_user(
+        &self,
+        user_id: i64,
+        session_id: &str,
+    ) -> ApplicationResult<()> {
         let mut guard = self.user_sessions.lock().unwrap();
         if let Some(set) = guard.get_mut(&user_id) {
             set.remove(session_id);
@@ -172,7 +194,10 @@ impl SessionRevocationStore for InMemorySessionRevocationStore {
         }
     }
 
-    async fn list_sessions_for_user_with_meta(&self, user_id: i64) -> ApplicationResult<Vec<crate::application::ports::session_revocation::SessionInfo>> {
+    async fn list_sessions_for_user_with_meta(
+        &self,
+        user_id: i64,
+    ) -> ApplicationResult<Vec<crate::application::ports::session_revocation::SessionInfo>> {
         let sessions = {
             let guard = self.user_sessions.lock().unwrap();
             match guard.get(&user_id) {
@@ -210,18 +235,23 @@ impl SessionRevocationStore for InMemorySessionRevocationStore {
         Ok(out)
     }
 
-    async fn get_session_metadata(&self, session_id: &str) -> ApplicationResult<Option<crate::application::ports::session_revocation::SessionInfo>> {
+    async fn get_session_metadata(
+        &self,
+        session_id: &str,
+    ) -> ApplicationResult<Option<crate::application::ports::session_revocation::SessionInfo>> {
         let meta_guard = self.session_meta.lock().unwrap();
         if let Some(m) = meta_guard.get(session_id) {
             let revoked_guard = self.revoked.lock().unwrap();
-            Ok(Some(crate::application::ports::session_revocation::SessionInfo {
-                user_id: m.user_id,
-                session_id: session_id.to_string(),
-                user_agent: m.user_agent.clone(),
-                ip_address: m.ip_address.clone(),
-                created_at_unix: m.created_at_unix,
-                revoked: revoked_guard.contains(session_id),
-            }))
+            Ok(Some(
+                crate::application::ports::session_revocation::SessionInfo {
+                    user_id: m.user_id,
+                    session_id: session_id.to_string(),
+                    user_agent: m.user_agent.clone(),
+                    ip_address: m.ip_address.clone(),
+                    created_at_unix: m.created_at_unix,
+                    revoked: revoked_guard.contains(session_id),
+                },
+            ))
         } else {
             Ok(None)
         }

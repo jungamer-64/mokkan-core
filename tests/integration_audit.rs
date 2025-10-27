@@ -7,7 +7,8 @@ async fn integration_audit_write_and_read() {
         return;
     }
 
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for integration tests");
+    let database_url =
+        std::env::var("DATABASE_URL").expect("DATABASE_URL must be set for integration tests");
     let pool = mokkan_core::infrastructure::database::init_pool(&database_url)
         .await
         .expect("init pool");
@@ -16,10 +17,11 @@ async fn integration_audit_write_and_read() {
         .await
         .expect("run migrations");
 
-    use std::sync::Arc;
     use mokkan_core::domain::audit::repository::AuditLogRepository;
+    use std::sync::Arc;
 
-    let repo_impl = mokkan_core::infrastructure::repositories::PostgresAuditLogRepository::new(pool.clone());
+    let repo_impl =
+        mokkan_core::infrastructure::repositories::PostgresAuditLogRepository::new(pool.clone());
     let repo: Arc<dyn AuditLogRepository> = Arc::new(repo_impl);
 
     // insert test rows
@@ -41,7 +43,10 @@ async fn integration_audit_write_and_read() {
     // query with small limit and expect a next_cursor
     let (items, next_cursor) = repo.list(2, None).await.expect("list");
     assert!(items.len() >= 2, "expected at least 2 items");
-    assert!(next_cursor.is_some(), "expected next_cursor when more items exist");
+    assert!(
+        next_cursor.is_some(),
+        "expected next_cursor when more items exist"
+    );
 
     // cleanup test rows
     sqlx::query("DELETE FROM audit_logs WHERE action LIKE 'test-integration-%'")

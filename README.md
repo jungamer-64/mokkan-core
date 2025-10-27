@@ -46,3 +46,9 @@
   - `TOKEN_TTL_SECONDS`: トークンの有効期限 (秒)
 
 問題が発生したら、エラーメッセージを共有してください。ビルドや実行エラーの調査を手伝います。
+
+OpenID / Authorization Code (PKCE)
+
+このリポジトリは簡易的な Authorization Code フロー (PKCE 対応) をサポートしています。テスト用のエンドポイントや curl サンプルは `docs/openid-authorization.md` にまとめています。開発や自動テストでの利用方法、PKCE の生成例、`consent=approve` による自動承認の使い方が記載されています。
+
+ファイル: `docs/openid-authorization.md`

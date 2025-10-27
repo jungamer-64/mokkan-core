@@ -1,7 +1,7 @@
 use axum::body::Body;
-use axum::http::{Request, header::AUTHORIZATION, StatusCode};
-use tower::util::ServiceExt as _;
+use axum::http::{Request, StatusCode, header::AUTHORIZATION};
 use chrono::Utc;
+use tower::util::ServiceExt as _;
 mod support;
 
 #[tokio::test]
@@ -24,7 +24,10 @@ async fn e2e_list_and_revoke_sessions() {
         .await
         .expect("set meta");
 
-    let app = mokkan_core::presentation::http::routes::build_router_with_rate_limiter(state.clone(), false);
+    let app = mokkan_core::presentation::http::routes::build_router_with_rate_limiter(
+        state.clone(),
+        false,
+    );
 
     // list sessions as the sessioned user (DummyTokenManager::SESSION_TOKEN -> session_id = sid-1, user id = 4)
     let req = Request::builder()
@@ -42,7 +45,11 @@ async fn e2e_list_and_revoke_sessions() {
     // Expect at least the two sessions we created
     let ids: Vec<String> = arr
         .iter()
-        .filter_map(|v| v.get("session_id").and_then(|s| s.as_str()).map(|s| s.to_string()))
+        .filter_map(|v| {
+            v.get("session_id")
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string())
+        })
         .collect();
 
     assert!(ids.contains(&"sid-1".to_string()));
@@ -64,5 +71,8 @@ async fn e2e_list_and_revoke_sessions() {
     assert!(revoked, "sid-2 should be revoked");
 
     let remaining = store.list_sessions_for_user(user_id).await.expect("list");
-    assert!(!remaining.contains(&"sid-2".to_string()), "sid-2 should have been removed from user's sessions");
+    assert!(
+        !remaining.contains(&"sid-2".to_string()),
+        "sid-2 should have been removed from user's sessions"
+    );
 }

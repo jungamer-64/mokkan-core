@@ -5,14 +5,14 @@ use crate::application::{
     ports::security::TokenManager,
 };
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use biscuit_auth::{
     Biscuit, KeyPair, PrivateKey, PublicKey,
     builder::{Algorithm, BlockBuilder, Term},
 };
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use serde_json::json;
-use sha2::{Sha256, Digest};
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
+use serde_json::json;
+use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -53,14 +53,16 @@ fn build_code_and_params(
     params.insert("issued".to_string(), issued_at.into());
     params.insert("exp".to_string(), expires_at.into());
 
-    let mut code = String::from(r#"
+    let mut code = String::from(
+        r#"
                 user({uid}, {uname});
                 role({urole});
                 issued_at({issued});
                 expires_at({exp});
                 check if time($now), $now >= {issued};
                 check if time($now), $now <= {exp};
-                "#);
+                "#,
+    );
 
     if let Some(sid) = subject.session_id.as_ref() {
         code.push_str("session({sid}, {ver});\n");
@@ -80,7 +82,7 @@ fn build_code_and_params(
         let act_key = format!("cap_act_{}", i);
         params.insert(res_key.clone(), cap.resource.clone().into());
         params.insert(act_key.clone(), cap.action.clone().into());
-    code.push_str(&format!("right({{{}}}, {{{}}});\n", res_key, act_key));
+        code.push_str(&format!("right({{{}}}, {{{}}});\n", res_key, act_key));
     }
 
     (code, params)
@@ -94,10 +96,12 @@ fn build_caveat_code_and_params(token_type: &str) -> (String, HashMap<String, Te
     // and require the token_type via a check. The actual token_type fact is
     // provided by the root block (authority), so the check will validate it.
     // Use a 1-arity marker fact to avoid parser issues with zero-arity predicates.
-    let code = String::from(r#"
+    let code = String::from(
+        r#"
                 has_caveat("1");
                 check if token_type({tt});
-                "#);
+                "#,
+    );
 
     (code, params)
 }
@@ -159,9 +163,7 @@ fn build_and_serialize_biscuit_with_block(
     seal_and_serialize(token)
 }
 
-fn extract_root_token_type_from_facts(
-    facts: &Vec<biscuit_auth::builder::Fact>,
-) -> Option<String> {
+fn extract_root_token_type_from_facts(facts: &Vec<biscuit_auth::builder::Fact>) -> Option<String> {
     for f in facts.iter() {
         if f.predicate.name == "token_type" {
             if let Some(term) = f.predicate.terms.first() {
@@ -300,13 +302,14 @@ impl TokenManager for BiscuitTokenManager {
         let user = crate::infrastructure::security::claims::parse_claims(facts)?;
         let now = chrono::Utc::now();
         if now < user.issued_at || now > user.expires_at {
-            return Err(ApplicationError::unauthorized("token is expired or not yet valid"));
+            return Err(ApplicationError::unauthorized(
+                "token is expired or not yet valid",
+            ));
         }
 
         Ok(user)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -351,11 +354,14 @@ mod tests {
 
         // Build a biscuit WITHOUT the separate caveat block
         let (code, params) = build_code_and_params(&subject, issued_at, expires_at);
-        let token = build_and_serialize_biscuit(&code, params, manager.root.as_ref())
-            .expect("build token");
+        let token =
+            build_and_serialize_biscuit(&code, params, manager.root.as_ref()).expect("build token");
 
         let res = manager.authenticate(&token).await;
-        assert!(res.is_err(), "expected authentication to fail for token without caveat");
+        assert!(
+            res.is_err(),
+            "expected authentication to fail for token without caveat"
+        );
     }
 
     #[tokio::test]
@@ -406,7 +412,10 @@ mod tests {
         if let Err(e) = &res {
             eprintln!("authenticate error: {:?}", e);
         }
-        assert!(res.is_ok(), "expected authentication to succeed for token with access caveat");
+        assert!(
+            res.is_ok(),
+            "expected authentication to succeed for token with access caveat"
+        );
     }
 
     #[tokio::test]
@@ -455,6 +464,9 @@ mod tests {
         .expect("build token with bad caveat");
 
         let res = manager.authenticate(&token).await;
-        assert!(res.is_err(), "expected authentication to fail for token with mismatched caveat");
+        assert!(
+            res.is_err(),
+            "expected authentication to fail for token with mismatched caveat"
+        );
     }
 }

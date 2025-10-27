@@ -17,7 +17,10 @@ impl MockRepo {
     }
 
     pub fn with_items(items: Vec<mokkan_core::domain::audit::entity::AuditLog>) -> Self {
-        Self { items, next_cursor: None }
+        Self {
+            items,
+            next_cursor: None,
+        }
     }
 
     pub fn with(
@@ -135,7 +138,8 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for MockAuditRep
 pub struct CapturingAuditRepo {
     pub items: Vec<mokkan_core::domain::audit::entity::AuditLog>,
     pub next_cursor: Option<String>,
-    pub inserted: std::sync::Arc<std::sync::Mutex<Vec<mokkan_core::domain::audit::entity::AuditLog>>>,
+    pub inserted:
+        std::sync::Arc<std::sync::Mutex<Vec<mokkan_core::domain::audit::entity::AuditLog>>>,
 }
 
 impl CapturingAuditRepo {

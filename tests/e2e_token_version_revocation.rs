@@ -1,5 +1,5 @@
 use axum::body::Body;
-use axum::http::{Request, header::AUTHORIZATION, Method, StatusCode};
+use axum::http::{Method, Request, StatusCode, header::AUTHORIZATION};
 use tower::util::ServiceExt as _;
 
 mod support;

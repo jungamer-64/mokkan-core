@@ -11,15 +11,21 @@ impl mokkan_core::domain::article::repository::ArticleWriteRepository for DummyA
     async fn insert(
         &self,
         _new: mokkan_core::domain::article::entity::NewArticle,
-    ) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::article::entity::Article> {
-        Err(mokkan_core::domain::errors::DomainError::NotFound("not implemented".into()))
+    ) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::article::entity::Article>
+    {
+        Err(mokkan_core::domain::errors::DomainError::NotFound(
+            "not implemented".into(),
+        ))
     }
 
     async fn update(
         &self,
         _article: mokkan_core::domain::article::entity::ArticleUpdate,
-    ) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::article::entity::Article> {
-        Err(mokkan_core::domain::errors::DomainError::NotFound("not implemented".into()))
+    ) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::article::entity::Article>
+    {
+        Err(mokkan_core::domain::errors::DomainError::NotFound(
+            "not implemented".into(),
+        ))
     }
 
     async fn delete(
@@ -40,14 +46,18 @@ impl mokkan_core::domain::article::repository::ArticleReadRepository for DummyAr
     async fn find_by_id(
         &self,
         _id: mokkan_core::domain::article::value_objects::ArticleId,
-    ) -> mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::article::entity::Article>> {
+    ) -> mokkan_core::domain::errors::DomainResult<
+        Option<mokkan_core::domain::article::entity::Article>,
+    > {
         Ok(None)
     }
 
     async fn find_by_slug(
         &self,
         _slug: &mokkan_core::domain::article::value_objects::ArticleSlug,
-    ) -> mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::article::entity::Article>> {
+    ) -> mokkan_core::domain::errors::DomainResult<
+        Option<mokkan_core::domain::article::entity::Article>,
+    > {
         Ok(None)
     }
 
@@ -83,7 +93,9 @@ impl mokkan_core::domain::article::repository::ArticleRevisionRepository for Dum
     async fn list_by_article(
         &self,
         _article_id: mokkan_core::domain::article::value_objects::ArticleId,
-    ) -> mokkan_core::domain::errors::DomainResult<Vec<mokkan_core::domain::article::revision::ArticleRevision>> {
+    ) -> mokkan_core::domain::errors::DomainResult<
+        Vec<mokkan_core::domain::article::revision::ArticleRevision>,
+    > {
         Ok(vec![])
     }
 }

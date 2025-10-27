@@ -1,5 +1,5 @@
 use axum::body::Body;
-use axum::http::{Request, header::AUTHORIZATION, Method, StatusCode};
+use axum::http::{Method, Request, StatusCode, header::AUTHORIZATION};
 use tower::util::ServiceExt as _;
 
 mod support;
@@ -35,7 +35,10 @@ async fn logout_revokes_session_and_protects_endpoints() {
     let resp = app.clone().oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let (_headers, json) = to_json_async!(resp).await;
-    assert_eq!(json.get("status").and_then(|v| v.as_str()), Some("logged_out"));
+    assert_eq!(
+        json.get("status").and_then(|v| v.as_str()),
+        Some("logged_out")
+    );
 
     // After logout the protected endpoint should now be unauthorized (401)
     let body = serde_json::json!({ "title": "t2", "body": "b2", "publish": false }).to_string();

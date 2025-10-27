@@ -1,11 +1,15 @@
 // src/presentation/http/controllers/auth.rs
 use crate::application::{
     commands::users::{
-        ChangePasswordCommand, LoginUserCommand, RefreshTokenCommand, RegisterUserCommand,
-        UpdateUserCommand, GrantRoleCommand, RevokeRoleCommand,
+        ChangePasswordCommand, GrantRoleCommand, LoginUserCommand, RefreshTokenCommand,
+        RegisterUserCommand, RevokeRoleCommand, UpdateUserCommand,
     },
     dto::{AuthTokenDto, UserDto, UserProfileDto},
     queries::users::ListUsersQuery,
+};
+use crate::presentation::http::controllers::user_requests::{
+    ChangePasswordRequest, GrantRoleRequest, ListUsersParams, LoginRequest, LoginResponse,
+    RefreshTokenRequest, RegisterRequest, UpdateUserRequest,
 };
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::{Authenticated, MaybeAuthenticated};
@@ -15,65 +19,7 @@ use axum::{
     Extension, Json,
     extract::{Path, Query},
 };
-use chrono::{Utc, TimeZone};
 use serde_json::Value as JsonValue;
-use serde::{Deserialize, Serialize};
-use utoipa::IntoParams;
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct RegisterRequest {
-    pub username: String,
-    pub password: String,
-    pub role: Option<crate::domain::user::Role>,
-}
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct LoginRequest {
-    pub username: String,
-    pub password: String,
-}
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct RefreshTokenRequest {
-    pub token: String,
-}
-
-#[derive(Debug, Serialize, utoipa::ToSchema)]
-pub struct LoginResponse {
-    pub token: AuthTokenDto,
-    pub user: UserDto,
-}
-
-fn default_limit() -> u32 {
-    20
-}
-
-#[derive(Debug, Deserialize, IntoParams, utoipa::ToSchema)]
-pub struct ListUsersParams {
-    #[serde(default = "default_limit")]
-    pub limit: u32,
-    #[serde(default)]
-    pub cursor: Option<String>,
-    #[serde(default)]
-    pub q: Option<String>,
-}
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct UpdateUserRequest {
-    pub is_active: Option<bool>,
-    pub role: Option<crate::domain::user::Role>,
-}
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct ChangePasswordRequest {
-    pub current_password: Option<String>,
-    pub new_password: String,
-}
-
-#[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub struct GrantRoleRequest {
-    pub role: crate::domain::user::Role,
-}
 
 #[utoipa::path(
     post,
@@ -197,98 +143,7 @@ pub async fn profile(
         .map(Json)
 }
 
-#[utoipa::path(
-    get,
-    path = "/api/v1/auth/sessions",
-    responses(
-        (status = 200, description = "List of sessions for the current user", body = [crate::application::dto::SessionInfoDto]),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
-    ),
-    security(("bearerAuth" = [])),
-    tag = "Auth"
-)]
-pub async fn list_sessions(
-    Extension(state): Extension<HttpState>,
-    Authenticated(user): Authenticated,
-) -> HttpResult<Json<Vec<crate::application::dto::SessionInfoDto>>> {
-    let store = state.services.session_revocation_store();
-    let infos = store
-        .list_sessions_for_user_with_meta(user.id.into())
-        .await
-        .into_http()?;
-
-    let dtos: Vec<crate::application::dto::SessionInfoDto> = infos
-        .into_iter()
-        .map(|si| {
-            let created = if si.created_at_unix > 0 {
-                // Use the TimeZone::timestamp_opt API which returns a LocalResult.
-                // Prefer `.single()` to get an Option<DateTime<Utc>> and fall back to now if invalid.
-                Utc.timestamp_opt(si.created_at_unix, 0)
-                    .single()
-                    .unwrap_or_else(|| Utc::now())
-            } else {
-                Utc::now()
-            };
-
-            crate::application::dto::SessionInfoDto {
-                session_id: si.session_id,
-                user_agent: si.user_agent,
-                ip_address: si.ip_address,
-                created_at: created,
-                revoked: si.revoked,
-            }
-        })
-        .collect();
-
-    Ok(Json(dtos))
-}
-
-#[utoipa::path(
-    delete,
-    path = "/api/v1/auth/sessions/{id}",
-    params(("id" = String, Path, description = "Session identifier")),
-    responses(
-        (status = 200, description = "Session revoked.", body = crate::presentation::http::openapi::StatusResponse),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
-    ),
-    security(("bearerAuth" = [])),
-    tag = "Auth"
-)]
-pub async fn revoke_session(
-    Extension(state): Extension<HttpState>,
-    Authenticated(user): Authenticated,
-    Path(id): Path<String>,
-) -> HttpResult<Json<crate::presentation::http::openapi::StatusResponse>> {
-    let store = state.services.session_revocation_store();
-
-    // Allow owners to revoke their own sessions, or admins with users:update capability
-    let is_owner = {
-        let sessions = store.list_sessions_for_user(user.id.into()).await.into_http()?;
-        sessions.contains(&id)
-    };
-
-    if !is_owner && !user.has_capability("users", "update") {
-        return Err(crate::presentation::http::error::HttpError::from_error(
-            crate::application::error::ApplicationError::forbidden("not authorized to revoke this session"),
-        ));
-    }
-
-    // Revoke the session and remove metadata/association
-    store.revoke(&id).await.into_http()?;
-
-    // If metadata contains owner user_id, remove association there as well.
-    if let Some(meta) = store.get_session_metadata(&id).await.into_http()? {
-        if meta.user_id != 0 {
-            let _ = store.remove_session_for_user(meta.user_id, &id).await;
-        }
-    }
-    let _ = store.delete_session_metadata(&id).await;
-
-    Ok(Json(crate::presentation::http::openapi::StatusResponse { status: "session_revoked".into() }))
-}
+// Session endpoints are implemented in `auth_sessions.rs` (OpenAPI paths defined there)
 
 #[utoipa::path(
     get,
@@ -430,7 +285,10 @@ pub async fn grant_role(
     Path(id): Path<i64>,
     Json(payload): Json<GrantRoleRequest>,
 ) -> HttpResult<Json<UserDto>> {
-    let command = GrantRoleCommand { user_id: id, role: payload.role };
+    let command = GrantRoleCommand {
+        user_id: id,
+        role: payload.role,
+    };
 
     state
         .services
@@ -475,9 +333,7 @@ pub async fn revoke_role(
 }
 
 // JWKS-like public keys endpoint. Returns the public key material used to verify tokens.
-pub async fn keys(
-    Extension(state): Extension<HttpState>,
-) -> HttpResult<Json<JsonValue>> {
+pub async fn keys(Extension(state): Extension<HttpState>) -> HttpResult<Json<JsonValue>> {
     state
         .services
         .token_manager()
@@ -486,6 +342,8 @@ pub async fn keys(
         .into_http()
         .map(Json)
 }
+// OIDC-related handlers (introspect/revoke/authorize) have been moved to
+// `auth_oidc.rs` to keep this module focused and avoid large file warnings.
 
 #[utoipa::path(
     post,

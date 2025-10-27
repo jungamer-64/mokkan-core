@@ -6,12 +6,16 @@ use chrono::{Duration, Utc};
 
 mod support;
 
-use mokkan_core::application::commands::users::{GrantRoleCommand, RevokeRoleCommand, UserCommandService};
+use mokkan_core::application::commands::users::{
+    GrantRoleCommand, RevokeRoleCommand, UserCommandService,
+};
 use mokkan_core::application::dto::AuthenticatedUser;
 use mokkan_core::domain::errors::DomainResult;
-use mokkan_core::domain::user::entity::{User, NewUser, UserUpdate};
+use mokkan_core::domain::user::entity::{NewUser, User, UserUpdate};
 use mokkan_core::domain::user::repository::UserRepository;
-use mokkan_core::domain::user::value_objects::{PasswordHash, Role, UserId, Username, UserListCursor};
+use mokkan_core::domain::user::value_objects::{
+    PasswordHash, Role, UserId, UserListCursor, Username,
+};
 
 struct InMemoryUserRepo {
     inner: Mutex<HashMap<i64, User>>,
@@ -19,7 +23,9 @@ struct InMemoryUserRepo {
 
 impl InMemoryUserRepo {
     fn new(users: HashMap<i64, User>) -> Self {
-        Self { inner: Mutex::new(users) }
+        Self {
+            inner: Mutex::new(users),
+        }
     }
 }
 
@@ -31,7 +37,9 @@ impl UserRepository for InMemoryUserRepo {
     }
 
     async fn insert(&self, _new_user: NewUser) -> DomainResult<User> {
-        Err(mokkan_core::domain::errors::DomainError::NotFound("not implemented".into()))
+        Err(mokkan_core::domain::errors::DomainError::NotFound(
+            "not implemented".into(),
+        ))
     }
 
     async fn find_by_username(&self, username: &Username) -> DomainResult<Option<User>> {
@@ -52,7 +60,9 @@ impl UserRepository for InMemoryUserRepo {
     async fn update(&self, update: UserUpdate) -> DomainResult<User> {
         let mut map = self.inner.lock().unwrap();
         let id = i64::from(update.id);
-        let user = map.get_mut(&id).ok_or_else(|| mokkan_core::domain::errors::DomainError::NotFound("user not found".into()))?;
+        let user = map.get_mut(&id).ok_or_else(|| {
+            mokkan_core::domain::errors::DomainError::NotFound("user not found".into())
+        })?;
 
         if let Some(is_active) = update.is_active {
             user.is_active = is_active;
@@ -67,7 +77,12 @@ impl UserRepository for InMemoryUserRepo {
         Ok(user.clone())
     }
 
-    async fn list_page(&self, _limit: u32, _cursor: Option<UserListCursor>, _search: Option<&str>) -> DomainResult<(Vec<User>, Option<UserListCursor>)> {
+    async fn list_page(
+        &self,
+        _limit: u32,
+        _cursor: Option<UserListCursor>,
+        _search: Option<&str>,
+    ) -> DomainResult<(Vec<User>, Option<UserListCursor>)> {
         Ok((vec![], None))
     }
 }
@@ -104,8 +119,16 @@ async fn grant_and_revoke_role_service_flow() {
     let token_manager = Arc::new(support::DummyTokenManager);
     let clock = Arc::new(support::DummyClock);
 
-    let session_store = Arc::new(mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new());
-    let svc = UserCommandService::new(repo.clone(), password_hasher, token_manager, session_store, clock);
+    let session_store = Arc::new(
+        mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new(),
+    );
+    let svc = UserCommandService::new(
+        repo.clone(),
+        password_hasher,
+        token_manager,
+        session_store,
+        clock,
+    );
 
     let actor = AuthenticatedUser {
         id: UserId::new(1).unwrap(),
@@ -119,12 +142,21 @@ async fn grant_and_revoke_role_service_flow() {
     };
 
     // grant admin role to target
-    let grant_cmd = GrantRoleCommand { user_id: 2, role: Role::Admin };
-    let updated = svc.grant_role(&actor, grant_cmd).await.expect("grant_role failed");
+    let grant_cmd = GrantRoleCommand {
+        user_id: 2,
+        role: Role::Admin,
+    };
+    let updated = svc
+        .grant_role(&actor, grant_cmd)
+        .await
+        .expect("grant_role failed");
     assert_eq!(updated.role, Role::Admin);
 
     // now revoke (set back to Author)
     let revoke_cmd = RevokeRoleCommand { user_id: 2 };
-    let updated2 = svc.revoke_role(&actor, revoke_cmd).await.expect("revoke_role failed");
+    let updated2 = svc
+        .revoke_role(&actor, revoke_cmd)
+        .await
+        .expect("revoke_role failed");
     assert_eq!(updated2.role, Role::Author);
 }
