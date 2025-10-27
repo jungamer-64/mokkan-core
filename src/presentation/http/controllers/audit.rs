@@ -1,7 +1,9 @@
 // src/presentation/http/controllers/audit.rs
 use crate::application::dto::AuditLogDto;
 use crate::application::dto::CursorPage;
-use crate::application::queries::audit::{AuditQueryService, ListAuditQuery};
+use crate::application::queries::audit::{
+    AuditQueryService, ListAuditLogsByResourceQuery, ListAuditLogsByUserQuery, ListAuditLogsQuery,
+};
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::Authenticated;
 use crate::presentation::http::state::HttpState;
@@ -31,7 +33,7 @@ pub async fn list_audit_logs(
     let res = service
         .list_audit_logs(
             &actor,
-            ListAuditQuery {
+            ListAuditLogsQuery {
                 limit: params.limit,
                 cursor: params.cursor.clone(),
             },
@@ -51,8 +53,8 @@ pub async fn list_audit_logs_by_user(
     let res = service
         .list_by_user(
             &actor,
-            user_id,
-            ListAuditQuery {
+            ListAuditLogsByUserQuery {
+                user_id,
                 limit: params.limit,
                 cursor: params.cursor.clone(),
             },
@@ -72,9 +74,9 @@ pub async fn list_audit_logs_by_resource(
     let res = service
         .list_by_resource(
             &actor,
-            &resource_type,
-            resource_id,
-            ListAuditQuery {
+            ListAuditLogsByResourceQuery {
+                resource_type,
+                resource_id,
                 limit: params.limit,
                 cursor: params.cursor.clone(),
             },

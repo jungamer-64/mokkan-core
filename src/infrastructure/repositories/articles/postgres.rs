@@ -1,5 +1,5 @@
-// src/infrastructure/repositories/postgres_article.rs
-use super::map_sqlx;
+// src/infrastructure/repositories/articles/postgres.rs
+use super::super::map_sqlx;
 use crate::domain::article::{
     Article, ArticleBody, ArticleId, ArticleListCursor, ArticleReadRepository, ArticleSlug,
     ArticleTitle, ArticleUpdate, ArticleWriteRepository, NewArticle,

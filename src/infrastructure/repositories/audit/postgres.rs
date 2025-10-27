@@ -1,5 +1,5 @@
-// src/infrastructure/repositories/postgres_audit_log.rs
-use super::map_sqlx;
+// src/infrastructure/repositories/audit/postgres.rs
+use super::super::map_sqlx;
 use crate::domain::audit::cursor::AuditLogCursor;
 use crate::domain::audit::entity::AuditLog;
 use crate::domain::errors::DomainResult;

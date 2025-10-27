@@ -1,5 +1,5 @@
-// src/infrastructure/repositories/postgres_article_revision.rs
-use super::map_sqlx;
+// src/infrastructure/repositories/articles/revision.rs
+use super::super::map_sqlx;
 use crate::domain::article::{
     Article, ArticleBody, ArticleId, ArticleRevision, ArticleRevisionRepository, ArticleSlug,
     ArticleTitle,

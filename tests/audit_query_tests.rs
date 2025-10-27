@@ -1,6 +1,6 @@
 // tests/audit_query_tests.rs
 use mokkan_core::application::dto::AuthenticatedUser;
-use mokkan_core::application::queries::audit::{AuditQueryService, ListAuditQuery};
+use mokkan_core::application::queries::audit::{AuditQueryService, ListAuditLogsQuery};
 use mokkan_core::domain::user::value_objects::Capability;
 use mokkan_core::domain::user::value_objects::UserId;
 // domain errors are not needed in this test
@@ -27,7 +27,7 @@ async fn audit_query_service_list_decodes_cursor_and_returns_page() {
         token_version: None,
     };
 
-    let q = ListAuditQuery {
+    let q = ListAuditLogsQuery {
         limit: 10,
         cursor: None,
     };

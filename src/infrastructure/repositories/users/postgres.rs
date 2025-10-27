@@ -1,5 +1,5 @@
-// src/infrastructure/repositories/postgres_user.rs
-use super::map_sqlx;
+// src/infrastructure/repositories/users/postgres.rs
+use super::super::map_sqlx;
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::user::{
     NewUser, PasswordHash, Role, User, UserId, UserListCursor, UserRepository, UserUpdate, Username,
