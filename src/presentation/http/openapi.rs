@@ -3,7 +3,6 @@
 pub mod openapi_meta;
 pub mod openapi_mutation;
 use axum::Router;
-use axum::http::HeaderMap;
 use axum::routing::{get, head};
 use bytes::Bytes;
 use std::sync::OnceLock;
@@ -13,6 +12,10 @@ use std::sync::OnceLock;
 static OPENAPI_BYTES: OnceLock<Bytes> = OnceLock::new();
 static OPENAPI_ETAG: OnceLock<String> = OnceLock::new();
 static OPENAPI_CONTENT_LENGTH: OnceLock<usize> = OnceLock::new();
+static OPENAPI_CONTENT_LENGTH_STR: OnceLock<String> = OnceLock::new();
+
+/// Content-Type used for the OpenAPI JSON representation.
+pub const OPENAPI_CONTENT_TYPE_JSON: &str = "application/json";
 
 // Canonical minimal OpenAPI JSON as a static byte slice so the `openapi_bytes`
 // accessor can stay very small (this also keeps static analysis tools happy).
@@ -33,27 +36,29 @@ pub fn openapi_content_length() -> usize {
     *OPENAPI_CONTENT_LENGTH.get_or_init(|| openapi_bytes().len())
 }
 
-fn compute_simple_etag(b: &Bytes) -> String {
-    // simple deterministic 64-bit rolling hash to avoid extra deps
-    let mut h: u64 = 1469598103934665603u64;
-    for &byte in b.iter() {
-        h = h.wrapping_mul(1099511628211u64) ^ (byte as u64);
-    }
-    format!("\"{:x}\"", h)
+/// Return a shared string value for the OpenAPI Content-Length header so
+/// callers can pass a &'static str without allocating repeatedly.
+pub fn openapi_content_length_str() -> &'static str {
+    OPENAPI_CONTENT_LENGTH_STR
+        .get_or_init(|| openapi_content_length().to_string())
+        .as_str()
 }
 
 pub fn openapi_etag() -> &'static str {
     OPENAPI_ETAG
-        .get_or_init(|| compute_simple_etag(openapi_bytes()))
+        .get_or_init(|| openapi_meta::compute_simple_etag(openapi_bytes()))
         .as_str()
 }
 pub mod handlers;
-pub use handlers::{head_openapi, inm_matches, serve_openapi, weak_match};
+pub use handlers::{head_openapi, serve_openapi};
+pub use openapi_meta::{inm_matches, weak_match};
 
 /// Minimal docs router used by the application router builder. Tests don't need the UI
 /// served, only that this returns a Router that can be merged.
 pub fn docs_router() -> Router {
-    Router::new()
+    // Return the minimal docs router (JSON only) used by the application.
+    // Reuse `docs_router_with_options` to keep route registration in one place.
+    docs_router_with_options(false, false)
 }
 
 /// Return a docs router with a couple of small options used by tests and the
@@ -70,27 +75,18 @@ pub fn docs_router_with_options(_serve_ui: bool, write_snapshot: bool) -> Router
 
     // Build a minimal router exposing /openapi.json GET and HEAD. If `serve_ui`
     // is true we could mount a static UI; tests don't assert on that so keep it
-    // minimal here.
+    // minimal here. Register the handlers directly — axum will invoke the
+    // extractor-based async functions (they accept a `HeaderMap`).
     Router::new()
-        .route(
-            "/openapi.json",
-            get(|headers: HeaderMap| async move { serve_openapi(headers).await }),
-        )
-        .route(
-            "/openapi.json",
-            head(|headers: HeaderMap| async move { head_openapi(headers).await }),
-        )
+        .route("/openapi.json", get(serve_openapi))
+        .route("/openapi.json", head(head_openapi))
 }
 
-/// Write the canonical OpenAPI snapshot to disk for CI/consumer tooling.
-///
-/// This is intentionally very small and deterministic: it writes the bytes
-/// returned by `openapi_bytes()` to `spec/openapi.json` relative to the
-/// repository root. It returns an std::io::Result so callers can decide how to
-/// react when writing fails.
-/// Write the canonical OpenAPI snapshot to `spec/openapi.json` relative to
-/// the repository root. This is used by CI and local tooling to persist the
-/// generated OpenAPI spec.
+/// Write the canonical OpenAPI snapshot to `spec/openapi.json` relative to the
+/// repository root. This is intentionally small and deterministic: it writes
+/// the bytes returned by `openapi_bytes()` and returns an `std::io::Result` so
+/// callers can decide how to react when writing fails. This is used by CI and
+/// local tooling to persist the generated OpenAPI spec.
 pub fn write_openapi_snapshot() -> std::io::Result<()> {
     let out_path = std::path::Path::new("spec").join("openapi.json");
     if let Some(parent) = out_path.parent() {
