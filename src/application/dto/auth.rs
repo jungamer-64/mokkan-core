@@ -1,5 +1,3 @@
-#![allow(clippy::module_name_repetitions)]
-
 use crate::domain::user::{Capability, Role, UserId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -9,7 +7,7 @@ use utoipa::ToSchema;
 use super::serde_time;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct AuthTokenDto {
+pub struct TokenDto {
     pub token: String,
     #[serde(with = "serde_time")]
     pub issued_at: DateTime<Utc>,
@@ -23,7 +21,7 @@ pub struct AuthTokenDto {
 }
 
 #[derive(Debug, Clone)]
-pub struct AuthenticatedUser {
+pub struct UserIdentity {
     pub id: UserId,
     pub username: String,
     pub role: Role,
@@ -34,7 +32,7 @@ pub struct AuthenticatedUser {
     pub token_version: Option<u32>,
 }
 
-impl AuthenticatedUser {
+impl UserIdentity {
     #[must_use]
     pub fn has_capability(&self, resource: &str, action: &str) -> bool {
         self.capabilities
@@ -44,7 +42,7 @@ impl AuthenticatedUser {
 }
 
 #[derive(Debug, Clone)]
-pub struct TokenSubject {
+pub struct Subject {
     pub user_id: UserId,
     pub username: String,
     pub role: Role,
@@ -53,9 +51,9 @@ pub struct TokenSubject {
     pub token_version: Option<u32>,
 }
 
-impl TokenSubject {
+impl Subject {
     #[must_use]
-    pub fn from_authenticated(auth: &AuthenticatedUser) -> Self {
+    pub fn from_authenticated(auth: &UserIdentity) -> Self {
         Self {
             user_id: auth.id,
             username: auth.username.clone(),

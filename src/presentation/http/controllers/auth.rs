@@ -14,7 +14,7 @@ use crate::presentation::http::controllers::user_requests::{
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::{Authenticated, MaybeAuthenticated};
 use crate::presentation::http::openapi::{StatusResponse, UserListResponse};
-use crate::presentation::http::state::HttpState;
+use crate::presentation::http::state::HttpContext;
 use axum::{
     Extension, Json,
     extract::{Path, Query},
@@ -41,7 +41,7 @@ use serde_json::Value as JsonValue;
 /// Returns an error if the payload is invalid, the username already exists,
 /// or the registration command fails.
 pub async fn register(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     actor: MaybeAuthenticated,
     Json(payload): Json<RegisterRequest>,
 ) -> HttpResult<Json<UserDto>> {
@@ -78,7 +78,7 @@ pub async fn register(
 ///
 /// Returns an error if the credentials are invalid or token issuance fails.
 pub async fn login(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Json(payload): Json<LoginRequest>,
 ) -> HttpResult<Json<LoginResponse>> {
     let command = LoginUserCommand {
@@ -119,7 +119,7 @@ pub async fn login(
 /// Returns an error if the refresh token is invalid, expired, revoked, or the
 /// refresh command fails.
 pub async fn refresh_token(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Json(payload): Json<RefreshTokenRequest>,
 ) -> HttpResult<Json<AuthTokenDto>> {
     let command = RefreshTokenCommand {
@@ -154,7 +154,7 @@ pub async fn refresh_token(
 /// Returns an error if authentication fails or the user record cannot be
 /// loaded.
 pub async fn profile(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
 ) -> HttpResult<Json<UserProfileDto>> {
     state
@@ -188,7 +188,7 @@ pub async fn profile(
 /// Returns an error if authentication fails, the caller lacks permission, the
 /// cursor is invalid, or the user query fails.
 pub async fn list_users(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
     Query(params): Query<ListUsersParams>,
 ) -> HttpResult<Json<UserListResponse>> {
@@ -234,7 +234,7 @@ pub async fn list_users(
 /// Returns an error if authentication fails, the caller lacks permission, the
 /// payload is invalid, or the update command fails.
 pub async fn update_user(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
     Path(id): Path<i64>,
     Json(payload): Json<UpdateUserRequest>,
@@ -279,7 +279,7 @@ pub async fn update_user(
 /// Returns an error if authentication fails, the caller lacks permission, the
 /// payload is invalid, or the password update fails.
 pub async fn change_password(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
     Path(id): Path<i64>,
     Json(payload): Json<ChangePasswordRequest>,
@@ -327,7 +327,7 @@ pub async fn change_password(
 /// Returns an error if authentication fails, the caller lacks permission, the
 /// payload is invalid, or the command fails.
 pub async fn grant_role(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
     Path(id): Path<i64>,
     Json(payload): Json<GrantRoleRequest>,
@@ -370,7 +370,7 @@ pub async fn grant_role(
 /// Returns an error if authentication fails, the caller lacks permission, or
 /// the command fails.
 pub async fn revoke_role(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
     Path(id): Path<i64>,
 ) -> HttpResult<Json<UserDto>> {
@@ -390,7 +390,7 @@ pub async fn revoke_role(
 /// # Errors
 ///
 /// Returns an error if the public key material cannot be rendered.
-pub async fn keys(Extension(state): Extension<HttpState>) -> HttpResult<Json<JsonValue>> {
+pub async fn keys(Extension(state): Extension<HttpContext>) -> HttpResult<Json<JsonValue>> {
     state
         .services
         .token_manager()
@@ -420,7 +420,7 @@ pub async fn keys(Extension(state): Extension<HttpState>) -> HttpResult<Json<Jso
 /// Returns an error if the token is not session-based or session revocation
 /// fails.
 pub async fn logout(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
 ) -> HttpResult<Json<crate::presentation::http::openapi::StatusResponse>> {
     if let Some(session_id) = &user.session_id {

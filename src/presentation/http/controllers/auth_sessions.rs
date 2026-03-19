@@ -1,7 +1,7 @@
 // src/presentation/http/controllers/auth_sessions.rs
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::Authenticated;
-use crate::presentation::http::state::HttpState;
+use crate::presentation::http::state::HttpContext;
 use axum::{Extension, Json, extract::Path};
 use chrono::{TimeZone, Utc};
 
@@ -22,7 +22,7 @@ use chrono::{TimeZone, Utc};
 ///
 /// Returns an error if authentication fails or session metadata lookup fails.
 pub async fn list_sessions(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
 ) -> HttpResult<Json<Vec<crate::application::dto::SessionInfoDto>>> {
     let store = state.services.session_metadata_store();
@@ -75,7 +75,7 @@ pub async fn list_sessions(
 /// Returns an error if authentication fails, the caller is not allowed to
 /// revoke the session, or session metadata and revocation operations fail.
 pub async fn revoke_session(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
     Path(id): Path<String>,
 ) -> HttpResult<Json<crate::presentation::http::openapi::StatusResponse>> {

@@ -6,7 +6,7 @@ use crate::application::queries::audit::{
 };
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::Authenticated;
-use crate::presentation::http::state::HttpState;
+use crate::presentation::http::state::HttpContext;
 use axum::{
     Extension, Json,
     extract::{Path, Query},
@@ -31,7 +31,7 @@ const fn default_limit() -> u32 {
 /// Returns an error if authentication or authorization fails, the cursor is
 /// invalid, or the query service fails.
 pub async fn list_audit_logs(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Authenticated(actor): Authenticated,
     Query(params): Query<ListAuditParams>,
 ) -> HttpResult<Json<CursorPage<AuditLogDto>>> {
@@ -56,7 +56,7 @@ pub async fn list_audit_logs(
 /// Returns an error if authentication or authorization fails, the cursor is
 /// invalid, or the query service fails.
 pub async fn list_audit_logs_by_user(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Authenticated(actor): Authenticated,
     Path(user_id): Path<i64>,
     Query(params): Query<ListAuditParams>,
@@ -83,7 +83,7 @@ pub async fn list_audit_logs_by_user(
 /// Returns an error if authentication or authorization fails, the cursor is
 /// invalid, or the query service fails.
 pub async fn list_audit_logs_by_resource(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Authenticated(actor): Authenticated,
     Path((resource_type, resource_id)): Path<(String, i64)>,
     Query(params): Query<ListAuditParams>,

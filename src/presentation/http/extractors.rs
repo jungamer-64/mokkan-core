@@ -1,7 +1,7 @@
 // src/presentation/http/extractors.rs
 use crate::{
     application::{dto::AuthenticatedUser, error::ApplicationError},
-    presentation::http::state::HttpState,
+    presentation::http::state::HttpContext,
 };
 use axum::{Extension, extract::FromRequestParts, http::request::Parts};
 use headers::{Authorization, HeaderMapExt, authorization::Bearer};
@@ -23,7 +23,7 @@ fn cached_authenticated_user(parts: &Parts) -> Option<AuthenticatedUser> {
 // allowed token version. This centralizes the logic used by both the
 // `Authenticated` and `MaybeAuthenticated` extractors.
 async fn validate_not_revoked(
-    app_state: &HttpState,
+    app_state: &HttpContext,
     user: &AuthenticatedUser,
 ) -> Result<(), HttpError> {
     // Session-level revocation check
@@ -62,7 +62,7 @@ impl FromRequestParts<()> for Authenticated {
     type Rejection = HttpError;
 
     async fn from_request_parts(parts: &mut Parts, state: &()) -> Result<Self, Self::Rejection> {
-        let Extension(app_state) = Extension::<HttpState>::from_request_parts(parts, state)
+        let Extension(app_state) = Extension::<HttpContext>::from_request_parts(parts, state)
             .await
             .map_err(|_| {
                 HttpError::from_error(ApplicationError::infrastructure(
@@ -99,7 +99,7 @@ impl FromRequestParts<()> for MaybeAuthenticated {
     type Rejection = HttpError;
 
     async fn from_request_parts(parts: &mut Parts, state: &()) -> Result<Self, Self::Rejection> {
-        let Extension(app_state) = Extension::<HttpState>::from_request_parts(parts, state)
+        let Extension(app_state) = Extension::<HttpContext>::from_request_parts(parts, state)
             .await
             .map_err(|_| {
                 HttpError::from_error(ApplicationError::infrastructure(

@@ -14,7 +14,7 @@ use mokkan_core::{
         services::{ApplicationDependencies, ApplicationRuntimeDependencies, ApplicationServices},
     },
     presentation::http::{
-        extractors::Authenticated, middleware::require_capabilities, state::HttpState,
+        extractors::Authenticated, middleware::require_capabilities, state::HttpContext,
     },
 };
 use std::{
@@ -80,7 +80,7 @@ fn lazy_pool() -> sqlx::Pool<sqlx::Postgres> {
         .expect("connect_lazy")
 }
 
-fn test_state(token_manager: Arc<dyn TokenManager>) -> HttpState {
+fn test_state(token_manager: Arc<dyn TokenManager>) -> HttpContext {
     let deps = ApplicationDependencies {
         user_repo: Arc::new(support::mocks::DummyRepo),
         article_write_repo: Arc::new(support::mocks::DummyArticleWrite),
@@ -114,7 +114,7 @@ fn test_state(token_manager: Arc<dyn TokenManager>) -> HttpState {
         },
     ));
 
-    HttpState {
+    HttpContext {
         services,
         db_pool: lazy_pool(),
     }

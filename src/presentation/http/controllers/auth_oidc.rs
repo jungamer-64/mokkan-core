@@ -18,7 +18,7 @@ use crate::application::error::ApplicationError;
 use crate::application::ports::authorization_code::AuthorizationCode;
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::MaybeAuthenticated;
-use crate::presentation::http::state::HttpState;
+use crate::presentation::http::state::HttpContext;
 
 // ---------- Requests / Responses ----------
 
@@ -86,7 +86,7 @@ pub struct AuthorizeRequest {
 /// Returns an error if the request body is malformed, the grant type is not
 /// supported, the code is missing, or the exchange fails.
 pub async fn token(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     body_bytes: axum::body::Bytes,
 ) -> HttpResult<Json<AuthTokenDto>> {
     // Received body as Bytes extractor. Try to parse either JSON or x-www-form-urlencoded
@@ -146,7 +146,7 @@ pub async fn token(
 ///
 /// Returns an error only if request extraction fails before the handler runs.
 pub async fn introspect(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Json(payload): Json<TokenRequest>,
 ) -> HttpResult<Json<IntrospectResponse>> {
     match state
@@ -195,7 +195,7 @@ pub async fn introspect(
 ///
 /// Returns an error if session revocation fails after token authentication.
 pub async fn revoke(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Json(payload): Json<TokenRequest>,
 ) -> HttpResult<Json<crate::presentation::http::openapi::StatusResponse>> {
     if let Ok(user) = state
@@ -236,7 +236,7 @@ pub async fn revoke(
 /// Returns an error if the request is invalid, the caller is unauthenticated,
 /// the redirect URI is rejected, or authorization code persistence fails.
 pub async fn authorize(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Query(params): Query<AuthorizeRequest>,
     MaybeAuthenticated(maybe_user): MaybeAuthenticated,
 ) -> HttpResult<Response> {
@@ -280,7 +280,7 @@ pub async fn authorize(
 
 // Helper: create an authorization code and persist it using the configured store.
 async fn create_and_store_code(
-    state: &HttpState,
+    state: &HttpContext,
     user: &crate::application::dto::AuthenticatedUser,
     params: &AuthorizeRequest,
 ) -> crate::application::ApplicationResult<String> {
@@ -378,9 +378,11 @@ fn validate_redirect_uri(
 ///
 /// Returns an error only if request extraction fails before the handler runs.
 pub fn authorize_openapi_stub(
-    Extension(_state): Extension<HttpState>,
+    Extension(_state): Extension<HttpContext>,
 ) -> std::future::Ready<HttpResult<Json<crate::presentation::http::openapi::StatusResponse>>> {
-    std::future::ready(Ok(Json(crate::presentation::http::openapi::StatusResponse {
-        status: "not_implemented".into(),
-    })))
+    std::future::ready(Ok(Json(
+        crate::presentation::http::openapi::StatusResponse {
+            status: "not_implemented".into(),
+        },
+    )))
 }

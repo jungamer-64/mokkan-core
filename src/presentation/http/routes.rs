@@ -1,6 +1,6 @@
 // src/presentation/http/routes.rs
 use crate::presentation::http::controllers::audit;
-use crate::presentation::http::state::HttpState;
+use crate::presentation::http::state::HttpContext;
 use crate::presentation::http::{
     controllers::{articles, auth, auth_oidc, auth_sessions, discovery},
     middleware::{rate_limit, require_capabilities},
@@ -15,7 +15,7 @@ use std::time::Duration;
 use tower_http::cors::AllowOrigin;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
-pub fn build_router_with_rate_limiter(state: HttpState, enable_rate_limiter: bool) -> Router {
+pub fn build_router_with_rate_limiter(state: HttpContext, enable_rate_limiter: bool) -> Router {
     // prefer reading allowed origins from env directly so tests don't have to provide BISCUIT key
     let origins = crate::config::AppConfig::allowed_origins_from_env();
 
@@ -62,7 +62,7 @@ pub fn build_router_with_rate_limiter(state: HttpState, enable_rate_limiter: boo
 /// Backwards-compatible wrapper that reads the `DISABLE_RATE_LIMIT` env var to decide
 /// whether to enable the governor rate limiter. Production code can continue to call
 /// `build_router(state)`.
-pub fn build_router(state: HttpState) -> Router {
+pub fn build_router(state: HttpContext) -> Router {
     let disable = std::env::var("DISABLE_RATE_LIMIT").as_deref() == Ok("1");
     build_router_with_rate_limiter(state, !disable)
 }
@@ -136,32 +136,32 @@ fn user_routes() -> Router {
 
 fn article_routes() -> Router {
     Router::new()
-        .route("/api/v1/articles", get(articles::list_articles))
+        .route("/api/v1/articles", get(articles::list))
         .route(
             "/api/v1/articles",
-            post(articles::create_article).layer(axum::middleware::from_fn(move |req, next| {
+            post(articles::create).layer(axum::middleware::from_fn(move |req, next| {
                 require_capabilities::require_capability(req, next, "articles", "create")
             })),
         )
         .route(
             "/api/v1/articles/by-slug/{slug}",
-            get(articles::get_article_by_slug),
+            get(articles::get_by_slug),
         )
         .route(
             "/api/v1/articles/{id}",
-            put(articles::update_article).layer(axum::middleware::from_fn(move |req, next| {
+            put(articles::update).layer(axum::middleware::from_fn(move |req, next| {
                 require_capabilities::require_capability(req, next, "articles", "update")
             })),
         )
         .route(
             "/api/v1/articles/{id}",
-            delete(articles::delete_article).layer(axum::middleware::from_fn(move |req, next| {
+            delete(articles::delete).layer(axum::middleware::from_fn(move |req, next| {
                 require_capabilities::require_capability(req, next, "articles", "delete")
             })),
         )
         .route(
             "/api/v1/articles/{id}/revisions",
-            get(articles::list_article_revisions),
+            get(articles::list_revisions),
         )
         .route(
             "/api/v1/articles/{id}/publish",

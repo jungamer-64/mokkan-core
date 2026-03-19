@@ -1,11 +1,9 @@
-#![allow(clippy::module_name_repetitions)]
-
 use crate::domain::audit::entity::AuditLog;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-pub struct AuditLogDto {
+pub struct LogDto {
     pub id: i64,
     pub user_id: Option<i64>,
     pub action: String,
@@ -16,7 +14,7 @@ pub struct AuditLogDto {
     pub user_agent: Option<String>,
 }
 
-impl From<AuditLog> for AuditLogDto {
+impl From<AuditLog> for LogDto {
     fn from(a: AuditLog) -> Self {
         Self {
             id: a.id,

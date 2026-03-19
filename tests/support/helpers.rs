@@ -166,13 +166,13 @@ fn lazy_pool() -> sqlx::Pool<sqlx::Postgres> {
 }
 
 /// テスト用のHTTPステートを構築
-pub fn build_test_state() -> Ready<mokkan_core::presentation::http::state::HttpState> {
+pub fn build_test_state() -> Ready<mokkan_core::presentation::http::state::HttpContext> {
     let services = make_services(Arc::new(mocks::MockAuditRepo));
 
     // PgPool: use shared helper
     let db_pool = lazy_pool();
 
-    ready(mokkan_core::presentation::http::state::HttpState { services, db_pool })
+    ready(mokkan_core::presentation::http::state::HttpContext { services, db_pool })
 }
 
 /// テスト用ルーターを作成
@@ -188,7 +188,7 @@ pub fn make_test_router_with_audit_repo(audit_repo: Arc<AuditRepo>) -> Ready<axu
     // PgPool: use shared helper
     let db_pool = lazy_pool();
 
-    let state = mokkan_core::presentation::http::state::HttpState { services, db_pool };
+    let state = mokkan_core::presentation::http::state::HttpContext { services, db_pool };
     ready(mokkan_core::presentation::http::routes::build_router_with_rate_limiter(state, false))
 }
 

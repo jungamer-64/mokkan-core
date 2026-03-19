@@ -32,7 +32,7 @@ use mokkan_core::infrastructure::{
     time::SystemClock,
     util::DefaultSlugGenerator,
 };
-use mokkan_core::presentation::http::{routes::build_router, state::HttpState};
+use mokkan_core::presentation::http::{routes::build_router, state::HttpContext};
 use sqlx::PgPool;
 use std::{env, net::SocketAddr, sync::Arc};
 use tokio::signal;
@@ -116,7 +116,7 @@ fn init_session_store(config: &AppConfig) -> Arc<dyn SessionRevocationStore> {
 fn build_services_and_state(
     pool: &PgPool,
     config: &AppConfig,
-) -> Result<(Arc<ApplicationServices>, HttpState)> {
+) -> Result<(Arc<ApplicationServices>, HttpContext)> {
     let user_repo: Arc<dyn UserRepository> = Arc::new(PostgresUserRepository::new(pool.clone()));
     let article_write_repo: Arc<dyn ArticleWriteRepository> =
         Arc::new(PostgresArticleWriteRepository::new(pool.clone()));
@@ -160,7 +160,7 @@ fn build_services_and_state(
         },
     ));
 
-    let state = HttpState {
+    let state = HttpContext {
         services: Arc::clone(&services),
         db_pool: pool.clone(),
     };

@@ -1,5 +1,3 @@
-#![allow(clippy::module_name_repetitions)]
-
 // src/presentation/http/controllers/articles.rs
 use crate::application::{
     commands::articles::{
@@ -13,7 +11,7 @@ use crate::application::{
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::{Authenticated, MaybeAuthenticated};
 use crate::presentation::http::openapi::{ArticleListResponse, StatusResponse};
-use crate::presentation::http::state::HttpState;
+use crate::presentation::http::state::HttpContext;
 use axum::{
     Extension, Json,
     extract::{Path, Query},
@@ -75,8 +73,8 @@ pub struct PublishRequest {
 ///
 /// Returns an error if query validation fails, draft access is forbidden, or
 /// the article query service fails.
-pub async fn list_articles(
-    Extension(state): Extension<HttpState>,
+pub async fn list(
+    Extension(state): Extension<HttpContext>,
     actor: MaybeAuthenticated,
     Query(params): Query<ArticleListParams>,
 ) -> HttpResult<Json<ArticleListResponse>> {
@@ -140,8 +138,8 @@ pub async fn list_articles(
 ///
 /// Returns an error if the slug is invalid, the article is missing, or the
 /// caller cannot view an unpublished article.
-pub async fn get_article_by_slug(
-    Extension(state): Extension<HttpState>,
+pub async fn get_by_slug(
+    Extension(state): Extension<HttpContext>,
     actor: MaybeAuthenticated,
     Path(slug): Path<String>,
 ) -> HttpResult<Json<ArticleDto>> {
@@ -174,8 +172,8 @@ pub async fn get_article_by_slug(
 ///
 /// Returns an error if authentication or authorization fails, the payload is
 /// invalid, or the command service fails.
-pub async fn create_article(
-    Extension(state): Extension<HttpState>,
+pub async fn create(
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
     Json(payload): Json<CreateArticleRequest>,
 ) -> HttpResult<Json<ArticleDto>> {
@@ -218,8 +216,8 @@ pub async fn create_article(
 ///
 /// Returns an error if authentication or authorization fails, the payload is
 /// invalid, the article is missing, or the command service fails.
-pub async fn update_article(
-    Extension(state): Extension<HttpState>,
+pub async fn update(
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
     Path(id): Path<i64>,
     Json(payload): Json<UpdateArticleRequest>,
@@ -262,8 +260,8 @@ pub async fn update_article(
 ///
 /// Returns an error if authentication or authorization fails, the article is
 /// missing, or the command service fails.
-pub async fn delete_article(
-    Extension(state): Extension<HttpState>,
+pub async fn delete(
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
     Path(id): Path<i64>,
 ) -> HttpResult<Json<StatusResponse>> {
@@ -304,7 +302,7 @@ pub async fn delete_article(
 /// Returns an error if authentication or authorization fails, the payload is
 /// invalid, the article is missing, or the command service fails.
 pub async fn set_publish_state(
-    Extension(state): Extension<HttpState>,
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
     Path(id): Path<i64>,
     Json(payload): Json<PublishRequest>,
@@ -345,8 +343,8 @@ pub async fn set_publish_state(
 ///
 /// Returns an error if authentication or authorization fails, the article is
 /// missing, or the query service fails.
-pub async fn list_article_revisions(
-    Extension(state): Extension<HttpState>,
+pub async fn list_revisions(
+    Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
     Path(id): Path<i64>,
 ) -> HttpResult<Json<Vec<ArticleRevisionDto>>> {

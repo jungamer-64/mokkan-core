@@ -289,8 +289,7 @@ async fn refresh_token_single_use_with_redis_store() {
     let store =
         mokkan_core::infrastructure::security::redis_session_store::RedisSessionRevocationStore::from_url(&url)
             .expect("create redis store");
-    let session_store =
-        mokkan_core::infrastructure::security::redis_session_store::into_arc(store);
+    let session_store = mokkan_core::infrastructure::security::redis_session_store::into_arc(store);
     let svc = build_user_command_service(session_store);
 
     // 1回目のログインで refresh token を取得

@@ -1,6 +1,6 @@
 // src/presentation/http/controllers/discovery.rs
 use crate::presentation::http::error::HttpResult;
-use crate::presentation::http::state::HttpState;
+use crate::presentation::http::state::HttpContext;
 use axum::{Extension, Json};
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -50,7 +50,7 @@ pub struct OpenIdConfiguration {
 ///
 /// Returns an error only if request extraction fails before the handler runs.
 pub async fn openid_configuration(
-    Extension(_state): Extension<HttpState>,
+    Extension(_state): Extension<HttpContext>,
 ) -> HttpResult<Json<OpenIdConfiguration>> {
     let issuer = crate::config::AppConfig::oidc_issuer_from_env();
     let issuer = issuer.trim_end_matches('/').to_string();

@@ -1,12 +1,10 @@
-#![allow(clippy::module_name_repetitions)]
-
 // src/presentation/http/state.rs
 use crate::application::services::ApplicationServices;
 use sqlx::PgPool;
 use std::sync::Arc;
 
 #[derive(Clone)]
-pub struct HttpState {
+pub struct HttpContext {
     pub services: Arc<ApplicationServices>,
     pub db_pool: PgPool,
 }

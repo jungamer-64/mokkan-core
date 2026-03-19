@@ -1,7 +1,7 @@
 // src/presentation/http/middleware/require_capabilities.rs
 use crate::application::error::ApplicationError;
 use crate::presentation::http::error::HttpError;
-use crate::presentation::http::state::HttpState;
+use crate::presentation::http::state::HttpContext;
 use axum::{
     body::Body,
     http::Request,
@@ -22,7 +22,7 @@ pub async fn require_capability(
     if let Some(header) = req.headers().typed_get::<Authorization<Bearer>>() {
         let token = header.token();
 
-        if let Some(state) = req.extensions().get::<HttpState>() {
+        if let Some(state) = req.extensions().get::<HttpContext>() {
             match state
                 .services
                 .authenticate_and_authorize(token, resource, action)
