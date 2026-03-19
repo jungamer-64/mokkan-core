@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header::AUTHORIZATION};
 use tower::util::ServiceExt as _;
@@ -26,7 +28,7 @@ async fn token_version_revocation_honors_min_version() {
     let req = Request::builder()
         .method(Method::POST)
         .uri("/api/v1/articles")
-        .header(AUTHORIZATION, format!("Bearer {}", SESSION_TOKEN))
+        .header(AUTHORIZATION, format!("Bearer {SESSION_TOKEN}"))
         .header("content-type", "application/json")
         .body(Body::from(body))
         .unwrap();

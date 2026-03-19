@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 // src/main.rs
 use anyhow::Result;
 use axum::{ServiceExt, body::Body};
@@ -8,7 +10,7 @@ use mokkan_core::application::{
         security::{PasswordHasher, TokenManager},
         time::Clock,
     },
-    services::{ApplicationDependencies, ApplicationServices},
+    services::{ApplicationDependencies, ApplicationRuntimeDependencies, ApplicationServices},
 };
 use mokkan_core::config::AppConfig;
 use mokkan_core::domain::{
@@ -147,13 +149,15 @@ fn build_services_and_state(
 
     let services = Arc::new(ApplicationServices::new(
         deps,
-        Arc::clone(&password_hasher),
-        Arc::clone(&token_manager),
-        refresh_token_codec,
-        Arc::clone(&session_store),
-        Arc::clone(&auth_code_store),
-        Arc::clone(&clock),
-        Arc::clone(&slugger),
+        ApplicationRuntimeDependencies {
+            password_hasher: Arc::clone(&password_hasher),
+            token_manager: Arc::clone(&token_manager),
+            refresh_token_codec,
+            session_revocation_store: Arc::clone(&session_store),
+            authorization_code_store: Arc::clone(&auth_code_store),
+            clock: Arc::clone(&clock),
+            slugger: Arc::clone(&slugger),
+        },
     ));
 
     let state = HttpState {
@@ -197,8 +201,8 @@ async fn shutdown_signal() {
     let terminate = std::future::pending::<()>();
 
     tokio::select! {
-        _ = ctrl_c => {}
-        _ = terminate => {}
+        () = ctrl_c => {}
+        () = terminate => {}
     }
     tracing::info!("shutdown signal received");
 }

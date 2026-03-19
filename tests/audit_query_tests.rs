@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 // tests/audit_query_tests.rs
 use mokkan_core::application::dto::AuthenticatedUser;
 use mokkan_core::application::queries::audit::{AuditQueryService, ListAuditLogsQuery};

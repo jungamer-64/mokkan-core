@@ -29,7 +29,7 @@ impl mokkan_core::application::ports::security::TokenManager for DummyTokenManag
             issued_at: now,
             expires_at,
             expires_in: (expires_at.signed_duration_since(now).num_seconds()),
-            session_id: _subject.session_id.clone(),
+            session_id: _subject.session_id,
             refresh_token: None,
         })
     }
@@ -155,7 +155,7 @@ pub struct StrictPasswordHasher;
 #[async_trait]
 impl mokkan_core::application::ports::security::PasswordHasher for StrictPasswordHasher {
     async fn hash(&self, password: &str) -> mokkan_core::application::ApplicationResult<String> {
-        Ok(format!("hash::{}", password))
+        Ok(format!("hash::{password}"))
     }
 
     async fn verify(
@@ -163,7 +163,7 @@ impl mokkan_core::application::ports::security::PasswordHasher for StrictPasswor
         password: &str,
         expected_hash: &str,
     ) -> mokkan_core::application::ApplicationResult<()> {
-        if format!("hash::{}", password) == expected_hash {
+        if format!("hash::{password}") == expected_hash {
             Ok(())
         } else {
             Err(mokkan_core::application::error::ApplicationError::unauthorized("bad password"))

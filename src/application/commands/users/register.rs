@@ -14,6 +14,13 @@ pub struct RegisterUserCommand {
 }
 
 impl UserCommandService {
+    /// Register a new user account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the username or password is invalid, the caller is
+    /// not allowed to choose the requested role, the username is taken, or
+    /// persistence fails.
     pub async fn register(
         &self,
         actor: Option<&AuthenticatedUser>,
@@ -22,7 +29,7 @@ impl UserCommandService {
         let username = Username::new(command.username)?;
         validate_password(&command.password)?;
         let existing = self.user_repo.count().await?;
-        let role = self.determine_role(existing, actor, command.role).await?;
+        let role = Self::determine_role(existing, actor, command.role)?;
 
         self.ensure_username_available(existing, &username).await?;
 
@@ -33,8 +40,7 @@ impl UserCommandService {
         Ok(user.into())
     }
 
-    async fn determine_role(
-        &self,
+    fn determine_role(
         existing: u64,
         actor: Option<&AuthenticatedUser>,
         role: Option<Role>,

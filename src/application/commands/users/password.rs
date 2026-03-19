@@ -9,8 +9,8 @@ pub(super) fn validate_password(password: &str) -> ApplicationResult<()> {
         )));
     }
 
-    let has_uppercase = password.chars().any(|c| c.is_uppercase());
-    let has_lowercase = password.chars().any(|c| c.is_lowercase());
+    let has_uppercase = password.chars().any(char::is_uppercase);
+    let has_lowercase = password.chars().any(char::is_lowercase);
     let has_digit = password.chars().any(|c| c.is_ascii_digit());
     let has_special = password.chars().any(|c| !c.is_alphanumeric());
 

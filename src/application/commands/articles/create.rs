@@ -21,6 +21,7 @@ impl CreateArticleCommand {
 }
 
 #[derive(Default)]
+#[must_use]
 pub struct CreateArticleCommandBuilder {
     title: Option<String>,
     body: Option<String>,
@@ -38,11 +39,16 @@ impl CreateArticleCommandBuilder {
         self
     }
 
-    pub fn publish(mut self, publish: bool) -> Self {
+    pub const fn publish(mut self, publish: bool) -> Self {
         self.publish = publish;
         self
     }
 
+    /// Finalize the command builder.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `title` or `body` has not been provided.
     pub fn build(self) -> Result<CreateArticleCommand, &'static str> {
         Ok(CreateArticleCommand {
             title: self.title.ok_or("title is required")?,
@@ -53,6 +59,12 @@ impl CreateArticleCommandBuilder {
 }
 
 impl ArticleCommandService {
+    /// Create a new article on behalf of the authenticated actor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor lacks `articles:create`, the title or
+    /// body is invalid, slug generation fails, or persistence fails.
     pub async fn create_article(
         &self,
         actor: &AuthenticatedUser,

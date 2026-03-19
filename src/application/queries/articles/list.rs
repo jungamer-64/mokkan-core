@@ -7,6 +7,9 @@ use crate::{
     domain::{article::ArticleListCursor, errors::DomainError},
 };
 
+const DEFAULT_LIMIT: u32 = 20;
+const MAX_LIMIT: u32 = 100;
+
 pub struct ListArticlesQuery {
     pub include_drafts: bool,
     pub limit: u32,
@@ -14,14 +17,20 @@ pub struct ListArticlesQuery {
 }
 
 impl ArticleQueryService {
+    /// List articles with optional draft visibility.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if draft access is not allowed, the cursor is invalid,
+    /// or the repository lookup fails.
     pub async fn list_articles(
         &self,
         actor: Option<&AuthenticatedUser>,
         query: ListArticlesQuery,
     ) -> ApplicationResult<CursorPage<ArticleDto>> {
         let (include_drafts, limit) =
-            self.normalize_listing(actor, query.include_drafts, query.limit)?;
-        let cursor = self.decode_cursor(query.cursor.as_deref())?;
+            Self::normalize_listing(actor, query.include_drafts, query.limit)?;
+        let cursor = Self::decode_cursor(query.cursor.as_deref())?;
 
         let (records, next_cursor) = self
             .read_repo
@@ -36,7 +45,6 @@ impl ArticleQueryService {
     }
 
     pub(super) fn normalize_listing(
-        &self,
         actor: Option<&AuthenticatedUser>,
         include_drafts: bool,
         limit: u32,
@@ -55,9 +63,6 @@ impl ArticleQueryService {
             false
         };
 
-        const DEFAULT_LIMIT: u32 = 20;
-        const MAX_LIMIT: u32 = 100;
-
         let limit = if limit == 0 {
             DEFAULT_LIMIT
         } else {
@@ -68,16 +73,15 @@ impl ArticleQueryService {
     }
 
     pub(super) fn decode_cursor(
-        &self,
         token: Option<&str>,
     ) -> ApplicationResult<Option<ArticleListCursor>> {
-        match token {
-            Some(value) => match ArticleListCursor::decode(value) {
+        token.map_or_else(
+            || Ok(None),
+            |value| match ArticleListCursor::decode(value) {
                 Ok(cursor) => Ok(Some(cursor)),
                 Err(DomainError::Validation(msg)) => Err(ApplicationError::validation(msg)),
                 Err(other) => Err(ApplicationError::from(other)),
             },
-            None => Ok(None),
-        }
+        )
     }
 }

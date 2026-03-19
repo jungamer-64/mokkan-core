@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::domain::article::{ArticleReadRepository, ArticleRevisionRepository};
 
+#[must_use]
 pub struct ArticleQueryService {
     pub(super) read_repo: Arc<dyn ArticleReadRepository>,
     pub(super) revision_repo: Arc<dyn ArticleRevisionRepository>,

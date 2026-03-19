@@ -19,6 +19,12 @@ pub struct LoginResult {
 }
 
 impl UserCommandService {
+    /// Authenticate a user and issue a new session token pair.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the username is invalid, credentials do not match,
+    /// the account is disabled, or token/session persistence fails.
     pub async fn login(&self, command: LoginUserCommand) -> ApplicationResult<LoginResult> {
         let username = Username::new(command.username)?;
         let user = self

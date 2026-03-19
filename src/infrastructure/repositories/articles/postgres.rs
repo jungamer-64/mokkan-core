@@ -11,23 +11,25 @@ use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 
 #[derive(Clone)]
+#[must_use]
 pub struct PostgresArticleWriteRepository {
     pool: PgPool,
 }
 
 impl PostgresArticleWriteRepository {
-    pub fn new(pool: PgPool) -> Self {
+    pub const fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 }
 
 #[derive(Clone)]
+#[must_use]
 pub struct PostgresArticleReadRepository {
     pool: PgPool,
 }
 
 impl PostgresArticleReadRepository {
-    pub fn new(pool: PgPool) -> Self {
+    pub const fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 }
@@ -49,7 +51,7 @@ impl TryFrom<ArticleRow> for Article {
     type Error = DomainError;
 
     fn try_from(row: ArticleRow) -> Result<Self, Self::Error> {
-        Ok(Article {
+        Ok(Self {
             id: ArticleId::new(row.id)?,
             title: ArticleTitle::new(row.title)?,
             slug: ArticleSlug::new(row.slug)?,
@@ -183,11 +185,12 @@ impl PostgresArticleReadRepository {
         cursor: Option<&'a ArticleListCursor>,
         mode: &SearchMode<'a>,
     ) {
-        let mut has_where = false;
-        if !include_drafts {
+        let mut has_where = if include_drafts {
+            false
+        } else {
             builder.push(" WHERE published = TRUE");
-            has_where = true;
-        }
+            true
+        };
 
         match mode {
             SearchMode::FullText(query) => {
@@ -252,7 +255,7 @@ impl PostgresArticleReadRepository {
         mode: SearchMode<'_>,
     ) -> DomainResult<(Vec<Article>, Option<ArticleListCursor>)> {
         let limit = limit.clamp(1, 100);
-        let fetch_limit = (limit as i64) + 1;
+        let fetch_limit = i64::from(limit) + 1;
 
         let mut builder: QueryBuilder<Postgres> = QueryBuilder::new(
             "SELECT id, title, slug, body, published, published_at, author_id, created_at, updated_at FROM articles",
@@ -336,7 +339,7 @@ impl ArticleReadRepository for PostgresArticleReadRepository {
                 return Ok((articles, next_cursor));
             }
 
-            let pattern = format!("%{}%", query);
+            let pattern = format!("%{query}%");
             return self
                 .fetch_page(
                     include_drafts,

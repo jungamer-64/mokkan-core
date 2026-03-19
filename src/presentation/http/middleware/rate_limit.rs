@@ -6,7 +6,11 @@ use tower_governor::{
     GovernorLayer, governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor,
 };
 
-pub fn rate_limit_layer() -> GovernorLayer<SmartIpKeyExtractor, NoOpMiddleware, Body> {
+/// Build the shared rate-limiter layer used by the HTTP router.
+///
+/// # Panics
+/// Panics if the hard-coded governor configuration is invalid.
+pub fn layer() -> GovernorLayer<SmartIpKeyExtractor, NoOpMiddleware, Body> {
     static RATE_LIMITER: OnceLock<GovernorLayer<SmartIpKeyExtractor, NoOpMiddleware, Body>> =
         OnceLock::new();
 

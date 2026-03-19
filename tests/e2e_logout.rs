@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header::AUTHORIZATION};
 use tower::util::ServiceExt as _;
@@ -15,7 +17,7 @@ async fn logout_revokes_session_and_protects_endpoints() {
     let req = Request::builder()
         .method(Method::POST)
         .uri("/api/v1/articles")
-        .header(AUTHORIZATION, format!("Bearer {}", SESSION_TOKEN))
+        .header(AUTHORIZATION, format!("Bearer {SESSION_TOKEN}"))
         .header("content-type", "application/json")
         .body(Body::from(body))
         .unwrap();
@@ -28,7 +30,7 @@ async fn logout_revokes_session_and_protects_endpoints() {
     let req = Request::builder()
         .method(Method::POST)
         .uri("/api/v1/auth/logout")
-        .header(AUTHORIZATION, format!("Bearer {}", SESSION_TOKEN))
+        .header(AUTHORIZATION, format!("Bearer {SESSION_TOKEN}"))
         .body(Body::empty())
         .unwrap();
 
@@ -45,7 +47,7 @@ async fn logout_revokes_session_and_protects_endpoints() {
     let req = Request::builder()
         .method(Method::POST)
         .uri("/api/v1/articles")
-        .header(AUTHORIZATION, format!("Bearer {}", SESSION_TOKEN))
+        .header(AUTHORIZATION, format!("Bearer {SESSION_TOKEN}"))
         .header("content-type", "application/json")
         .body(Body::from(body))
         .unwrap();

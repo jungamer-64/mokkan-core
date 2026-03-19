@@ -20,6 +20,12 @@ pub struct RefreshTokenCommand {
 }
 
 impl UserCommandService {
+    /// Rotate a refresh token and issue a new access token pair.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the refresh token is invalid, reused, revoked, or
+    /// if the backing session or user can no longer be loaded.
     pub async fn refresh_token(
         &self,
         command: RefreshTokenCommand,
@@ -119,26 +125,26 @@ impl UserCommandService {
             .await?;
 
         if !swapped {
-            let used = self
+            let nonce_already_used = self
                 .session_stores
                 .refresh_nonces
                 .is_session_refresh_nonce_used(session_id, expected_nonce)
                 .await?;
 
-            if used {
+            if nonce_already_used {
                 self.session_stores
                     .revocation
                     .revoke_sessions_for_user(i64::from(user.id))
                     .await?;
                 return Err(ApplicationError::forbidden("refresh token reused"));
-            } else {
-                return Err(ApplicationError::forbidden(
-                    "refresh token invalid or rotated",
-                ));
             }
+
+            return Err(ApplicationError::forbidden(
+                "refresh token invalid or rotated",
+            ));
         }
 
-        let subject = self.make_token_subject(user, session_id);
+        let subject = Self::make_token_subject(user, session_id);
         let mut new_access = self.token_manager.issue(subject).await?;
 
         let new_refresh_token = self
@@ -150,17 +156,12 @@ impl UserCommandService {
         Ok(new_access)
     }
 
-    fn make_token_subject(
-        &self,
-        user: &crate::domain::user::User,
-        session_id: &str,
-    ) -> TokenSubject {
-        let capabilities = user.role.default_capabilities();
+    fn make_token_subject(user: &crate::domain::user::User, session_id: &str) -> TokenSubject {
         TokenSubject {
             user_id: user.id,
             username: user.username.to_string(),
             role: user.role,
-            capabilities: capabilities.clone(),
+            capabilities: user.role.default_capabilities(),
             session_id: Some(session_id.to_string()),
             token_version: None,
         }

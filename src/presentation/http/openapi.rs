@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 // src/presentation/http/openapi.rs
 // Minimal OpenAPI helpers used by the HTTP layer and tests.
 pub mod openapi_meta;
@@ -14,7 +16,7 @@ static OPENAPI_ETAG: OnceLock<String> = OnceLock::new();
 static OPENAPI_CONTENT_LENGTH: OnceLock<usize> = OnceLock::new();
 static OPENAPI_CONTENT_LENGTH_STR: OnceLock<String> = OnceLock::new();
 
-/// Content-Type used for the OpenAPI JSON representation.
+/// Content-Type used for the `OpenAPI` JSON representation.
 pub const OPENAPI_CONTENT_TYPE_JSON: &str = "application/json";
 
 // Canonical minimal OpenAPI JSON as a static byte slice so the `openapi_bytes`
@@ -22,7 +24,7 @@ pub const OPENAPI_CONTENT_TYPE_JSON: &str = "application/json";
 static OPENAPI_JSON_BYTES: &[u8] = b"{\"openapi\":\"3.0.0\",\"info\":{\"title\":\"mokkan_core\",\"version\":\"0.1.0\"},\"paths\":{}}";
 
 // Minimal OpenAPI JSON bytes used for tests (stable across calls)
-/// Return a reference to the canonical OpenAPI JSON bytes used by the
+/// Return a reference to the canonical `OpenAPI` JSON bytes used by the
 /// application and tests. The value is cached in a `OnceLock` so repeated
 /// calls are cheap and return the same `Bytes` instance.
 pub fn openapi_bytes() -> &'static Bytes {
@@ -31,12 +33,12 @@ pub fn openapi_bytes() -> &'static Bytes {
 
 pub mod openapi_types;
 pub use openapi_types::{ArticleListResponse, StatusResponse, UserListResponse};
-/// Return the content length (in bytes) of the OpenAPI JSON payload.
+/// Return the content length, in bytes, of the `OpenAPI` JSON payload.
 pub fn openapi_content_length() -> usize {
     *OPENAPI_CONTENT_LENGTH.get_or_init(|| openapi_bytes().len())
 }
 
-/// Return a shared string value for the OpenAPI Content-Length header so
+/// Return a shared string value for the `OpenAPI` `Content-Length` header so
 /// callers can pass a &'static str without allocating repeatedly.
 pub fn openapi_content_length_str() -> &'static str {
     OPENAPI_CONTENT_LENGTH_STR
@@ -61,10 +63,11 @@ pub fn docs_router() -> Router {
     docs_router_with_options(false, false)
 }
 
-/// Return a docs router with a couple of small options used by tests and the
-/// snapshot writer in CI. This keeps the behaviour simple and deterministic for
-/// unit/integration tests: we only expose the JSON and HEAD endpoints which are
-/// asserted by the test-suite.
+/// Return a docs router with a couple of small test-oriented options.
+///
+/// This keeps behavior simple and deterministic for unit and integration
+/// tests by exposing only the JSON and `HEAD` endpoints asserted by the
+/// test suite.
 pub fn docs_router_with_options(_serve_ui: bool, write_snapshot: bool) -> Router {
     // The flags are intentionally simple; tests call with (true, false).
     if write_snapshot {
@@ -82,11 +85,17 @@ pub fn docs_router_with_options(_serve_ui: bool, write_snapshot: bool) -> Router
         .route("/openapi.json", head(head_openapi))
 }
 
-/// Write the canonical OpenAPI snapshot to `spec/openapi.json` relative to the
-/// repository root. This is intentionally small and deterministic: it writes
-/// the bytes returned by `openapi_bytes()` and returns an `std::io::Result` so
-/// callers can decide how to react when writing fails. This is used by CI and
-/// local tooling to persist the generated OpenAPI spec.
+/// Write the canonical `OpenAPI` snapshot to `spec/openapi.json`.
+///
+/// This is intentionally small and deterministic: it writes the bytes from
+/// `openapi_bytes()` and returns an `std::io::Result<()>` so callers can
+/// decide how to react when writing fails. This is used by `CI` and local
+/// tooling to persist the generated `OpenAPI` spec.
+///
+/// # Errors
+///
+/// Returns any filesystem error raised while creating the output directory or
+/// writing the snapshot file.
 pub fn write_openapi_snapshot() -> std::io::Result<()> {
     let out_path = std::path::Path::new("spec").join("openapi.json");
     if let Some(parent) = out_path.parent() {

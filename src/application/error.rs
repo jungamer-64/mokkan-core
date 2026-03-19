@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 // src/application/error.rs
 use crate::domain::errors::DomainError;
 use anyhow::Error as AnyhowError;

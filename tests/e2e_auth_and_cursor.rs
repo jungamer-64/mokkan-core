@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 // tests/e2e_auth_and_cursor.rs
 use axum::body::Body;
 use axum::http::{
@@ -7,7 +9,7 @@ use axum::http::{
 
 const AUDIT: &str = "/api/v1/audit-logs";
 fn bearer(tok: &str) -> String {
-    format!("Bearer {}", tok)
+    format!("Bearer {tok}")
 }
 use tower::util::ServiceExt as _;
 

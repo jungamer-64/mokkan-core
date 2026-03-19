@@ -14,6 +14,12 @@ pub struct ChangePasswordCommand {
 }
 
 impl UserCommandService {
+    /// Change a user's password.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the target id is invalid, the user is missing,
+    /// authorization fails, password validation fails, or persistence fails.
     pub async fn change_password(
         &self,
         actor: &AuthenticatedUser,

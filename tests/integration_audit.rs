@@ -1,4 +1,9 @@
+#![allow(clippy::multiple_crate_versions)]
+
 // tests/integration_audit.rs
+use mokkan_core::domain::audit::repository::AuditLogRepository;
+use std::sync::Arc;
+
 #[tokio::test]
 async fn integration_audit_write_and_read() {
     // Run only when explicitly enabled to avoid requiring Postgres in all environments
@@ -17,9 +22,6 @@ async fn integration_audit_write_and_read() {
         .await
         .expect("run migrations");
 
-    use mokkan_core::domain::audit::repository::AuditLogRepository;
-    use std::sync::Arc;
-
     let repo_impl =
         mokkan_core::infrastructure::repositories::PostgresAuditLogRepository::new(pool.clone());
     let repo: Arc<dyn AuditLogRepository> = Arc::new(repo_impl);
@@ -28,7 +30,7 @@ async fn integration_audit_write_and_read() {
     for i in 0..5i64 {
         let log = mokkan_core::domain::audit::entity::NewAuditLog {
             user_id: Some(mokkan_core::domain::user::value_objects::UserId::new(1).unwrap()),
-            action: format!("test-integration-{}", i),
+            action: format!("test-integration-{i}"),
             resource_type: "article".to_string(),
             resource_id: Some(100 + i),
             details: Some(serde_json::json!({"i": i})),

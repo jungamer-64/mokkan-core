@@ -52,6 +52,7 @@ pub struct UserProfileDto {
 }
 
 impl UserProfileDto {
+    #[must_use]
     pub fn from_parts(user: User, auth: &AuthenticatedUser) -> Self {
         let user_dto: UserDto = user.into();
         let mut capabilities: Vec<_> = auth

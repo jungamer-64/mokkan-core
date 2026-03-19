@@ -4,6 +4,7 @@ use chrono::Utc;
 use mokkan_core::domain::article::*;
 use mokkan_core::domain::user::UserId;
 
+#[must_use]
 pub struct ArticleBuilder {
     id: i64,
     title: String,
@@ -25,12 +26,12 @@ impl ArticleBuilder {
         }
     }
 
-    pub fn id(mut self, id: i64) -> Self {
+    pub const fn id(mut self, id: i64) -> Self {
         self.id = id;
         self
     }
 
-    pub fn published(mut self) -> Self {
+    pub const fn published(mut self) -> Self {
         self.published = true;
         self
     }
@@ -40,6 +41,7 @@ impl ArticleBuilder {
         self
     }
 
+    #[must_use]
     pub fn build(self) -> Article {
         Article {
             id: ArticleId::new(self.id).unwrap(),

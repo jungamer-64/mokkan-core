@@ -15,6 +15,12 @@ pub struct ListArticleRevisionsQuery {
 }
 
 impl ArticleQueryService {
+    /// List revision history for an article.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the article id is invalid, the article is missing,
+    /// the actor lacks access, or repository reads fail.
     pub async fn list_revisions(
         &self,
         actor: &AuthenticatedUser,

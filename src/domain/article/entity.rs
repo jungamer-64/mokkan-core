@@ -18,13 +18,13 @@ pub struct Article {
 }
 
 impl Article {
-    pub fn publish(&mut self, now: DateTime<Utc>) {
+    pub const fn publish(&mut self, now: DateTime<Utc>) {
         self.published = true;
         self.published_at = Some(now);
         self.updated_at = now;
     }
 
-    pub fn unpublish(&mut self, now: DateTime<Utc>) {
+    pub const fn unpublish(&mut self, now: DateTime<Utc>) {
         self.published = false;
         self.published_at = None;
         self.updated_at = now;
@@ -35,12 +35,19 @@ impl Article {
         self.updated_at = now;
     }
 
+    /// Replace the article title and body.
+    ///
+    /// # Errors
+    ///
+    /// Returns any domain error raised by future content invariants.
     pub fn set_content(
         &mut self,
         title: ArticleTitle,
         body: ArticleBody,
         now: DateTime<Utc>,
     ) -> DomainResult<()> {
+        // The return type stays fallible to keep the mutation API aligned with
+        // other domain updates and leave room for future invariants.
         self.title = title;
         self.body = body;
         self.updated_at = now;
@@ -124,6 +131,7 @@ pub struct PublishStateUpdate {
 }
 
 #[derive(Debug, Clone)]
+#[must_use]
 pub struct ArticleUpdate {
     pub id: ArticleId,
     pub title: Option<ArticleTitle>,
@@ -135,7 +143,7 @@ pub struct ArticleUpdate {
 }
 
 impl ArticleUpdate {
-    pub fn new(id: ArticleId, original_updated_at: DateTime<Utc>) -> Self {
+    pub const fn new(id: ArticleId, original_updated_at: DateTime<Utc>) -> Self {
         Self {
             id,
             title: None,
@@ -162,7 +170,7 @@ impl ArticleUpdate {
         self
     }
 
-    pub fn with_publish_state(
+    pub const fn with_publish_state(
         mut self,
         published: bool,
         published_at: Option<DateTime<Utc>>,
@@ -174,7 +182,7 @@ impl ArticleUpdate {
         self
     }
 
-    pub fn set_updated_at(&mut self, updated_at: DateTime<Utc>) {
+    pub const fn set_updated_at(&mut self, updated_at: DateTime<Utc>) {
         self.updated_at = updated_at;
     }
 }

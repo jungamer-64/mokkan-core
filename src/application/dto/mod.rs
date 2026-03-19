@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 pub mod articles;
 pub mod audit;
 pub mod auth;

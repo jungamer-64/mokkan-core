@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 // src/application/ports/authorization_code.rs
 use crate::application::{ApplicationResult, dto::TokenSubject};
 use async_trait::async_trait;

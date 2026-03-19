@@ -2,7 +2,7 @@
 use chrono::{DateTime, Utc};
 
 /// 標準的なサンプル監査ログを生成
-pub fn sample_audit(created_at: DateTime<Utc>) -> mokkan_core::domain::audit::entity::AuditLog {
+pub fn sample(created_at: DateTime<Utc>) -> mokkan_core::domain::audit::entity::AuditLog {
     mokkan_core::domain::audit::entity::AuditLog {
         id: 1,
         user_id: Some(mokkan_core::domain::user::value_objects::UserId::new(1).unwrap()),

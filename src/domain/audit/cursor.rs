@@ -1,24 +1,33 @@
+#![allow(clippy::module_name_repetitions)]
+
 // src/domain/audit/cursor.rs
 use crate::domain::errors::{DomainError, DomainResult};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone)]
+#[must_use]
 pub struct AuditLogCursor {
     pub created_at: DateTime<Utc>,
     pub id: i64,
 }
 
 impl AuditLogCursor {
-    pub fn new(created_at: DateTime<Utc>, id: i64) -> Self {
+    pub const fn new(created_at: DateTime<Utc>, id: i64) -> Self {
         Self { created_at, id }
     }
 
+    #[must_use]
     pub fn encode(&self) -> String {
         let raw = format!("{}|{}", self.created_at.to_rfc3339(), self.id);
         URL_SAFE_NO_PAD.encode(raw.as_bytes())
     }
 
+    /// Decode an audit cursor token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the token is malformed or contains invalid data.
     pub fn decode(token: &str) -> DomainResult<Self> {
         let bytes = URL_SAFE_NO_PAD
             .decode(token)

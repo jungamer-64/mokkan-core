@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 use crate::domain::user::{Capability, Role, UserId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -33,6 +35,7 @@ pub struct AuthenticatedUser {
 }
 
 impl AuthenticatedUser {
+    #[must_use]
     pub fn has_capability(&self, resource: &str, action: &str) -> bool {
         self.capabilities
             .iter()
@@ -51,6 +54,7 @@ pub struct TokenSubject {
 }
 
 impl TokenSubject {
+    #[must_use]
     pub fn from_authenticated(auth: &AuthenticatedUser) -> Self {
         Self {
             user_id: auth.id,

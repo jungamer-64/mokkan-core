@@ -22,7 +22,7 @@ pub use security::{
 };
 
 // 監査ログ関連
-pub use audit::{sample_audit, sample_audit_with};
+pub use audit::{sample, sample_audit_with};
 
 // リポジトリ関連（監査ログ）
 pub use repos::{CapturingAuditRepo, MockAuditRepo, MockRepo};
@@ -31,7 +31,7 @@ pub use repos::{CapturingAuditRepo, MockAuditRepo, MockRepo};
 pub use util::{DummyClock, DummySlug};
 
 // ユーザーリポジトリ
-pub use user_repo::DummyUserRepo;
+pub use user_repo::DummyRepo;
 
 // 記事リポジトリ
 pub use article_repos::{DummyArticleRead, DummyArticleRevision, DummyArticleWrite};

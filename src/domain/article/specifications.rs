@@ -5,9 +5,11 @@ use crate::domain::article::entity::Article;
 use crate::domain::user::value_objects::{Capability, UserId};
 
 pub trait ArticleSpecification {
+    #[must_use]
     fn is_satisfied(&self) -> bool;
 }
 
+#[must_use]
 pub struct CanUpdateArticleSpec<'a> {
     capabilities: &'a HashSet<Capability>,
     article: &'a Article,
@@ -15,7 +17,7 @@ pub struct CanUpdateArticleSpec<'a> {
 }
 
 impl<'a> CanUpdateArticleSpec<'a> {
-    pub fn new(
+    pub const fn new(
         capabilities: &'a HashSet<Capability>,
         article: &'a Article,
         user_id: UserId,
@@ -42,6 +44,7 @@ impl ArticleSpecification for CanUpdateArticleSpec<'_> {
     }
 }
 
+#[must_use]
 pub struct CanDeleteArticleSpec<'a> {
     capabilities: &'a HashSet<Capability>,
     article: &'a Article,
@@ -49,7 +52,7 @@ pub struct CanDeleteArticleSpec<'a> {
 }
 
 impl<'a> CanDeleteArticleSpec<'a> {
-    pub fn new(
+    pub const fn new(
         capabilities: &'a HashSet<Capability>,
         article: &'a Article,
         user_id: UserId,

@@ -11,6 +11,11 @@ use utoipa::ToSchema;
 pub struct UserId(pub i64);
 
 impl UserId {
+    /// Create a validated user id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the id is not positive.
     pub fn new(id: i64) -> DomainResult<Self> {
         if id <= 0 {
             Err(DomainError::Validation("user id must be positive".into()))
@@ -40,6 +45,7 @@ impl Capability {
         }
     }
 
+    #[must_use]
     pub fn matches(&self, resource: &str, action: &str) -> bool {
         self.resource == resource && self.action == action
     }
@@ -57,17 +63,19 @@ pub enum Role {
 }
 
 impl Role {
-    pub fn as_str(&self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            Role::Admin => "admin",
-            Role::Author => "author",
+            Self::Admin => "admin",
+            Self::Author => "author",
         }
     }
 
+    #[must_use]
     pub fn default_capabilities(&self) -> HashSet<Capability> {
         use Capability as Cap;
         match self {
-            Role::Admin => HashSet::from([
+            Self::Admin => HashSet::from([
                 Cap::new("articles", "create"),
                 Cap::new("articles", "update:any"),
                 Cap::new("articles", "delete:any"),
@@ -77,7 +85,7 @@ impl Role {
                 Cap::new("users", "read"),
                 Cap::new("users", "update"),
             ]),
-            Role::Author => HashSet::from([
+            Self::Author => HashSet::from([
                 Cap::new("articles", "create"),
                 Cap::new("articles", "update:own"),
                 Cap::new("articles", "delete:own"),
@@ -99,8 +107,8 @@ impl FromStr for Role {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "admin" => Ok(Role::Admin),
-            "author" => Ok(Role::Author),
+            "admin" => Ok(Self::Admin),
+            "author" => Ok(Self::Author),
             other => Err(DomainError::Validation(format!("unknown role '{other}'"))),
         }
     }
@@ -110,6 +118,12 @@ impl FromStr for Role {
 pub struct Username(String);
 
 impl Username {
+    /// Create a validated username.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the username is blank or shorter than 3
+    /// characters.
     pub fn new(value: impl Into<String>) -> DomainResult<Self> {
         let value = value.into();
         if value.trim().is_empty() {
@@ -123,6 +137,7 @@ impl Username {
         Ok(Self(value))
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -142,6 +157,7 @@ impl fmt::Display for Username {
 
 impl Username {
     /// Consume the Username and return the inner String.
+    #[must_use]
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -157,6 +173,11 @@ impl AsRef<str> for Username {
 pub struct PasswordHash(String);
 
 impl PasswordHash {
+    /// Create a validated password hash wrapper.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the hash string is empty.
     pub fn new(value: impl Into<String>) -> DomainResult<Self> {
         let value = value.into();
         if value.is_empty() {
@@ -167,6 +188,7 @@ impl PasswordHash {
         Ok(Self(value))
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -179,7 +201,8 @@ impl From<PasswordHash> for String {
 }
 
 impl PasswordHash {
-    /// Consume the PasswordHash and return the inner String.
+    /// Consume the `PasswordHash` and return the inner `String`.
+    #[must_use]
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -192,19 +215,21 @@ impl AsRef<str> for PasswordHash {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[must_use]
 pub struct UserListCursor {
     pub created_at: DateTime<Utc>,
     pub user_id: UserId,
 }
 
 impl UserListCursor {
-    pub fn new(created_at: DateTime<Utc>, user_id: UserId) -> Self {
+    pub const fn new(created_at: DateTime<Utc>, user_id: UserId) -> Self {
         Self {
             created_at,
             user_id,
         }
     }
 
+    #[must_use]
     pub fn encode(&self) -> String {
         let raw = format!(
             "{}|{}",
@@ -214,6 +239,11 @@ impl UserListCursor {
         URL_SAFE_NO_PAD.encode(raw.as_bytes())
     }
 
+    /// Decode a user list cursor token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the token is malformed or contains invalid data.
     pub fn decode(token: &str) -> DomainResult<Self> {
         let bytes = URL_SAFE_NO_PAD
             .decode(token)

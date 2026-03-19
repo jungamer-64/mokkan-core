@@ -8,6 +8,7 @@ use crate::application::ports::{
 };
 use crate::domain::user::UserRepository;
 
+#[must_use]
 pub struct UserCommandService {
     pub(super) user_repo: Arc<dyn UserRepository>,
     pub(super) password_hasher: Arc<dyn PasswordHasher>,

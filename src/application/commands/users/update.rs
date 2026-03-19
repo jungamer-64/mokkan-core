@@ -14,6 +14,12 @@ pub struct UpdateUserCommand {
 }
 
 impl UserCommandService {
+    /// Update mutable user fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor lacks `users:update`, the user id is
+    /// invalid, no update fields are provided, or persistence fails.
     pub async fn update_user(
         &self,
         actor: &AuthenticatedUser,

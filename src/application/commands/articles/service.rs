@@ -9,6 +9,7 @@ use crate::{
     },
 };
 
+#[must_use]
 pub struct ArticleCommandService {
     pub(super) write_repo: Arc<dyn ArticleWriteRepository>,
     pub(super) read_repo: Arc<dyn ArticleReadRepository>,

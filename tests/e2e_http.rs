@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 // tests/e2e_http.rs
 use axum::body::{self, Body};
 use axum::http::{Request, StatusCode, header::AUTHORIZATION};
@@ -47,12 +49,11 @@ async fn e2e_audit_list_endpoint_returns_200() {
         .unwrap_or("");
     assert!(
         health_ct.starts_with("application/json"),
-        "unexpected content-type: {}",
-        health_ct
+        "unexpected content-type: {health_ct}"
     );
     if health_status != StatusCode::OK {
         let s = String::from_utf8_lossy(&health_body_bytes);
-        panic!("health endpoint expected 200, got {}: {}", health_status, s);
+        panic!("health endpoint expected 200, got {health_status}: {s}");
     }
 
     // Directly call the handler to confirm it works without router layers
@@ -78,19 +79,17 @@ async fn e2e_audit_list_endpoint_returns_200() {
         .unwrap_or("");
     assert!(
         ct.starts_with("application/json"),
-        "unexpected content-type: {}",
-        ct
+        "unexpected content-type: {ct}"
     );
     if status != StatusCode::OK {
         let s = String::from_utf8_lossy(&body_bytes);
-        panic!("expected 200 OK, got {}: {}", status, s);
+        panic!("expected 200 OK, got {status}: {s}");
     }
     let json: Value = serde_json::from_slice(&body_bytes).unwrap();
     // expect items array with at least one element
     assert!(
         json.get("items")
             .and_then(|v| v.as_array())
-            .map(|a| !a.is_empty())
-            .unwrap_or(false)
+            .is_some_and(|a| !a.is_empty())
     );
 }

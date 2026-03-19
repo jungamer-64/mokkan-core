@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use crate::domain::audit::repository::AuditLogRepository;
 
+#[must_use]
 pub struct AuditQueryService {
     pub(super) repo: Arc<dyn AuditLogRepository>,
 }

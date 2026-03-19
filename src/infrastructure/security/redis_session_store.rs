@@ -18,7 +18,7 @@ const USED_NONCE_TTL_SECS: usize = 60 * 60 * 24 * 7; // 604800
 // Lua script used to atomically rotate the refresh nonce and mark the old
 // nonce as used (with a TTL). Extracted as a constant so helpers can reuse
 // it without inflating function bodies (also helps with Lizard line-count).
-const CAS_LUA_SCRIPT: &str = r#"
+const CAS_LUA_SCRIPT: &str = r"
     local cur = redis.call('GET', KEYS[1])
     if cur == ARGV[1] then
         redis.call('SET', KEYS[1], ARGV[2])
@@ -28,9 +28,10 @@ const CAS_LUA_SCRIPT: &str = r#"
     else
         return 0
     end
-"#;
+";
 
 #[derive(Clone)]
+#[must_use]
 pub struct RedisSessionRevocationStore {
     pool: Pool,
     /// Cached SHA for the compare-and-swap lua script. Loaded lazily.
@@ -38,12 +39,20 @@ pub struct RedisSessionRevocationStore {
     /// Number of times the CAS script was loaded into Redis (SCRIPT LOAD).
     /// Used by tests to assert EVALSHA caching behavior.
     script_load_count: Arc<AtomicUsize>,
-    /// TTL for used refresh nonce markers (seconds). Configurable via env REDIS_USED_NONCE_TTL_SECS.
+    /// TTL for used refresh nonce markers, in seconds.
+    ///
+    /// Configurable via `REDIS_USED_NONCE_TTL_SECS`.
     used_nonce_ttl_secs: usize,
 }
 
 impl RedisSessionRevocationStore {
-    /// Create a new Redis backed session store from a redis URL (e.g. redis://:password@host:6379/0)
+    /// Create a new Redis-backed session store from a Redis URL.
+    ///
+    /// Example: `<redis://:password@host:6379/0>`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the Redis pool cannot be created.
     pub fn from_url(url: &str) -> Result<Self, ApplicationError> {
         // Delegate to the options based constructor using environment defaults.
         let used_nonce_ttl_secs = std::env::var("REDIS_USED_NONCE_TTL_SECS")
@@ -52,14 +61,19 @@ impl RedisSessionRevocationStore {
             .unwrap_or(USED_NONCE_TTL_SECS);
 
         let preload = std::env::var("REDIS_PRELOAD_CAS_SCRIPT")
-            .map(|v| v == "1" || v.to_lowercase() == "true")
-            .unwrap_or(false);
+            .is_ok_and(|v| v == "1" || v.to_lowercase() == "true");
 
         Self::from_url_with_options(url, used_nonce_ttl_secs, preload)
     }
 
-    /// Create a RedisSessionRevocationStore from a URL but allow configuration of
-    /// the used-nonce TTL and whether to preload the CAS script at startup.
+    /// Create a `RedisSessionRevocationStore` from a URL with explicit options.
+    ///
+    /// This allows configuring the used-nonce TTL and whether to preload the
+    /// `CAS` script at startup.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the Redis pool cannot be created.
     pub fn from_url_with_options(
         url: &str,
         used_nonce_ttl_secs: usize,
@@ -78,7 +92,7 @@ impl RedisSessionRevocationStore {
         };
 
         if preload_cas_script {
-            let pool_clone = pool.clone();
+            let pool_clone = pool;
             let sha_clone = store.cas_script_sha.clone();
             tokio::spawn(async move {
                 if let Ok(mut conn) = pool_clone.get().await {
@@ -89,12 +103,14 @@ impl RedisSessionRevocationStore {
                         .await
                     {
                         Ok(sha) => {
-                            let mut g = sha_clone.lock().await;
-                            *g = Some(sha);
+                            {
+                                let mut g = sha_clone.lock().await;
+                                *g = Some(sha);
+                            }
                             tracing::info!("preloaded redis CAS lua script");
                         }
                         Err(err) => {
-                            tracing::warn!(error = %err, "failed to preload redis CAS lua script")
+                            tracing::warn!(error = %err, "failed to preload redis CAS lua script");
                         }
                     }
                 }
@@ -106,6 +122,11 @@ impl RedisSessionRevocationStore {
 
     /// Helper that executes the CAS lua script using a cached SHA when possible.
     /// Loads the script (SCRIPT LOAD) on first use or when a NOSCRIPT is returned.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if Redis commands fail while loading or executing the
+    /// compare-and-swap script.
     pub async fn run_cas_script(
         &self,
         key: &str,
@@ -144,8 +165,11 @@ impl RedisSessionRevocationStore {
         expected: &str,
         new_nonce: &str,
     ) -> ApplicationResult<Option<i32>> {
-        let mut sha_guard = self.cas_script_sha.lock().await;
-        if let Some(sha) = sha_guard.clone() {
+        let cached_sha = {
+            let sha_guard = self.cas_script_sha.lock().await;
+            sha_guard.clone()
+        };
+        if let Some(sha) = cached_sha {
             let res: Result<i32, redis::RedisError> = redis::cmd("EVALSHA")
                 .arg(sha)
                 .arg(2)
@@ -162,11 +186,14 @@ impl RedisSessionRevocationStore {
                 Err(err) => {
                     let msg = err.to_string();
                     if msg.contains("NOSCRIPT") {
-                        *sha_guard = None;
+                        {
+                            let mut sha_guard = self.cas_script_sha.lock().await;
+                            *sha_guard = None;
+                        }
                         return Ok(None);
-                    } else {
-                        return Err(ApplicationError::infrastructure(err.to_string()));
                     }
+
+                    return Err(ApplicationError::infrastructure(err.to_string()));
                 }
             }
         }
@@ -184,12 +211,15 @@ impl RedisSessionRevocationStore {
         // Count the script load for observability/testing.
         self.script_load_count.fetch_add(1, Ordering::SeqCst);
 
-        let mut sha_guard = self.cas_script_sha.lock().await;
-        *sha_guard = Some(loaded_sha.clone());
+        {
+            let mut sha_guard = self.cas_script_sha.lock().await;
+            *sha_guard = Some(loaded_sha.clone());
+        }
         Ok(loaded_sha)
     }
 
     /// Return the number of times we've called SCRIPT LOAD (test hook).
+    #[must_use]
     pub fn script_loads(&self) -> usize {
         self.script_load_count.load(Ordering::SeqCst)
     }
@@ -262,7 +292,7 @@ impl SessionRevocation for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let key = format!("revoked:session:{}", session_id);
+        let key = format!("revoked:session:{session_id}");
         let exists: bool = conn
             .exists(key)
             .await
@@ -277,7 +307,7 @@ impl SessionRevocation for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let key = format!("revoked:session:{}", session_id);
+        let key = format!("revoked:session:{session_id}");
         conn.set::<_, _, ()>(key, 1)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
@@ -293,7 +323,7 @@ impl SessionRevocation for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let key = format!("user_sessions:{}", user_id);
+        let key = format!("user_sessions:{user_id}");
         let sessions: Vec<String> = conn
             .smembers(&key)
             .await
@@ -303,7 +333,7 @@ impl SessionRevocation for RedisSessionRevocationStore {
             return Ok(());
         }
 
-        let script = r#"
+        let script = r"
             if #ARGV == 0 then
                 return 0
             end
@@ -313,7 +343,7 @@ impl SessionRevocation for RedisSessionRevocationStore {
             end
             redis.call('DEL', KEYS[1])
             return #ARGV
-        "#;
+        ";
 
         let mut cmd = redis::cmd("EVAL");
         cmd.arg(script).arg(1).arg(&key);
@@ -344,7 +374,7 @@ impl TokenVersionStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let key = format!("min_token_version:{}", user_id);
+        let key = format!("min_token_version:{user_id}");
         let val: Option<u32> = conn
             .get(key)
             .await
@@ -359,7 +389,7 @@ impl TokenVersionStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let key = format!("min_token_version:{}", user_id);
+        let key = format!("min_token_version:{user_id}");
         conn.set::<_, _, ()>(key, min_version)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
@@ -380,7 +410,7 @@ impl RefreshNonceStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let key = format!("session_refresh_nonce:{}", session_id);
+        let key = format!("session_refresh_nonce:{session_id}");
         conn.set::<_, _, ()>(key, nonce)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
@@ -397,7 +427,7 @@ impl RefreshNonceStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let key = format!("session_refresh_nonce:{}", session_id);
+        let key = format!("session_refresh_nonce:{session_id}");
         let val: Option<String> = conn
             .get(key)
             .await
@@ -411,8 +441,8 @@ impl RefreshNonceStore for RedisSessionRevocationStore {
         expected: &str,
         new_nonce: &str,
     ) -> ApplicationResult<bool> {
-        let key = format!("session_refresh_nonce:{}", session_id);
-        let used_key = format!("used_refresh_nonce:{}:{}", session_id, expected);
+        let key = format!("session_refresh_nonce:{session_id}");
+        let used_key = format!("used_refresh_nonce:{session_id}:{expected}");
 
         let replaced = self
             .run_cas_script(&key, &used_key, expected, new_nonce)
@@ -432,7 +462,7 @@ impl RefreshNonceStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let used_key = format!("used_refresh_nonce:{}:{}", session_id, nonce);
+        let used_key = format!("used_refresh_nonce:{session_id}:{nonce}");
         // default TTL
         conn.set::<_, _, ()>(&used_key, 1)
             .await
@@ -459,7 +489,7 @@ impl RefreshNonceStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let used_key = format!("used_refresh_nonce:{}:{}", session_id, nonce);
+        let used_key = format!("used_refresh_nonce:{session_id}:{nonce}");
         let exists: bool = conn
             .exists(used_key)
             .await
@@ -477,7 +507,7 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let key = format!("user_sessions:{}", user_id);
+        let key = format!("user_sessions:{user_id}");
         conn.sadd::<_, _, ()>(key, session_id)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
@@ -495,7 +525,7 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let key = format!("user_sessions:{}", user_id);
+        let key = format!("user_sessions:{user_id}");
         conn.srem::<_, _, ()>(key, session_id)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
@@ -509,7 +539,7 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let key = format!("user_sessions:{}", user_id);
+        let key = format!("user_sessions:{user_id}");
         let members: Vec<String> = conn
             .smembers(key)
             .await
@@ -527,7 +557,7 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let key = format!("user_sessions:{}", user_id);
+        let key = format!("user_sessions:{user_id}");
         let sessions: Vec<String> = conn
             .smembers(&key)
             .await
@@ -535,7 +565,7 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
 
         let mut out = Vec::with_capacity(sessions.len());
         for sid in sessions {
-            let meta_key = format!("session:meta:{}", sid);
+            let meta_key = format!("session:meta:{sid}");
             // read fields individually to be robust to missing values
             let ua: Option<String> = conn
                 .hget(&meta_key, "user_agent")
@@ -551,7 +581,7 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
                 .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
             let created_at_unix: i64 = created_str.and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
 
-            let revoked_key = format!("revoked:session:{}", sid);
+            let revoked_key = format!("revoked:session:{sid}");
             let revoked: bool = conn
                 .exists(&revoked_key)
                 .await
@@ -584,12 +614,12 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let user_sessions_key = format!("user_sessions:{}", user_id);
+        let user_sessions_key = format!("user_sessions:{user_id}");
         conn.sadd::<_, _, ()>(user_sessions_key, session_id)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let meta_key = format!("session:meta:{}", session_id);
+        let meta_key = format!("session:meta:{session_id}");
         // Use a single HSET invocation to reduce branching and RTTs. Store empty string
         // for optional fields when absent.
         let ua_val = user_agent.unwrap_or("");
@@ -624,7 +654,7 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let meta_key = format!("session:meta:{}", session_id);
+        let meta_key = format!("session:meta:{session_id}");
         // If the meta hash does not exist, return None
         let exists: bool = conn
             .exists(&meta_key)
@@ -654,7 +684,7 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
 
         let created_at_unix: i64 = created_opt.and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
 
-        let revoked_key = format!("revoked:session:{}", session_id);
+        let revoked_key = format!("revoked:session:{session_id}");
         let revoked: bool = conn
             .exists(&revoked_key)
             .await
@@ -679,7 +709,7 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-        let meta_key = format!("session:meta:{}", session_id);
+        let meta_key = format!("session:meta:{session_id}");
         let _: () = conn
             .del(&meta_key)
             .await
@@ -781,6 +811,7 @@ impl OpaqueRefreshTokenStore for RedisSessionRevocationStore {
     }
 }
 
+#[must_use]
 pub fn into_arc(store: RedisSessionRevocationStore) -> std::sync::Arc<dyn SessionRevocationStore> {
     std::sync::Arc::new(store)
 }

@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 // tests/e2e_error_statuses.rs
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header::AUTHORIZATION};

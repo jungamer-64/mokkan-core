@@ -34,6 +34,12 @@ use serde_json::Value as JsonValue;
     security([]),
     tag = "Auth"
 )]
+/// Register a new user account.
+///
+/// # Errors
+///
+/// Returns an error if the payload is invalid, the username already exists,
+/// or the registration command fails.
 pub async fn register(
     Extension(state): Extension<HttpState>,
     actor: MaybeAuthenticated,
@@ -66,6 +72,11 @@ pub async fn register(
     security([]),
     tag = "Auth"
 )]
+/// Log a user in and issue tokens.
+///
+/// # Errors
+///
+/// Returns an error if the credentials are invalid or token issuance fails.
 pub async fn login(
     Extension(state): Extension<HttpState>,
     Json(payload): Json<LoginRequest>,
@@ -101,6 +112,12 @@ pub async fn login(
     security([]),
     tag = "Auth"
 )]
+/// Refresh a token pair from a refresh token.
+///
+/// # Errors
+///
+/// Returns an error if the refresh token is invalid, expired, revoked, or the
+/// refresh command fails.
 pub async fn refresh_token(
     Extension(state): Extension<HttpState>,
     Json(payload): Json<RefreshTokenRequest>,
@@ -130,6 +147,12 @@ pub async fn refresh_token(
     security(("bearerAuth" = [])),
     tag = "Auth"
 )]
+/// Return the current authenticated user's profile.
+///
+/// # Errors
+///
+/// Returns an error if authentication fails or the user record cannot be
+/// loaded.
 pub async fn profile(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -158,6 +181,12 @@ pub async fn profile(
     security(("bearerAuth" = [])),
     tag = "Users"
 )]
+/// List users for an authorized caller.
+///
+/// # Errors
+///
+/// Returns an error if authentication fails, the caller lacks permission, the
+/// cursor is invalid, or the user query fails.
 pub async fn list_users(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -198,6 +227,12 @@ pub async fn list_users(
     security(("bearerAuth" = [])),
     tag = "Users"
 )]
+/// Update a user's role or active state.
+///
+/// # Errors
+///
+/// Returns an error if authentication fails, the caller lacks permission, the
+/// payload is invalid, or the update command fails.
 pub async fn update_user(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -237,6 +272,12 @@ pub async fn update_user(
     security(("bearerAuth" = [])),
     tag = "Users"
 )]
+/// Change a user's password.
+///
+/// # Errors
+///
+/// Returns an error if authentication fails, the caller lacks permission, the
+/// payload is invalid, or the password update fails.
 pub async fn change_password(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -279,6 +320,12 @@ pub async fn change_password(
     security(("bearerAuth" = [])),
     tag = "Users"
 )]
+/// Grant a role to a user.
+///
+/// # Errors
+///
+/// Returns an error if authentication fails, the caller lacks permission, the
+/// payload is invalid, or the command fails.
 pub async fn grant_role(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -316,6 +363,12 @@ pub async fn grant_role(
     security(("bearerAuth" = [])),
     tag = "Users"
 )]
+/// Revoke an elevated role from a user.
+///
+/// # Errors
+///
+/// Returns an error if authentication fails, the caller lacks permission, or
+/// the command fails.
 pub async fn revoke_role(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -333,6 +386,10 @@ pub async fn revoke_role(
 }
 
 // JWKS-like public keys endpoint. Returns the public key material used to verify tokens.
+///
+/// # Errors
+///
+/// Returns an error if the public key material cannot be rendered.
 pub async fn keys(Extension(state): Extension<HttpState>) -> HttpResult<Json<JsonValue>> {
     state
         .services
@@ -356,6 +413,12 @@ pub async fn keys(Extension(state): Extension<HttpState>) -> HttpResult<Json<Jso
     security(("bearerAuth" = [])),
     tag = "Auth"
 )]
+/// Revoke the current session-backed token.
+///
+/// # Errors
+///
+/// Returns an error if the token is not session-based or session revocation
+/// fails.
 pub async fn logout(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,

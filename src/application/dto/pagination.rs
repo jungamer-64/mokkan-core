@@ -1,11 +1,11 @@
-use serde::{Deserialize, Serialize};
+#![allow(clippy::option_if_let_else)]
+
+use serde::Serialize;
 use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
-#[serde(bound(
-    serialize = "T: Serialize",
-    deserialize = "T: serde::de::DeserializeOwned"
-))]
+#[derive(Debug, Clone, Serialize, ToSchema)]
+#[serde(bound(serialize = "T: Serialize"))]
+#[must_use]
 pub struct CursorPage<T> {
     pub items: Vec<T>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -14,7 +14,7 @@ pub struct CursorPage<T> {
 }
 
 impl<T> CursorPage<T> {
-    pub fn new(items: Vec<T>, next_cursor: Option<String>) -> Self {
+    pub const fn new(items: Vec<T>, next_cursor: Option<String>) -> Self {
         let has_more = next_cursor.is_some();
         Self {
             items,

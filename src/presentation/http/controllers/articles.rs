@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 // src/presentation/http/controllers/articles.rs
 use crate::application::{
     commands::articles::{
@@ -19,7 +21,7 @@ use axum::{
 use serde::Deserialize;
 use utoipa::IntoParams;
 
-fn default_limit() -> u32 {
+const fn default_limit() -> u32 {
     20
 }
 
@@ -67,6 +69,12 @@ pub struct PublishRequest {
     security([]),
     tag = "Articles"
 )]
+/// List articles visible to the caller.
+///
+/// # Errors
+///
+/// Returns an error if query validation fails, draft access is forbidden, or
+/// the article query service fails.
 pub async fn list_articles(
     Extension(state): Extension<HttpState>,
     actor: MaybeAuthenticated,
@@ -126,6 +134,12 @@ pub async fn list_articles(
     security([]),
     tag = "Articles"
 )]
+/// Load a single article by slug.
+///
+/// # Errors
+///
+/// Returns an error if the slug is invalid, the article is missing, or the
+/// caller cannot view an unpublished article.
 pub async fn get_article_by_slug(
     Extension(state): Extension<HttpState>,
     actor: MaybeAuthenticated,
@@ -154,6 +168,12 @@ pub async fn get_article_by_slug(
     security(("bearerAuth" = [])),
     tag = "Articles"
 )]
+/// Create a new article.
+///
+/// # Errors
+///
+/// Returns an error if authentication or authorization fails, the payload is
+/// invalid, or the command service fails.
 pub async fn create_article(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -192,6 +212,12 @@ pub async fn create_article(
     security(("bearerAuth" = [])),
     tag = "Articles"
 )]
+/// Update an existing article.
+///
+/// # Errors
+///
+/// Returns an error if authentication or authorization fails, the payload is
+/// invalid, the article is missing, or the command service fails.
 pub async fn update_article(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -230,6 +256,12 @@ pub async fn update_article(
     security(("bearerAuth" = [])),
     tag = "Articles"
 )]
+/// Delete an article.
+///
+/// # Errors
+///
+/// Returns an error if authentication or authorization fails, the article is
+/// missing, or the command service fails.
 pub async fn delete_article(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -265,6 +297,12 @@ pub async fn delete_article(
     security(("bearerAuth" = [])),
     tag = "Articles"
 )]
+/// Change an article's published state.
+///
+/// # Errors
+///
+/// Returns an error if authentication or authorization fails, the payload is
+/// invalid, the article is missing, or the command service fails.
 pub async fn set_publish_state(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -301,6 +339,12 @@ pub async fn set_publish_state(
     security(("bearerAuth" = [])),
     tag = "Articles"
 )]
+/// List revision history for an article.
+///
+/// # Errors
+///
+/// Returns an error if authentication or authorization fails, the article is
+/// missing, or the query service fails.
 pub async fn list_article_revisions(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,

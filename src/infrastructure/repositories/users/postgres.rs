@@ -9,23 +9,23 @@ use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 
 #[derive(Clone)]
+#[must_use]
 pub struct PostgresUserRepository {
     pool: PgPool,
 }
 
 impl PostgresUserRepository {
-    pub fn new(pool: PgPool) -> Self {
+    pub const fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 
     fn build_update_query(
-        &self,
         id: UserId,
         is_active: Option<bool>,
         role: Option<Role>,
         password_hash: Option<PasswordHash>,
-    ) -> QueryBuilder<'_, Postgres> {
-        let mut builder: QueryBuilder<'_, Postgres> = QueryBuilder::new("UPDATE users SET ");
+    ) -> QueryBuilder<'static, Postgres> {
+        let mut builder: QueryBuilder<'static, Postgres> = QueryBuilder::new("UPDATE users SET ");
         let mut first = true;
 
         if let Some(is_active) = is_active {
@@ -68,7 +68,7 @@ impl PostgresUserRepository {
             if trimmed.is_empty() {
                 None
             } else {
-                Some(format!("%{}%", trimmed))
+                Some(format!("%{trimmed}%"))
             }
         })
     }
@@ -88,7 +88,7 @@ impl TryFrom<UserRow> for User {
     type Error = DomainError;
 
     fn try_from(row: UserRow) -> Result<Self, Self::Error> {
-        Ok(User {
+        Ok(Self {
             id: UserId::new(row.id)?,
             username: Username::new(row.username)?,
             password_hash: PasswordHash::new(row.password_hash)?,
@@ -102,11 +102,12 @@ impl TryFrom<UserRow> for User {
 #[async_trait]
 impl UserRepository for PostgresUserRepository {
     async fn count(&self) -> DomainResult<u64> {
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(1) FROM users")
+        let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(1) FROM users")
             .fetch_one(&self.pool)
             .await
-            .map(|count| count as u64)
-            .map_err(map_sqlx)
+            .map_err(map_sqlx)?;
+
+        u64::try_from(count).map_err(|_| DomainError::Persistence("user count out of range".into()))
     }
 
     async fn insert(&self, new_user: NewUser) -> DomainResult<User> {
@@ -175,7 +176,7 @@ impl UserRepository for PostgresUserRepository {
             ));
         }
 
-        let mut builder = self.build_update_query(id, is_active, role, password_hash);
+        let mut builder = Self::build_update_query(id, is_active, role, password_hash);
 
         let row = builder
             .build_query_as::<UserRow>()
@@ -194,7 +195,7 @@ impl UserRepository for PostgresUserRepository {
         search: Option<&str>,
     ) -> DomainResult<(Vec<User>, Option<UserListCursor>)> {
         let limit = limit.clamp(1, 100);
-        let fetch_limit = (limit as i64) + 1;
+        let fetch_limit = i64::from(limit) + 1;
 
         let search = Self::normalize_search(search);
 
@@ -202,12 +203,11 @@ impl UserRepository for PostgresUserRepository {
             "SELECT id, username, password_hash, role, is_active, created_at FROM users",
         );
 
-        let mut has_where = false;
-        if let Some(pattern) = search.as_deref() {
+        let has_where = search.as_deref().is_some_and(|pattern| {
             builder.push(" WHERE username ILIKE ");
             builder.push_bind(pattern);
-            has_where = true;
-        }
+            true
+        });
 
         if let Some(cursor) = cursor.as_ref() {
             builder.push(if has_where { " AND " } else { " WHERE " });

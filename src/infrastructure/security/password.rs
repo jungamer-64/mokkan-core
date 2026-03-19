@@ -20,10 +20,10 @@ impl PasswordHasher for Argon2PasswordHasher {
         let password = password.to_owned();
         tokio::task::spawn_blocking(move || {
             let salt = SaltString::generate(&mut OsRng);
-            Argon2::default()
+            let hash = Argon2::default()
                 .hash_password(password.as_bytes(), &salt)
-                .map(|hash| hash.to_string())
-                .map_err(|err| ApplicationError::infrastructure(err.to_string()))
+                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            Ok(hash.to_string())
         })
         .await
         .map_err(|err| ApplicationError::infrastructure(err.to_string()))?

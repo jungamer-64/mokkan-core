@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 use crate::domain::audit::entity::AuditLog;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

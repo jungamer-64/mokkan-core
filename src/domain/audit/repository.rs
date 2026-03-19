@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 // src/domain/audit/repository.rs
 use crate::domain::audit::cursor::AuditLogCursor;
 use crate::domain::audit::entity::{AuditLog, NewAuditLog};

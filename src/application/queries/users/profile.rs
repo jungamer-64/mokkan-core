@@ -5,6 +5,12 @@ use crate::application::{
 };
 
 impl UserQueryService {
+    /// Load the current authenticated user's profile.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the backing user record no longer exists or the
+    /// repository lookup fails.
     pub async fn get_profile(
         &self,
         actor: &AuthenticatedUser,

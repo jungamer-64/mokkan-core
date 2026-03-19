@@ -16,6 +16,11 @@ use chrono::{TimeZone, Utc};
     security(("bearerAuth" = [])),
     tag = "Auth"
 )]
+/// List the current user's active and revoked sessions.
+///
+/// # Errors
+///
+/// Returns an error if authentication fails or session metadata lookup fails.
 pub async fn list_sessions(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
@@ -63,6 +68,12 @@ pub async fn list_sessions(
     security(("bearerAuth" = [])),
     tag = "Auth"
 )]
+/// Revoke a session by id.
+///
+/// # Errors
+///
+/// Returns an error if authentication fails, the caller is not allowed to
+/// revoke the session, or session metadata and revocation operations fail.
 pub async fn revoke_session(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,

@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 // src/domain/user/repository.rs
 use crate::domain::errors::DomainResult;
 use crate::domain::user::{

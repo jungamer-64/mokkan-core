@@ -15,6 +15,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
+    fmt::Write as _,
     sync::Arc,
     time::{Duration, SystemTime},
 };
@@ -27,6 +28,11 @@ pub struct BiscuitTokenManager {
 }
 
 impl BiscuitTokenManager {
+    /// Create a Biscuit-backed token manager from the configured signing key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the private key cannot be parsed.
     pub fn new(private_key_hex: &str, ttl: Duration) -> ApplicationResult<Self> {
         let private = PrivateKey::from_bytes_hex(private_key_hex, Algorithm::Ed25519)
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
@@ -54,20 +60,24 @@ fn build_code_and_params(
     params.insert("exp".to_string(), expires_at.into());
 
     let mut code = String::from(
-        r#"
+        r"
                 user({uid}, {uname});
                 role({urole});
                 issued_at({issued});
                 expires_at({exp});
                 check if time($now), $now >= {issued};
                 check if time($now), $now <= {exp};
-                "#,
+                ",
     );
 
     if let Some(sid) = subject.session_id.as_ref() {
-        code.push_str("session({sid}, {ver});\n");
+        code.push_str("session(");
+        code.push('{');
+        code.push_str("sid}, ");
+        code.push('{');
+        code.push_str("ver});\n");
         params.insert("sid".to_string(), sid.clone().into());
-        let ver = subject.token_version.unwrap_or(1) as i64;
+        let ver = i64::from(subject.token_version.unwrap_or(1));
         params.insert("ver".to_string(), ver.into());
     }
 
@@ -78,11 +88,11 @@ fn build_code_and_params(
 
     // Append capability facts into the code using parameters to avoid manual escaping.
     for (i, cap) in subject.capabilities.iter().enumerate() {
-        let res_key = format!("cap_res_{}", i);
-        let act_key = format!("cap_act_{}", i);
+        let res_key = format!("cap_res_{i}");
+        let act_key = format!("cap_act_{i}");
         params.insert(res_key.clone(), cap.resource.clone().into());
         params.insert(act_key.clone(), cap.action.clone().into());
-        code.push_str(&format!("right({{{}}}, {{{}}});\n", res_key, act_key));
+        let _ = writeln!(code, "right({{{res_key}}}, {{{act_key}}});");
     }
 
     (code, params)
@@ -106,7 +116,7 @@ fn build_caveat_code_and_params(token_type: &str) -> (String, HashMap<String, Te
     (code, params)
 }
 
-fn seal_and_serialize(token: Biscuit) -> Result<String, ApplicationError> {
+fn seal_and_serialize(token: &Biscuit) -> Result<String, ApplicationError> {
     let sealed = token
         .seal()
         .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
@@ -117,7 +127,9 @@ fn seal_and_serialize(token: Biscuit) -> Result<String, ApplicationError> {
 
 fn ttl_to_expires_in_seconds(ttl: Duration) -> i64 {
     ChronoDuration::from_std(ttl)
-        .unwrap_or_else(|_| ChronoDuration::seconds(ttl.as_secs() as i64))
+        .unwrap_or_else(|_| {
+            ChronoDuration::seconds(i64::try_from(ttl.as_secs()).unwrap_or(i64::MAX))
+        })
         .num_seconds()
         .max(0)
 }
@@ -136,7 +148,7 @@ fn build_and_serialize_biscuit(
         .build(root)
         .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-    seal_and_serialize(token)
+    seal_and_serialize(&token)
 }
 
 fn build_and_serialize_biscuit_with_block(
@@ -160,7 +172,7 @@ fn build_and_serialize_biscuit_with_block(
         .build(root)
         .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
-    seal_and_serialize(token)
+    seal_and_serialize(&token)
 }
 
 fn extract_root_token_type_from_facts(facts: &[biscuit_auth::builder::Fact]) -> Option<String> {
@@ -229,13 +241,14 @@ impl TokenManager for BiscuitTokenManager {
         let issued_at_dt = DateTime::<Utc>::from(issued_at);
         let expires_at_dt = DateTime::<Utc>::from(expires_at);
         let expires_in = ttl_to_expires_in_seconds(self.ttl);
+        let session_id = subject.session_id;
 
         Ok(AuthTokenDto {
             token: serialized,
             issued_at: issued_at_dt,
             expires_at: expires_at_dt,
             expires_in,
-            session_id: subject.session_id.clone(),
+            session_id,
             refresh_token: None,
         })
     }
@@ -247,7 +260,7 @@ impl TokenManager for BiscuitTokenManager {
 
         // Compute JWK thumbprint (RFC 7638) for a stable `kid` value.
         // For OKP/Ed25519, the canonical members are {"crv":"Ed25519","kty":"OKP","x":"<x>"}
-        let thumbprint_input = format!(r#"{{"crv":"Ed25519","kty":"OKP","x":"{}"}}"#, x);
+        let thumbprint_input = format!(r#"{{"crv":"Ed25519","kty":"OKP","x":"{x}"}}"#);
         let mut hasher = Sha256::new();
         hasher.update(thumbprint_input.as_bytes());
         let kid = URL_SAFE_NO_PAD.encode(hasher.finalize());
@@ -298,7 +311,7 @@ impl TokenManager for BiscuitTokenManager {
 
         // Parse claims into an AuthenticatedUser and perform simple time checks
         // (issued_at <= now <= expires_at).
-        let user = crate::infrastructure::security::claims::parse_claims(facts)?;
+        let user = crate::infrastructure::security::claims::parse(&facts)?;
         let now = chrono::Utc::now();
         if now < user.issued_at || now > user.expires_at {
             return Err(ApplicationError::unauthorized(
@@ -409,7 +422,7 @@ mod tests {
 
         let res = manager.authenticate(&token).await;
         if let Err(e) = &res {
-            eprintln!("authenticate error: {:?}", e);
+            eprintln!("authenticate error: {e:?}");
         }
         assert!(
             res.is_ok(),

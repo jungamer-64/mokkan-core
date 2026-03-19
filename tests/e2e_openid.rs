@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode};
 use tower::util::ServiceExt as _;
@@ -86,7 +88,7 @@ async fn introspect_and_revoke_endpoints_behave() {
     let (_h, json) = to_json_async!(resp).await;
     let active = json
         .get("active")
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .expect("active field");
     assert!(!active, "invalid token should be inactive");
 

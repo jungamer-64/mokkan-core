@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-fn default_limit() -> u32 {
+const fn default_limit() -> u32 {
     20
 }
 

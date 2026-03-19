@@ -53,7 +53,7 @@ pub fn build_router_with_rate_limiter(state: HttpState, enable_rate_limiter: boo
     // apply rate limiter only when requested. Tests can call the alternative constructor
     // and pass `false` to avoid the governor dependency on real remote addresses.
     if enable_rate_limiter {
-        router = router.layer(rate_limit::rate_limit_layer());
+        router = router.layer(rate_limit::layer());
     }
 
     router

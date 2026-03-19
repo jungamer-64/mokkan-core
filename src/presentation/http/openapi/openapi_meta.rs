@@ -7,32 +7,35 @@ use std::time::SystemTime;
 // process-startup timestamp for Last-Modified when BUILD_DATE is not set
 pub static STARTUP_DATE: OnceLock<String> = OnceLock::new();
 
-/// Return the Last-Modified string the server actually sends (BUILD_DATE or STARTUP_DATE)
+/// Return the `Last-Modified` value the server actually sends.
+///
+/// This is either `BUILD_DATE` or `STARTUP_DATE`.
 pub fn last_modified_str() -> Option<&'static str> {
-    if let Some(v) = option_env!("BUILD_DATE") {
-        Some(v)
-    } else {
-        Some(
-            STARTUP_DATE
-                .get_or_init(|| httpdate::fmt_http_date(SystemTime::now()))
-                .as_str(),
-        )
-    }
+    option_env!("BUILD_DATE").map_or_else(
+        || {
+            Some(
+                STARTUP_DATE
+                    .get_or_init(|| httpdate::fmt_http_date(SystemTime::now()))
+                    .as_str(),
+            )
+        },
+        Some,
+    )
 }
 
-/// Compute a small deterministic ETag for the given bytes.
+/// Compute a small deterministic `ETag` for the given bytes.
 ///
 /// This uses a simple 64-bit FNV-1a style rolling hash. It's intentionally
 /// minimal to avoid adding dependencies; the resulting hex value is quoted
-/// to be a valid ETag token (e.g. `"abc123"`).
+/// to be a valid `ETag` token (e.g. `"abc123"`).
 pub(crate) fn compute_simple_etag(b: &Bytes) -> String {
     // FNV-1a 64-bit offset basis (see https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function)
-    let mut h: u64 = 1469598103934665603u64;
-    for &byte in b.iter() {
+    let mut h: u64 = 1_469_598_103_934_665_603_u64;
+    for &byte in b {
         // FNV-1a 64-bit prime (see https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function)
-        h = h.wrapping_mul(1099511628211u64) ^ (byte as u64);
+        h = h.wrapping_mul(1_099_511_628_211_u64) ^ u64::from(byte);
     }
-    format!("\"{:x}\"", h)
+    format!("\"{h:x}\"")
 }
 
 /// Small helper: strip optional weak prefix (`W/` or `w/`) from a token.
@@ -49,7 +52,7 @@ pub(crate) fn strip_weak_prefix_str(s: &str) -> &str {
 
 /// Unescape simple backslash escapes ("\\" + any char -> that char).
 ///
-/// This handles common ETag encodings like `\"` -> `"` used in some
+/// This handles common `ETag` encodings like `\"` -> `"` used in some
 /// header representations.
 pub(crate) fn unescape_simple(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -66,10 +69,10 @@ pub(crate) fn unescape_simple(s: &str) -> String {
     out
 }
 
-/// Extract the ETag opaque value from a token.
+/// Extract the `ETag` opaque value from a token.
 ///
 /// Strips an optional weak prefix (`W/`), removes surrounding quotes, and
-/// unescapes simple backslash escapes so that semantically-equal ETags such
+/// unescapes simple backslash escapes so that semantically-equal `ETags` such
 /// as `W/\"bar\"` and `\"bar\"` normalize to the same value.
 pub(crate) fn extract_etag_value(token: &str) -> Cow<'_, str> {
     let t = strip_weak_prefix_str(token).trim();
@@ -102,16 +105,21 @@ pub(crate) fn extract_etag_value(token: &str) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
-/// Compare two ETag tokens for weak-equivalence. Both inputs are normalized
+/// Compare two `ETag` tokens for weak-equivalence.
+///
+/// Both inputs are normalized
 /// via `extract_etag_value` before comparison so different textual forms of
 /// the same opaque value compare equal.
+#[must_use]
 pub fn weak_match(a: &str, b: &str) -> bool {
     extract_etag_value(a) == extract_etag_value(b)
 }
 
-/// Check whether the request `If-None-Match` header matches the `actual`
-/// ETag value. Supports the `*` wildcard and comma-separated candidate
-/// lists. Returns `true` if any candidate weakly matches `actual`.
+/// Check whether the request `If-None-Match` header matches `actual`.
+///
+/// `actual` is the current `ETag` value. Supports the `*` wildcard and
+/// comma-separated candidate lists. Returns `true` if any candidate weakly
+/// matches `actual`.
 pub fn inm_matches(headers: &HeaderMap, actual: &str) -> bool {
     if let Some(v) = headers.get(header::IF_NONE_MATCH)
         && let Ok(sv) = v.to_str()

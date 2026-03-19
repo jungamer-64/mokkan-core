@@ -14,6 +14,12 @@ pub struct ListUsersQuery {
 }
 
 impl UserQueryService {
+    /// List users visible to an authenticated admin-like caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor lacks `users:read`, the cursor is
+    /// invalid, or the repository lookup fails.
     pub async fn list_users(
         &self,
         actor: &AuthenticatedUser,
@@ -23,8 +29,8 @@ impl UserQueryService {
             return Err(ApplicationError::forbidden("missing capability users:read"));
         }
 
-        let limit = self.normalize_limit(query.limit);
-        let cursor = self.decode_cursor(query.cursor.as_deref())?;
+        let limit = Self::normalize_limit(query.limit);
+        let cursor = Self::decode_cursor(query.cursor.as_deref())?;
 
         let (users, next_cursor) = self
             .user_repo
@@ -38,7 +44,7 @@ impl UserQueryService {
         ))
     }
 
-    fn normalize_limit(&self, limit: u32) -> u32 {
+    fn normalize_limit(limit: u32) -> u32 {
         const DEFAULT_LIMIT: u32 = 20;
         const MAX_LIMIT: u32 = 100;
 
@@ -49,12 +55,14 @@ impl UserQueryService {
         }
     }
 
-    fn decode_cursor(&self, token: Option<&str>) -> ApplicationResult<Option<UserListCursor>> {
-        match token {
-            Some(value) => UserListCursor::decode(value)
-                .map(Some)
-                .map_err(ApplicationError::from),
-            None => Ok(None),
-        }
+    fn decode_cursor(token: Option<&str>) -> ApplicationResult<Option<UserListCursor>> {
+        token.map_or_else(
+            || Ok(None),
+            |value| {
+                UserListCursor::decode(value)
+                    .map(Some)
+                    .map_err(ApplicationError::from)
+            },
+        )
     }
 }

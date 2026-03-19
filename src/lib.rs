@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 pub mod application;
 pub mod config;
 pub mod domain;

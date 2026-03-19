@@ -12,6 +12,12 @@ pub struct GetArticleByIdQuery {
 }
 
 impl ArticleQueryService {
+    /// Load an article by its numeric id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the id is invalid, the article does not exist, or
+    /// the repository lookup fails.
     pub async fn get_article_by_id(
         &self,
         query: GetArticleByIdQuery,

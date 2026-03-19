@@ -1,6 +1,9 @@
 // tests/support/helpers.rs
 use super::mocks;
-use std::sync::Arc;
+use std::{
+    future::{Ready, ready},
+    sync::Arc,
+};
 
 // Macros that expand at the call site so panics report the test caller location.
 // Named with `_async` to clarify these return an async block that must be awaited.
@@ -98,7 +101,7 @@ type DefaultDeps = (
 /// テスト用のHTTPステートを構築
 fn default_dependencies() -> DefaultDeps {
     (
-        Arc::new(mocks::DummyUserRepo),
+        Arc::new(mocks::DummyRepo),
         Arc::new(mocks::DummyArticleWrite),
         Arc::new(mocks::DummyArticleRead),
         Arc::new(mocks::DummyArticleRevision),
@@ -133,22 +136,28 @@ fn make_services(
 
     Arc::new(mokkan_core::application::services::ApplicationServices::new(
         deps,
-        password_hasher,
-        token_manager,
-        Arc::new(
-            mokkan_core::infrastructure::security::refresh_token::HmacRefreshTokenCodec::new(
-                "test-refresh-secret",
-            )
-            .expect("refresh token codec"),
-        ),
-        Arc::new(mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new()),
-        Arc::new(mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore::new()),
-        clock,
-        slugger,
+        mokkan_core::application::services::ApplicationRuntimeDependencies {
+            password_hasher,
+            token_manager,
+            refresh_token_codec: Arc::new(
+                mokkan_core::infrastructure::security::refresh_token::HmacRefreshTokenCodec::new(
+                    "test-refresh-secret",
+                )
+                .expect("refresh token codec"),
+            ),
+            session_revocation_store: Arc::new(
+                mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new(),
+            ),
+            authorization_code_store: Arc::new(
+                mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore::new(),
+            ),
+            clock,
+            slugger,
+        },
     ))
 }
 
-/// Create a lazily-connected PgPool for tests.
+/// Create a lazily connected `PgPool` for tests.
 fn lazy_pool() -> sqlx::Pool<sqlx::Postgres> {
     use sqlx::postgres::PgPoolOptions;
     PgPoolOptions::new()
@@ -157,30 +166,30 @@ fn lazy_pool() -> sqlx::Pool<sqlx::Postgres> {
 }
 
 /// テスト用のHTTPステートを構築
-pub async fn build_test_state() -> mokkan_core::presentation::http::state::HttpState {
+pub fn build_test_state() -> Ready<mokkan_core::presentation::http::state::HttpState> {
     let services = make_services(Arc::new(mocks::MockAuditRepo));
 
     // PgPool: use shared helper
     let db_pool = lazy_pool();
 
-    mokkan_core::presentation::http::state::HttpState { services, db_pool }
+    ready(mokkan_core::presentation::http::state::HttpState { services, db_pool })
 }
 
 /// テスト用ルーターを作成
-pub async fn make_test_router() -> axum::Router {
-    let state = build_test_state().await;
-    mokkan_core::presentation::http::routes::build_router_with_rate_limiter(state, false)
+pub fn make_test_router() -> Ready<axum::Router> {
+    let state = build_test_state().into_inner();
+    ready(mokkan_core::presentation::http::routes::build_router_with_rate_limiter(state, false))
 }
 
 /// カスタム監査リポジトリを注入したテストルーターを作成（E2Eテスト用）
-pub async fn make_test_router_with_audit_repo(audit_repo: Arc<AuditRepo>) -> axum::Router {
+pub fn make_test_router_with_audit_repo(audit_repo: Arc<AuditRepo>) -> Ready<axum::Router> {
     let services = make_services(audit_repo);
 
     // PgPool: use shared helper
     let db_pool = lazy_pool();
 
     let state = mokkan_core::presentation::http::state::HttpState { services, db_pool };
-    mokkan_core::presentation::http::routes::build_router_with_rate_limiter(state, false)
+    ready(mokkan_core::presentation::http::routes::build_router_with_rate_limiter(state, false))
 }
 
 // NOTE: assert_error_response is provided as a macro `assert_error_response_async!` that expands

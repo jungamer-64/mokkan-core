@@ -1,9 +1,9 @@
 // tests/support/mocks/time.rs
 use chrono::{DateTime, Utc};
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
 /// テスト用の固定タイムスタンプ
-static FIXED_NOW: Lazy<DateTime<Utc>> = Lazy::new(|| {
+static FIXED_NOW: LazyLock<DateTime<Utc>> = LazyLock::new(|| {
     DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z")
         .expect("invalid RFC3339 in tests/support/mocks/time.rs")
         .with_timezone(&Utc)

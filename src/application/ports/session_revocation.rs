@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 use crate::application::ApplicationResult;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -101,7 +103,10 @@ pub trait SessionMetadataStore: Send + Sync {
     /// List session ids for a given user.
     async fn list_sessions_for_user(&self, user_id: i64) -> ApplicationResult<Vec<String>>;
 
-    /// List sessions for a given user including stored metadata (user agent, ip, created_at, revoked).
+    /// List sessions for a given user including stored metadata.
+    ///
+    /// The returned entries include user agent, `IP` address, `created_at`,
+    /// and revocation state.
     async fn list_sessions_for_user_with_meta(
         &self,
         user_id: i64,
@@ -172,6 +177,7 @@ impl<T> SessionRevocationStore for T where
 }
 
 #[derive(Clone)]
+#[must_use]
 pub struct SessionStorePorts {
     pub revocation: Arc<dyn SessionRevocation>,
     pub token_versions: Arc<dyn TokenVersionStore>,

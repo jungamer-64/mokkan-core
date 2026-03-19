@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 // src/presentation/http/state.rs
 use crate::application::services::ApplicationServices;
 use sqlx::PgPool;

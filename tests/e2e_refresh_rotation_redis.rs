@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -13,7 +15,7 @@ use mokkan_core::application::commands::users::{
 use mokkan_core::domain::user::entity::User;
 use mokkan_core::domain::user::value_objects::{PasswordHash, Role, UserId, Username};
 
-/// A tiny fake TokenManager used for tests which returns deterministic access tokens.
+/// A tiny fake `TokenManager` used for tests with deterministic access tokens.
 #[derive(Clone, Debug, Default)]
 struct FakeTokenManager;
 
@@ -67,7 +69,7 @@ struct InMemoryUserRepo {
 }
 
 impl InMemoryUserRepo {
-    fn new(users: HashMap<i64, User>) -> Self {
+    const fn new(users: HashMap<i64, User>) -> Self {
         Self {
             inner: std::sync::Mutex::new(users),
         }
@@ -95,13 +97,13 @@ impl mokkan_core::domain::user::repository::UserRepository for InMemoryUserRepo 
         username: &mokkan_core::domain::user::value_objects::Username,
     ) -> mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>>
     {
-        let map = self.inner.lock().unwrap();
-        for u in map.values() {
-            if u.username.as_str() == username.as_str() {
-                return Ok(Some(u.clone()));
-            }
-        }
-        Ok(None)
+        let found = {
+            let map = self.inner.lock().unwrap();
+            map.values()
+                .find(|u| u.username.as_str() == username.as_str())
+                .cloned()
+        };
+        Ok(found)
     }
 
     async fn find_by_id(
@@ -117,23 +119,28 @@ impl mokkan_core::domain::user::repository::UserRepository for InMemoryUserRepo 
         &self,
         update: mokkan_core::domain::user::entity::UserUpdate,
     ) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User> {
-        let mut map = self.inner.lock().unwrap();
-        let id = i64::from(update.id);
-        let user = map.get_mut(&id).ok_or_else(|| {
-            mokkan_core::domain::errors::DomainError::NotFound("user not found".into())
-        })?;
+        {
+            let mut map = self.inner.lock().unwrap();
+            let id = i64::from(update.id);
+            match map.get_mut(&id) {
+                Some(user) => {
+                    if let Some(is_active) = update.is_active {
+                        user.is_active = is_active;
+                    }
+                    if let Some(role) = update.role {
+                        user.role = role;
+                    }
+                    if let Some(password_hash) = update.password_hash {
+                        user.password_hash = password_hash;
+                    }
 
-        if let Some(is_active) = update.is_active {
-            user.is_active = is_active;
+                    Ok(user.clone())
+                }
+                None => Err(mokkan_core::domain::errors::DomainError::NotFound(
+                    "user not found".into(),
+                )),
+            }
         }
-        if let Some(role) = update.role {
-            user.role = role;
-        }
-        if let Some(password_hash) = update.password_hash {
-            user.password_hash = password_hash;
-        }
-
-        Ok(user.clone())
     }
 
     async fn list_page(

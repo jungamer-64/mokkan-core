@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 use axum::body::Body;
 use axum::http::{Request, StatusCode, header::AUTHORIZATION};
 use chrono::Utc;
@@ -48,7 +50,7 @@ async fn e2e_list_and_revoke_sessions() {
         .filter_map(|v| {
             v.get("session_id")
                 .and_then(|s| s.as_str())
-                .map(|s| s.to_string())
+                .map(std::string::ToString::to_string)
         })
         .collect();
 

@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 use async_trait::async_trait;
 use axum::{
     Extension, Router,
@@ -9,7 +11,7 @@ use mokkan_core::{
     application::{
         dto::{AuthTokenDto, AuthenticatedUser, TokenSubject},
         ports::security::{PasswordHasher, TokenManager},
-        services::{ApplicationDependencies, ApplicationServices},
+        services::{ApplicationDependencies, ApplicationRuntimeDependencies, ApplicationServices},
     },
     presentation::http::{
         extractors::Authenticated, middleware::require_capabilities, state::HttpState,
@@ -80,7 +82,7 @@ fn lazy_pool() -> sqlx::Pool<sqlx::Postgres> {
 
 fn test_state(token_manager: Arc<dyn TokenManager>) -> HttpState {
     let deps = ApplicationDependencies {
-        user_repo: Arc::new(support::mocks::DummyUserRepo),
+        user_repo: Arc::new(support::mocks::DummyRepo),
         article_write_repo: Arc::new(support::mocks::DummyArticleWrite),
         article_read_repo: Arc::new(support::mocks::DummyArticleRead),
         article_revision_repo: Arc::new(support::mocks::DummyArticleRevision),
@@ -89,24 +91,27 @@ fn test_state(token_manager: Arc<dyn TokenManager>) -> HttpState {
 
     let services = Arc::new(ApplicationServices::new(
         deps,
-        Arc::new(support::mocks::DummyPasswordHasher) as Arc<dyn PasswordHasher>,
-        token_manager,
-        Arc::new(
-            mokkan_core::infrastructure::security::refresh_token::HmacRefreshTokenCodec::new(
-                "test-refresh-secret",
-            )
-            .expect("refresh token codec"),
-        ),
-        Arc::new(
-            mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new(
+        ApplicationRuntimeDependencies {
+            password_hasher: Arc::new(support::mocks::DummyPasswordHasher)
+                as Arc<dyn PasswordHasher>,
+            token_manager,
+            refresh_token_codec: Arc::new(
+                mokkan_core::infrastructure::security::refresh_token::HmacRefreshTokenCodec::new(
+                    "test-refresh-secret",
+                )
+                .expect("refresh token codec"),
             ),
-        ),
-        Arc::new(
-            mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore::new(
+            session_revocation_store: Arc::new(
+                mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new(
+                ),
             ),
-        ),
-        Arc::new(support::mocks::DummyClock),
-        Arc::new(support::mocks::DummySlug),
+            authorization_code_store: Arc::new(
+                mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore::new(
+                ),
+            ),
+            clock: Arc::new(support::mocks::DummyClock),
+            slugger: Arc::new(support::mocks::DummySlug),
+        },
     ));
 
     HttpState {

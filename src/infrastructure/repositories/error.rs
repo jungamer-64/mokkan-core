@@ -7,7 +7,7 @@ const CNT_ARTICLE_PUBLISHED_CHECK: &str = "articles_published_requires_timestamp
 const CNT_USER_USERNAME: &str = "users_username_key";
 
 pub fn map_sqlx(err: sqlx::Error) -> DomainError {
-    match &err {
+    match err {
         sqlx::Error::Database(db_err) => {
             if let Some(constraint) = db_err.constraint() {
                 return match constraint {
@@ -40,6 +40,6 @@ pub fn map_sqlx(err: sqlx::Error) -> DomainError {
 
             DomainError::Persistence(db_err.message().to_string())
         }
-        _ => DomainError::Persistence(err.to_string()),
+        other => DomainError::Persistence(other.to_string()),
     }
 }

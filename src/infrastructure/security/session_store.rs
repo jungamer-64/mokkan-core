@@ -19,6 +19,7 @@ struct SessionMeta {
 }
 
 #[derive(Default)]
+#[must_use]
 pub struct InMemorySessionRevocationStore {
     revoked: Mutex<HashSet<String>>,
     min_versions: Mutex<HashMap<i64, u32>>,
@@ -83,10 +84,9 @@ impl SessionRevocation for InMemorySessionRevocationStore {
     async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()> {
         let sessions = {
             let mut guard = self.user_sessions.lock().unwrap();
-            match guard.remove(&user_id) {
-                Some(s) => s.into_iter().collect::<Vec<_>>(),
-                None => vec![],
-            }
+            guard
+                .remove(&user_id)
+                .map_or_else(Vec::new, |s| s.into_iter().collect::<Vec<_>>())
         };
 
         if !sessions.is_empty() {
@@ -115,12 +115,13 @@ impl SessionRevocation for InMemorySessionRevocationStore {
 impl TokenVersionStore for InMemorySessionRevocationStore {
     async fn get_min_token_version(&self, user_id: i64) -> ApplicationResult<Option<u32>> {
         let guard = self.min_versions.lock().unwrap();
-        Ok(guard.get(&user_id).cloned())
+        Ok(guard.get(&user_id).copied())
     }
 
     async fn set_min_token_version(&self, user_id: i64, min_version: u32) -> ApplicationResult<()> {
         let mut guard = self.min_versions.lock().unwrap();
         guard.insert(user_id, min_version);
+        drop(guard);
         Ok(())
     }
 }
@@ -134,6 +135,7 @@ impl RefreshNonceStore for InMemorySessionRevocationStore {
     ) -> ApplicationResult<()> {
         let mut guard = self.session_nonces.lock().unwrap();
         guard.insert(session_id.to_string(), nonce.to_string());
+        drop(guard);
         Ok(())
     }
 
@@ -151,18 +153,27 @@ impl RefreshNonceStore for InMemorySessionRevocationStore {
         expected: &str,
         new_nonce: &str,
     ) -> ApplicationResult<bool> {
-        let mut guard = self.session_nonces.lock().unwrap();
-        match guard.get(session_id) {
-            Some(cur) if cur == expected => {
-                guard.insert(session_id.to_string(), new_nonce.to_string());
-                // mark the expected as used for later reuse detection
-                let mut used_guard = self.used_nonces.lock().unwrap();
-                let entry = used_guard.entry(session_id.to_string()).or_default();
-                entry.insert(expected.to_string());
-                Ok(true)
+        let swapped = {
+            let mut guard = self.session_nonces.lock().unwrap();
+            match guard.get(session_id) {
+                Some(cur) if cur == expected => {
+                    guard.insert(session_id.to_string(), new_nonce.to_string());
+                    true
+                }
+                _ => false,
             }
-            _ => Ok(false),
+        };
+
+        if swapped {
+            let mut used_guard = self.used_nonces.lock().unwrap();
+            used_guard
+                .entry(session_id.to_string())
+                .or_default()
+                .insert(expected.to_string());
+            drop(used_guard);
         }
+
+        Ok(swapped)
     }
 
     async fn mark_session_refresh_nonce_used(
@@ -171,8 +182,11 @@ impl RefreshNonceStore for InMemorySessionRevocationStore {
         nonce: &str,
     ) -> ApplicationResult<()> {
         let mut used_guard = self.used_nonces.lock().unwrap();
-        let entry = used_guard.entry(session_id.to_string()).or_default();
-        entry.insert(nonce.to_string());
+        used_guard
+            .entry(session_id.to_string())
+            .or_default()
+            .insert(nonce.to_string());
+        drop(used_guard);
         Ok(())
     }
 
@@ -184,8 +198,7 @@ impl RefreshNonceStore for InMemorySessionRevocationStore {
         let used_guard = self.used_nonces.lock().unwrap();
         Ok(used_guard
             .get(session_id)
-            .map(|s| s.contains(nonce))
-            .unwrap_or(false))
+            .is_some_and(|s| s.contains(nonce)))
     }
 }
 
@@ -193,8 +206,11 @@ impl RefreshNonceStore for InMemorySessionRevocationStore {
 impl SessionMetadataStore for InMemorySessionRevocationStore {
     async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()> {
         let mut guard = self.user_sessions.lock().unwrap();
-        let entry = guard.entry(user_id).or_default();
-        entry.insert(session_id.to_string());
+        guard
+            .entry(user_id)
+            .or_default()
+            .insert(session_id.to_string());
+        drop(guard);
         Ok(())
     }
 
@@ -209,8 +225,10 @@ impl SessionMetadataStore for InMemorySessionRevocationStore {
         // ensure session is tracked for the user
         {
             let mut guard = self.user_sessions.lock().unwrap();
-            let entry = guard.entry(user_id).or_default();
-            entry.insert(session_id.to_string());
+            guard
+                .entry(user_id)
+                .or_default()
+                .insert(session_id.to_string());
         }
 
         let mut meta_guard = self.session_meta.lock().unwrap();
@@ -218,11 +236,12 @@ impl SessionMetadataStore for InMemorySessionRevocationStore {
             session_id.to_string(),
             SessionMeta {
                 user_id,
-                user_agent: user_agent.map(|s| s.to_string()),
-                ip_address: ip_address.map(|s| s.to_string()),
+                user_agent: user_agent.map(std::string::ToString::to_string),
+                ip_address: ip_address.map(std::string::ToString::to_string),
                 created_at_unix,
             },
         );
+        drop(meta_guard);
 
         Ok(())
     }
@@ -236,22 +255,24 @@ impl SessionMetadataStore for InMemorySessionRevocationStore {
         if let Some(set) = guard.get_mut(&user_id) {
             set.remove(session_id);
         }
+        drop(guard);
         Ok(())
     }
 
     async fn delete_session_metadata(&self, session_id: &str) -> ApplicationResult<()> {
         let mut meta_guard = self.session_meta.lock().unwrap();
         meta_guard.remove(session_id);
+        drop(meta_guard);
         Ok(())
     }
 
     async fn list_sessions_for_user(&self, user_id: i64) -> ApplicationResult<Vec<String>> {
         let guard = self.user_sessions.lock().unwrap();
-        if let Some(set) = guard.get(&user_id) {
-            Ok(set.iter().cloned().collect())
-        } else {
-            Ok(vec![])
-        }
+        let sessions = guard
+            .get(&user_id)
+            .map_or_else(Vec::new, |set| set.iter().cloned().collect());
+        drop(guard);
+        Ok(sessions)
     }
 
     async fn list_sessions_for_user_with_meta(
@@ -260,10 +281,9 @@ impl SessionMetadataStore for InMemorySessionRevocationStore {
     ) -> ApplicationResult<Vec<crate::application::ports::session_revocation::SessionInfo>> {
         let sessions = {
             let guard = self.user_sessions.lock().unwrap();
-            match guard.get(&user_id) {
-                Some(set) => set.iter().cloned().collect::<Vec<_>>(),
-                None => vec![],
-            }
+            guard
+                .get(&user_id)
+                .map_or_else(Vec::new, |set| set.iter().cloned().collect::<Vec<_>>())
         };
 
         let mut out = Vec::with_capacity(sessions.len());
@@ -292,6 +312,8 @@ impl SessionMetadataStore for InMemorySessionRevocationStore {
             }
         }
 
+        drop(revoked_guard);
+        drop(meta_guard);
         Ok(out)
     }
 
@@ -300,21 +322,24 @@ impl SessionMetadataStore for InMemorySessionRevocationStore {
         session_id: &str,
     ) -> ApplicationResult<Option<crate::application::ports::session_revocation::SessionInfo>> {
         let meta_guard = self.session_meta.lock().unwrap();
-        if let Some(m) = meta_guard.get(session_id) {
-            let revoked_guard = self.revoked.lock().unwrap();
-            Ok(Some(
-                crate::application::ports::session_revocation::SessionInfo {
-                    user_id: m.user_id,
-                    session_id: session_id.to_string(),
-                    user_agent: m.user_agent.clone(),
-                    ip_address: m.ip_address.clone(),
-                    created_at_unix: m.created_at_unix,
-                    revoked: revoked_guard.contains(session_id),
-                },
-            ))
-        } else {
-            Ok(None)
-        }
+        let meta = meta_guard.get(session_id).cloned();
+        drop(meta_guard);
+
+        let Some(m) = meta else {
+            return Ok(None);
+        };
+
+        let revoked_guard = self.revoked.lock().unwrap();
+        let session = crate::application::ports::session_revocation::SessionInfo {
+            user_id: m.user_id,
+            session_id: session_id.to_string(),
+            user_agent: m.user_agent.clone(),
+            ip_address: m.ip_address.clone(),
+            created_at_unix: m.created_at_unix,
+            revoked: revoked_guard.contains(session_id),
+        };
+        drop(revoked_guard);
+        Ok(Some(session))
     }
 }
 
@@ -334,6 +359,7 @@ impl OpaqueRefreshTokenStore for InMemorySessionRevocationStore {
             .entry(record.session_id.clone())
             .or_default()
             .insert(token_id.to_string());
+        drop(session_tokens_guard);
         Ok(())
     }
 
@@ -375,6 +401,7 @@ impl OpaqueRefreshTokenStore for InMemorySessionRevocationStore {
     }
 }
 
+#[must_use]
 pub fn into_arc(store: InMemorySessionRevocationStore) -> Arc<dyn SessionRevocationStore> {
     Arc::new(store)
 }

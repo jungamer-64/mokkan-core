@@ -6,6 +6,7 @@ use async_trait::async_trait;
 /// 軽量なインメモリ監査ログリポジトリ
 /// フィールド経由で戻り値を注入可能
 #[derive(Clone, Debug, Default)]
+#[must_use]
 pub struct MockRepo {
     pub items: Vec<mokkan_core::domain::audit::entity::AuditLog>,
     pub next_cursor: Option<String>,
@@ -101,7 +102,7 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for MockAuditRep
         Option<String>,
     )> {
         let created_at = super::time::fixed_now();
-        Ok((vec![super::audit::sample_audit(created_at)], None))
+        Ok((vec![super::audit::sample(created_at)], None))
     }
 
     async fn find_by_user(
@@ -135,6 +136,7 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for MockAuditRep
 /// 挿入された値をキャプチャする監査ログリポジトリ
 /// テストでinsertが特定の値で呼ばれたことをアサートする際に有用
 #[derive(Clone, Default)]
+#[must_use]
 pub struct CapturingAuditRepo {
     pub items: Vec<mokkan_core::domain::audit::entity::AuditLog>,
     pub next_cursor: Option<String>,
@@ -165,6 +167,7 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for CapturingAud
     ) -> mokkan_core::domain::errors::DomainResult<()> {
         let mut guard = self.inserted.lock().expect("mutex poisoned");
         guard.push(log);
+        drop(guard);
         Ok(())
     }
 

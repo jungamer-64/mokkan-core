@@ -15,6 +15,11 @@ pub struct HmacRefreshTokenCodec {
 }
 
 impl HmacRefreshTokenCodec {
+    /// Create a refresh token codec backed by an HMAC secret.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided secret is empty.
     pub fn new(secret: &str) -> ApplicationResult<Self> {
         if secret.is_empty() {
             return Err(ApplicationError::infrastructure(
@@ -43,7 +48,7 @@ impl HmacRefreshTokenCodec {
         Ok(())
     }
 
-    fn parse_parts<'a>(&self, token: &'a str) -> ApplicationResult<(&'a str, &'a str)> {
+    fn parse_parts(token: &str) -> ApplicationResult<(&str, &str)> {
         let mut parts = token.split('.');
         let prefix = parts.next();
         let token_id = parts.next();
@@ -80,7 +85,7 @@ impl RefreshTokenCodec for HmacRefreshTokenCodec {
     }
 
     fn decode_opaque_handle(&self, token: &str) -> ApplicationResult<String> {
-        let (token_id, signature) = self.parse_parts(token)?;
+        let (token_id, signature) = Self::parse_parts(token)?;
         let signature = URL_SAFE_NO_PAD
             .decode(signature.as_bytes())
             .map_err(|_| ApplicationError::validation("invalid refresh token"))?;

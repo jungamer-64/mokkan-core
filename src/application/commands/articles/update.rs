@@ -18,7 +18,13 @@ pub struct UpdateArticleCommand {
 }
 
 impl ArticleCommandService {
-    #[allow(clippy::too_many_lines)]
+    /// Update article content or publication state.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the id is invalid, the article is missing, the
+    /// actor lacks the required capability, validation fails, or persistence
+    /// fails.
     pub async fn update_article(
         &self,
         actor: &AuthenticatedUser,

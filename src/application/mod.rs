@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 // src/application/mod.rs
 pub mod commands;
 pub mod dto;

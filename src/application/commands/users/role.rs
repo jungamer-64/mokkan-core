@@ -17,6 +17,12 @@ pub struct RevokeRoleCommand {
 }
 
 impl UserCommandService {
+    /// Grant a role to a user.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor lacks `users:update`, the user id is
+    /// invalid, or the repository update fails.
     pub async fn grant_role(
         &self,
         actor: &AuthenticatedUser,
@@ -31,6 +37,12 @@ impl UserCommandService {
         Ok(user.into())
     }
 
+    /// Revoke an elevated role from a user.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor lacks `users:update`, the user id is
+    /// invalid, or the repository update fails.
     pub async fn revoke_role(
         &self,
         actor: &AuthenticatedUser,

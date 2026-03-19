@@ -26,6 +26,12 @@ pub struct ListAuditLogsByResourceQuery {
 }
 
 impl AuditQueryService {
+    /// List audit logs for all resources.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor lacks audit access, the cursor is
+    /// invalid, or the repository lookup fails.
     pub async fn list_audit_logs(
         &self,
         actor: &AuthenticatedUser,
@@ -33,7 +39,7 @@ impl AuditQueryService {
     ) -> ApplicationResult<CursorPage<AuditLogDto>> {
         common::ensure_audit_capability(actor)?;
         let limit = common::normalize_limit(query.limit);
-        let typed_cursor = self.decode_cursor(query.cursor.as_deref())?;
+        let typed_cursor = Self::decode_cursor(query.cursor.as_deref())?;
 
         let (items, next_cursor) = self
             .repo
@@ -44,6 +50,12 @@ impl AuditQueryService {
         Ok(CursorPage::new(dtos, next_cursor))
     }
 
+    /// List audit logs associated with a user.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor lacks audit access, the cursor is
+    /// invalid, or the repository lookup fails.
     pub async fn list_by_user(
         &self,
         actor: &AuthenticatedUser,
@@ -51,7 +63,7 @@ impl AuditQueryService {
     ) -> ApplicationResult<CursorPage<AuditLogDto>> {
         common::ensure_audit_capability(actor)?;
         let limit = common::normalize_limit(query.limit);
-        let typed_cursor = self.decode_cursor(query.cursor.as_deref())?;
+        let typed_cursor = Self::decode_cursor(query.cursor.as_deref())?;
         let (items, next_cursor) = self
             .repo
             .find_by_user(query.user_id, limit, typed_cursor)
@@ -61,6 +73,12 @@ impl AuditQueryService {
         Ok(CursorPage::new(dtos, next_cursor))
     }
 
+    /// List audit logs for a specific resource.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor lacks audit access, the cursor is
+    /// invalid, or the repository lookup fails.
     pub async fn list_by_resource(
         &self,
         actor: &AuthenticatedUser,
@@ -68,7 +86,7 @@ impl AuditQueryService {
     ) -> ApplicationResult<CursorPage<AuditLogDto>> {
         common::ensure_audit_capability(actor)?;
         let limit = common::normalize_limit(query.limit);
-        let typed_cursor = self.decode_cursor(query.cursor.as_deref())?;
+        let typed_cursor = Self::decode_cursor(query.cursor.as_deref())?;
         let (items, next_cursor) = self
             .repo
             .find_by_resource(&query.resource_type, query.resource_id, limit, typed_cursor)
@@ -78,12 +96,14 @@ impl AuditQueryService {
         Ok(CursorPage::new(dtos, next_cursor))
     }
 
-    fn decode_cursor(&self, cursor: Option<&str>) -> ApplicationResult<Option<AuditLogCursor>> {
-        match cursor {
-            Some(token) => Ok(Some(
-                AuditLogCursor::decode(token).map_err(ApplicationError::from)?,
-            )),
-            None => Ok(None),
-        }
+    fn decode_cursor(cursor: Option<&str>) -> ApplicationResult<Option<AuditLogCursor>> {
+        cursor.map_or_else(
+            || Ok(None),
+            |token| {
+                Ok(Some(
+                    AuditLogCursor::decode(token).map_err(ApplicationError::from)?,
+                ))
+            },
+        )
     }
 }

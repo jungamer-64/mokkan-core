@@ -16,6 +16,12 @@ pub struct DeleteArticleCommand {
 }
 
 impl ArticleCommandService {
+    /// Delete an existing article.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the id is invalid, the article is missing, the
+    /// actor is not allowed to delete it, or repository operations fail.
     pub async fn delete_article(
         &self,
         actor: &AuthenticatedUser,

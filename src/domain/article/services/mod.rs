@@ -25,6 +25,12 @@ impl ArticleSlugService {
         }
     }
 
+    /// Generate a unique slug for an article title.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if slug validation fails or the repository lookup
+    /// fails while checking for collisions.
     pub async fn generate_unique_slug(
         &self,
         title: &ArticleTitle,
@@ -43,11 +49,11 @@ impl ArticleSlugService {
         loop {
             let slug = ArticleSlug::new(candidate.clone())?;
             match self.read_repo.find_by_slug(&slug).await? {
-                Some(existing) if ignore_id.map(|id| id == existing.id).unwrap_or(false) => {
+                Some(existing) if ignore_id.is_some_and(|id| id == existing.id) => {
                     return Ok(slug);
                 }
                 Some(_) => {
-                    candidate = format!("{}-{}", base_slug, counter);
+                    candidate = format!("{base_slug}-{counter}");
                     counter += 1;
                 }
                 None => return Ok(slug),

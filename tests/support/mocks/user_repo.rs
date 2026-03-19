@@ -2,10 +2,10 @@
 use async_trait::async_trait;
 
 /// ダミーのユーザーリポジトリ（最小限の実装）
-pub struct DummyUserRepo;
+pub struct DummyRepo;
 
 #[async_trait]
-impl mokkan_core::domain::user::repository::UserRepository for DummyUserRepo {
+impl mokkan_core::domain::user::repository::UserRepository for DummyRepo {
     async fn count(&self) -> mokkan_core::domain::errors::DomainResult<u64> {
         Ok(0)
     }

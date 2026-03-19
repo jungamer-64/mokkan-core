@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 // tests/e2e_rbac.rs
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header::AUTHORIZATION};
@@ -6,7 +8,7 @@ use tower::util::ServiceExt as _;
 mod support;
 
 fn bearer(tok: &str) -> String {
-    format!("Bearer {}", tok)
+    format!("Bearer {tok}")
 }
 
 #[tokio::test]

@@ -102,17 +102,15 @@ async fn head_openapi_returns_not_modified_when_if_none_match_matches() {
     assert!(resp.headers().get(header::ETAG).is_some());
 }
 
-#[allow(clippy::option_env_unwrap)]
 #[tokio::test]
 async fn get_openapi_returns_not_modified_on_ims() {
-    // Skip if BUILD_DATE not embedded during build
-    if option_env!("BUILD_DATE").is_none() {
+    let Some(build_date) = option_env!("BUILD_DATE") else {
         return;
-    }
+    };
     let mut headers = HeaderMap::new();
     headers.insert(
         header::IF_MODIFIED_SINCE,
-        HeaderValue::from_static(option_env!("BUILD_DATE").unwrap()),
+        HeaderValue::from_static(build_date),
     );
     let resp = serve_openapi(headers).await;
     assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
@@ -134,14 +132,11 @@ async fn get_openapi_inm_takes_precedence_over_ims() {
     assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
 }
 
-#[allow(clippy::option_env_unwrap)]
 #[tokio::test]
 async fn get_openapi_returns_ok_when_inm_mismatch_even_if_ims_matches() {
-    // Only meaningful when BUILD_DATE is present (we compare against it)
-    if option_env!("BUILD_DATE").is_none() {
+    let Some(lm) = option_env!("BUILD_DATE") else {
         return;
-    }
-    let lm = option_env!("BUILD_DATE").unwrap();
+    };
     let mut headers = HeaderMap::new();
     // intentionally mismatching ETag
     headers.insert(

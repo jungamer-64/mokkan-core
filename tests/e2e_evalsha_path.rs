@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 use mokkan_core::application::ports::session_revocation::RefreshNonceStore;
 use std::env;
 use tokio::time::{Duration, sleep};
@@ -36,10 +38,7 @@ async fn script_loads_and_evalsha_path_behavior() {
     {
         Ok(Ok(_)) => {}
         Ok(Err(e)) => {
-            eprintln!(
-                "Skipping evalsha path test because connection failed: {}",
-                e
-            );
+            eprintln!("Skipping evalsha path test because connection failed: {e}");
             return;
         }
         Err(_) => {

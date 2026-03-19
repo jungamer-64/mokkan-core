@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 use axum::body::Body;
 use axum::http::{Method, Request, header};
 use mokkan_core::presentation::http::openapi::docs_router_with_options;

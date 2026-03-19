@@ -8,6 +8,11 @@ use std::fmt;
 pub struct ArticleId(pub i64);
 
 impl ArticleId {
+    /// Create a validated article id.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the id is not positive.
     pub fn new(id: i64) -> DomainResult<Self> {
         if id <= 0 {
             Err(DomainError::Validation(
@@ -29,6 +34,11 @@ impl From<ArticleId> for i64 {
 pub struct ArticleTitle(String);
 
 impl ArticleTitle {
+    /// Create a validated article title.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the title is blank.
     pub fn new(value: impl Into<String>) -> DomainResult<Self> {
         let value = value.into();
         if value.trim().is_empty() {
@@ -37,11 +47,13 @@ impl ArticleTitle {
         Ok(Self(value))
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
     /// Consume the value object and return the inner String.
+    #[must_use]
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -69,6 +81,11 @@ impl From<ArticleTitle> for String {
 pub struct ArticleSlug(String);
 
 impl ArticleSlug {
+    /// Create a validated article slug.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the slug is blank.
     pub fn new(value: impl Into<String>) -> DomainResult<Self> {
         let value = value.into();
         if value.trim().is_empty() {
@@ -77,11 +94,13 @@ impl ArticleSlug {
         Ok(Self(value))
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
     /// Consume the value object and return the inner String.
+    #[must_use]
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -109,6 +128,11 @@ impl From<ArticleSlug> for String {
 pub struct ArticleBody(String);
 
 impl ArticleBody {
+    /// Create a validated article body.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the body is blank.
     pub fn new(value: impl Into<String>) -> DomainResult<Self> {
         let value = value.into();
         if value.trim().is_empty() {
@@ -117,11 +141,13 @@ impl ArticleBody {
         Ok(Self(value))
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
     /// Consume the value object and return the inner String.
+    #[must_use]
     pub fn into_inner(self) -> String {
         self.0
     }
@@ -146,23 +172,25 @@ impl From<ArticleBody> for String {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[must_use]
 pub struct ArticleListCursor {
     pub created_at: DateTime<Utc>,
     pub article_id: ArticleId,
 }
 
 impl ArticleListCursor {
-    pub fn new(created_at: DateTime<Utc>, article_id: ArticleId) -> Self {
+    pub const fn new(created_at: DateTime<Utc>, article_id: ArticleId) -> Self {
         Self {
             created_at,
             article_id,
         }
     }
 
-    pub fn from_parts(created_at: DateTime<Utc>, article_id: ArticleId) -> Self {
+    pub const fn from_parts(created_at: DateTime<Utc>, article_id: ArticleId) -> Self {
         Self::new(created_at, article_id)
     }
 
+    #[must_use]
     pub fn encode(&self) -> String {
         let raw = format!(
             "{}|{}",
@@ -172,6 +200,11 @@ impl ArticleListCursor {
         URL_SAFE_NO_PAD.encode(raw.as_bytes())
     }
 
+    /// Decode an article list cursor token.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the token is malformed or contains invalid data.
     pub fn decode(token: &str) -> DomainResult<Self> {
         let bytes = URL_SAFE_NO_PAD
             .decode(token)

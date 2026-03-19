@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 // src/application/services/mod.rs
 use std::sync::Arc;
 
@@ -31,6 +33,7 @@ use crate::application::ports::authorization_code::AuthorizationCode;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 
+#[must_use]
 pub struct ApplicationServices {
     pub user_commands: Arc<UserCommandService>,
     pub article_commands: Arc<ArticleCommandService>,
@@ -44,10 +47,10 @@ pub struct ApplicationServices {
     audit_log_repo: Arc<dyn crate::domain::audit::repository::AuditLogRepository>,
 }
 
-/// A small bundling of repository dependencies used to keep the
-/// ApplicationServices::new parameter list manageable for static analysis
-/// tools. Callers should construct this from their concrete repo instances
-/// and pass it to `ApplicationServices::new`.
+/// A small bundle of repository dependencies for `ApplicationServices::new`.
+///
+/// This keeps the constructor parameter list manageable for static analysis
+/// tools. Callers should construct this from their concrete repo instances.
 pub struct ApplicationDependencies {
     pub user_repo: Arc<dyn UserRepository>,
     pub article_write_repo: Arc<dyn ArticleWriteRepository>,
@@ -56,32 +59,42 @@ pub struct ApplicationDependencies {
     pub audit_log_repo: Arc<dyn crate::domain::audit::repository::AuditLogRepository>,
 }
 
+/// Runtime-facing collaborators required to build `ApplicationServices`.
+pub struct ApplicationRuntimeDependencies {
+    pub password_hasher: Arc<dyn PasswordHasher>,
+    pub token_manager: Arc<dyn TokenManager>,
+    pub refresh_token_codec: Arc<dyn RefreshTokenCodec>,
+    pub session_revocation_store: Arc<dyn SessionRevocationStore>,
+    pub authorization_code_store:
+        Arc<dyn crate::application::ports::authorization_code::AuthorizationCodeStore>,
+    pub clock: Arc<dyn Clock>,
+    pub slugger: Arc<dyn SlugGenerator>,
+}
+
 impl ApplicationServices {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        deps: ApplicationDependencies,
-        password_hasher: Arc<dyn PasswordHasher>,
-        token_manager: Arc<dyn TokenManager>,
-        refresh_token_codec: Arc<dyn RefreshTokenCodec>,
-        session_revocation_store: Arc<dyn SessionRevocationStore>,
-        authorization_code_store: Arc<
-            dyn crate::application::ports::authorization_code::AuthorizationCodeStore,
-        >,
-        clock: Arc<dyn Clock>,
-        slugger: Arc<dyn SlugGenerator>,
-    ) -> Self {
+    pub fn new(deps: ApplicationDependencies, runtime: ApplicationRuntimeDependencies) -> Self {
+        let ApplicationRuntimeDependencies {
+            password_hasher,
+            token_manager,
+            refresh_token_codec,
+            session_revocation_store,
+            authorization_code_store,
+            clock,
+            slugger,
+        } = runtime;
+        let session_stores = SessionStorePorts::from_store(Arc::clone(&session_revocation_store));
         let user_commands = Arc::new(UserCommandService::new(
             Arc::clone(&deps.user_repo),
-            Arc::clone(&password_hasher),
+            password_hasher,
             Arc::clone(&token_manager),
-            Arc::clone(&refresh_token_codec),
+            refresh_token_codec,
             Arc::clone(&session_revocation_store),
             Arc::clone(&clock),
         ));
 
         let slug_service = Arc::new(ArticleSlugService::new(
             Arc::clone(&deps.article_read_repo),
-            Arc::clone(&slugger),
+            slugger,
         ));
 
         let article_commands = Arc::new(ArticleCommandService::new(
@@ -89,7 +102,7 @@ impl ApplicationServices {
             Arc::clone(&deps.article_read_repo),
             Arc::clone(&deps.article_revision_repo),
             Arc::clone(&slug_service),
-            Arc::clone(&clock),
+            clock,
         ));
 
         let article_queries = Arc::new(ArticleQueryService::new(
@@ -97,7 +110,6 @@ impl ApplicationServices {
             Arc::clone(&deps.article_revision_repo),
         ));
         let user_queries = Arc::new(UserQueryService::new(Arc::clone(&deps.user_repo)));
-        let session_stores = SessionStorePorts::from_store(Arc::clone(&session_revocation_store));
 
         Self {
             user_commands,
@@ -112,32 +124,44 @@ impl ApplicationServices {
         }
     }
 
+    #[must_use]
     pub fn token_manager(&self) -> Arc<dyn TokenManager> {
         Arc::clone(&self.token_manager)
     }
 
+    #[must_use]
     pub fn session_revocation_store(&self) -> Arc<dyn SessionRevocationStore> {
         Arc::clone(&self.session_revocation_store)
     }
 
+    #[must_use]
     pub fn session_revocation(&self) -> Arc<dyn SessionRevocation> {
         Arc::clone(&self.session_stores.revocation)
     }
 
+    #[must_use]
     pub fn token_version_store(&self) -> Arc<dyn TokenVersionStore> {
         Arc::clone(&self.session_stores.token_versions)
     }
 
+    #[must_use]
     pub fn session_metadata_store(&self) -> Arc<dyn SessionMetadataStore> {
         Arc::clone(&self.session_stores.session_metadata)
     }
 
+    #[must_use]
     pub fn authorization_code_store(
         &self,
     ) -> Arc<dyn crate::application::ports::authorization_code::AuthorizationCodeStore> {
         Arc::clone(&self.authorization_code_store)
     }
 
+    /// Exchange an authorization code for tokens.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the code is missing, expired, already consumed,
+    /// the redirect URI or PKCE verifier is invalid, or token issuance fails.
     pub async fn exchange_authorization_code(
         &self,
         code: &str,
@@ -150,8 +174,8 @@ impl ApplicationServices {
             stored_opt.ok_or_else(|| ApplicationError::validation("invalid or expired code"))?;
 
         // validate redirect_uri and PKCE using helpers to keep complexity low
-        self.validate_redirect_uri(&stored, redirect_uri)?;
-        self.verify_pkce(&stored, code_verifier)?;
+        Self::validate_redirect_uri(&stored, redirect_uri)?;
+        Self::verify_pkce(&stored, code_verifier)?;
 
         // Issue tokens for the stored subject
         let token = self.token_manager.issue(stored.subject).await?;
@@ -159,7 +183,6 @@ impl ApplicationServices {
     }
 
     fn validate_redirect_uri(
-        &self,
         stored: &AuthorizationCode,
         redirect_uri: Option<&str>,
     ) -> crate::application::ApplicationResult<()> {
@@ -174,7 +197,6 @@ impl ApplicationServices {
     }
 
     fn verify_pkce(
-        &self,
         stored: &AuthorizationCode,
         code_verifier: Option<&str>,
     ) -> crate::application::ApplicationResult<()> {
@@ -207,6 +229,7 @@ impl ApplicationServices {
         Ok(())
     }
 
+    #[must_use]
     pub fn audit_log_repo(&self) -> Arc<dyn crate::domain::audit::repository::AuditLogRepository> {
         Arc::clone(&self.audit_log_repo)
     }
@@ -217,6 +240,11 @@ impl ApplicationServices {
     /// This consolidates common logic so presentation-layer middleware can simply
     /// delegate authorization checks to the application services instead of
     /// reimplementing the details.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the token is invalid, revoked, expired, or the
+    /// authenticated user lacks the requested capability.
     pub async fn authenticate_and_authorize(
         &self,
         token: &str,
@@ -230,7 +258,7 @@ impl ApplicationServices {
         self.ensure_session_not_revoked(&user).await?;
         self.ensure_token_version_not_revoked(&user).await?;
 
-        self.ensure_has_capability(&user, resource, action).await?;
+        Self::ensure_has_capability(&user, resource, action)?;
         Ok(user)
     }
 
@@ -273,8 +301,7 @@ impl ApplicationServices {
         Ok(())
     }
 
-    async fn ensure_has_capability(
-        &self,
+    fn ensure_has_capability(
         user: &crate::application::dto::AuthenticatedUser,
         resource: &str,
         action: &str,

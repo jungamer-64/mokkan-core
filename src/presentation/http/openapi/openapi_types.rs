@@ -1,13 +1,13 @@
-//! OpenAPI response types used by the documentation generation.
+//! `OpenAPI` response types used by the documentation generation.
 //!
 //! These are lightweight wrappers around application DTOs to expose stable
-//! response schemas for the OpenAPI document.
+//! response schemas for the `OpenAPI` document.
 use crate::application::dto::{ArticleDto, CursorPage, UserDto};
 use serde::{Deserialize, Serialize};
 
 // Simple status response used by health endpoints and docs.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
-/// A minimal status response returned by health checks and exposed in the OpenAPI
+/// A minimal status response returned by health checks and exposed in the `OpenAPI`
 /// document. The `status` field is intentionally simple and meant for humans
 /// and lightweight monitoring systems.
 pub struct StatusResponse {

@@ -10,6 +10,7 @@ use axum::{
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::fmt::Write as _;
 use uuid::Uuid;
 
 use crate::application::dto::{AuthTokenDto, TokenSubject};
@@ -78,6 +79,12 @@ pub struct AuthorizeRequest {
     security([]),
     tag = "Auth"
 )]
+/// Exchange an authorization code for tokens.
+///
+/// # Errors
+///
+/// Returns an error if the request body is malformed, the grant type is not
+/// supported, the code is missing, or the exchange fails.
 pub async fn token(
     Extension(state): Extension<HttpState>,
     body_bytes: axum::body::Bytes,
@@ -133,6 +140,11 @@ pub async fn token(
     security([]),
     tag = "Auth"
 )]
+/// Introspect a token and report whether it is active.
+///
+/// # Errors
+///
+/// Returns an error only if request extraction fails before the handler runs.
 pub async fn introspect(
     Extension(state): Extension<HttpState>,
     Json(payload): Json<TokenRequest>,
@@ -151,7 +163,7 @@ pub async fn introspect(
                 sub: Some(i64::from(user.id).to_string()),
                 exp: Some(user.expires_at.timestamp()),
                 iat: Some(user.issued_at.timestamp()),
-                session_id: user.session_id.clone(),
+                session_id: user.session_id,
             };
             Ok(Json(resp))
         }
@@ -177,6 +189,11 @@ pub async fn introspect(
     security([]),
     tag = "Auth"
 )]
+/// Revoke a token's backing session when possible.
+///
+/// # Errors
+///
+/// Returns an error if session revocation fails after token authentication.
 pub async fn revoke(
     Extension(state): Extension<HttpState>,
     Json(payload): Json<TokenRequest>,
@@ -212,6 +229,12 @@ pub async fn revoke(
     security([]),
     tag = "Auth"
 )]
+/// Start an `OAuth2` authorization code flow.
+///
+/// # Errors
+///
+/// Returns an error if the request is invalid, the caller is unauthenticated,
+/// the redirect URI is rejected, or authorization code persistence fails.
 pub async fn authorize(
     Extension(state): Extension<HttpState>,
     Query(params): Query<AuthorizeRequest>,
@@ -293,15 +316,15 @@ fn maybe_consent_prompt(
     params: &AuthorizeRequest,
     user: &crate::application::dto::AuthenticatedUser,
 ) -> Option<JsonValue> {
-    if params.consent.as_deref() != Some("approve") {
+    if params.consent.as_deref() == Some("approve") {
+        None
+    } else {
         Some(serde_json::json!({
             "consent_required": true,
             "user": { "id": i64::from(user.id), "username": user.username },
             "scopes": params.scope,
             "message": "Set consent=approve to grant and receive an authorization code"
         }))
-    } else {
-        None
     }
 }
 
@@ -309,12 +332,12 @@ fn maybe_consent_prompt(
 fn build_redirect_uri(redirect: &str, code: &str, state: Option<&String>) -> String {
     let mut uri = redirect.to_string();
     if uri.contains('?') {
-        uri.push_str(&format!("&code={}", code));
+        let _ = write!(uri, "&code={code}");
     } else {
-        uri.push_str(&format!("?code={}", code));
+        let _ = write!(uri, "?code={code}");
     }
     if let Some(s) = state {
-        uri.push_str(&format!("&state={}", s));
+        let _ = write!(uri, "&state={s}");
     }
 
     uri
@@ -349,10 +372,15 @@ fn validate_redirect_uri(
     security([]),
     tag = "Auth"
 )]
-pub async fn authorize_openapi_stub(
+/// Minimal OpenAPI-only stub for the authorize endpoint.
+///
+/// # Errors
+///
+/// Returns an error only if request extraction fails before the handler runs.
+pub fn authorize_openapi_stub(
     Extension(_state): Extension<HttpState>,
-) -> HttpResult<Json<crate::presentation::http::openapi::StatusResponse>> {
-    Ok(Json(crate::presentation::http::openapi::StatusResponse {
+) -> std::future::Ready<HttpResult<Json<crate::presentation::http::openapi::StatusResponse>>> {
+    std::future::ready(Ok(Json(crate::presentation::http::openapi::StatusResponse {
         status: "not_implemented".into(),
-    }))
+    })))
 }

@@ -14,15 +14,15 @@ pub struct User {
 }
 
 impl User {
-    pub fn activate(&mut self) {
+    pub const fn activate(&mut self) {
         self.is_active = true;
     }
 
-    pub fn deactivate(&mut self) {
+    pub const fn deactivate(&mut self) {
         self.is_active = false;
     }
 
-    pub fn set_role(&mut self, role: Role) {
+    pub const fn set_role(&mut self, role: Role) {
         self.role = role;
     }
 
@@ -41,7 +41,12 @@ pub struct NewUser {
 }
 
 impl NewUser {
-    pub fn new(
+    /// Build a new active user aggregate before persistence.
+    ///
+    /// # Errors
+    ///
+    /// Returns any domain error raised by future creation invariants.
+    pub const fn new(
         username: Username,
         password_hash: PasswordHash,
         role: Role,
@@ -58,6 +63,7 @@ impl NewUser {
 }
 
 #[derive(Debug, Clone)]
+#[must_use]
 pub struct UserUpdate {
     pub id: UserId,
     pub is_active: Option<bool>,
@@ -66,7 +72,7 @@ pub struct UserUpdate {
 }
 
 impl UserUpdate {
-    pub fn new(id: UserId) -> Self {
+    pub const fn new(id: UserId) -> Self {
         Self {
             id,
             is_active: None,
@@ -75,12 +81,12 @@ impl UserUpdate {
         }
     }
 
-    pub fn with_is_active(mut self, is_active: bool) -> Self {
+    pub const fn with_is_active(mut self, is_active: bool) -> Self {
         self.is_active = Some(is_active);
         self
     }
 
-    pub fn with_role(mut self, role: Role) -> Self {
+    pub const fn with_role(mut self, role: Role) -> Self {
         self.role = Some(role);
         self
     }

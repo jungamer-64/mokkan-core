@@ -1,3 +1,5 @@
+#![allow(clippy::multiple_crate_versions)]
+
 use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header::AUTHORIZATION};
 use base64::Engine as _;
@@ -8,7 +10,7 @@ use tower::util::ServiceExt as _;
 mod support;
 
 fn bearer(tok: &str) -> String {
-    format!("Bearer {}", tok)
+    format!("Bearer {tok}")
 }
 
 #[tokio::test]
@@ -74,8 +76,7 @@ async fn authorize_code_flow_pkce_s256() {
 
     // Request an authorization code (no redirect_uri -> code returned in JSON)
     let uri = format!(
-        "/api/v1/auth/authorize?response_type=code&code_challenge={}&code_challenge_method=S256&consent=approve",
-        challenge
+        "/api/v1/auth/authorize?response_type=code&code_challenge={challenge}&code_challenge_method=S256&consent=approve"
     );
 
     let req = Request::builder()

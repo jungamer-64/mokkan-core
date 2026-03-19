@@ -20,10 +20,16 @@ pub struct ListAuditParams {
     pub cursor: Option<String>,
 }
 
-fn default_limit() -> u32 {
+const fn default_limit() -> u32 {
     20
 }
 
+/// List audit logs across all resources.
+///
+/// # Errors
+///
+/// Returns an error if authentication or authorization fails, the cursor is
+/// invalid, or the query service fails.
 pub async fn list_audit_logs(
     Extension(state): Extension<HttpState>,
     Authenticated(actor): Authenticated,
@@ -43,6 +49,12 @@ pub async fn list_audit_logs(
     Ok(Json(res))
 }
 
+/// List audit logs associated with a user id.
+///
+/// # Errors
+///
+/// Returns an error if authentication or authorization fails, the cursor is
+/// invalid, or the query service fails.
 pub async fn list_audit_logs_by_user(
     Extension(state): Extension<HttpState>,
     Authenticated(actor): Authenticated,
@@ -64,6 +76,12 @@ pub async fn list_audit_logs_by_user(
     Ok(Json(res))
 }
 
+/// List audit logs associated with a resource.
+///
+/// # Errors
+///
+/// Returns an error if authentication or authorization fails, the cursor is
+/// invalid, or the query service fails.
 pub async fn list_audit_logs_by_resource(
     Extension(state): Extension<HttpState>,
     Authenticated(actor): Authenticated,

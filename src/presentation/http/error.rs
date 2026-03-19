@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 // src/presentation/http/error.rs
 use crate::application::{ApplicationResult, error::ApplicationError};
 use axum::{
@@ -15,6 +17,7 @@ pub struct HttpError {
 }
 
 impl HttpError {
+    #[must_use]
     pub fn from_error(err: ApplicationError) -> Self {
         match err {
             ApplicationError::Validation(msg) => Self::new(StatusCode::BAD_REQUEST, msg),
@@ -37,7 +40,7 @@ impl HttpError {
         }
     }
 
-    fn new(status: StatusCode, message: String) -> Self {
+    const fn new(status: StatusCode, message: String) -> Self {
         Self { status, message }
     }
 }
@@ -65,6 +68,10 @@ pub struct ErrorResponse {
 pub type HttpResult<T> = Result<T, HttpError>;
 
 pub trait IntoHttpResult<T> {
+    /// Convert an application-layer `Result` into an HTTP-layer `Result`.
+    ///
+    /// # Errors
+    /// Returns [`HttpError`] when the source value is an application error.
     fn into_http(self) -> HttpResult<T>;
 }
 

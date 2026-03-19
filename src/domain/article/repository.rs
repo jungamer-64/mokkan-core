@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 // src/domain/article/repository.rs
 use crate::domain::article::entity::{Article, ArticleUpdate, NewArticle};
 use crate::domain::article::revision::ArticleRevision;
@@ -46,6 +48,7 @@ pub trait ArticleReadRepository: Send + Sync {
 
 /// Builder-style query for listing articles.
 #[derive(Debug, Clone)]
+#[must_use]
 pub struct ArticleQuery {
     pub include_drafts: bool,
     pub limit: u32,
@@ -54,7 +57,7 @@ pub struct ArticleQuery {
 }
 
 impl ArticleQuery {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             include_drafts: false,
             limit: 20,
@@ -63,7 +66,7 @@ impl ArticleQuery {
         }
     }
 
-    pub fn include_drafts(mut self, value: bool) -> Self {
+    pub const fn include_drafts(mut self, value: bool) -> Self {
         self.include_drafts = value;
         self
     }
@@ -73,7 +76,7 @@ impl ArticleQuery {
         self
     }
 
-    pub fn cursor(mut self, value: ArticleListCursor) -> Self {
+    pub const fn cursor(mut self, value: ArticleListCursor) -> Self {
         self.cursor = Some(value);
         self
     }

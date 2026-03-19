@@ -14,6 +14,12 @@ pub struct SetPublishStateCommand {
 }
 
 impl ArticleCommandService {
+    /// Update the published state of an article.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the actor lacks `articles:publish`, the id is
+    /// invalid, the article is missing, or persistence fails.
     pub async fn set_publish_state(
         &self,
         actor: &AuthenticatedUser,

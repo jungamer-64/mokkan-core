@@ -12,6 +12,12 @@ pub struct SearchArticlesQuery {
 }
 
 impl ArticleQueryService {
+    /// Search articles, falling back to listing when the query is blank.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if draft access is not allowed, the cursor is invalid,
+    /// or the repository lookup fails.
     pub async fn search_articles(
         &self,
         actor: Option<&AuthenticatedUser>,
@@ -32,8 +38,8 @@ impl ArticleQueryService {
         }
 
         let (include_drafts, limit) =
-            self.normalize_listing(actor, query.include_drafts, query.limit)?;
-        let cursor = self.decode_cursor(query.cursor.as_deref())?;
+            Self::normalize_listing(actor, query.include_drafts, query.limit)?;
+        let cursor = Self::decode_cursor(query.cursor.as_deref())?;
 
         let (records, next_cursor) = self
             .read_repo

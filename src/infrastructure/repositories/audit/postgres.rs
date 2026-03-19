@@ -14,12 +14,13 @@ const QUERY_FIND_BY_RESOURCE_WITH_CURSOR: &str = "SELECT id, user_id, action, re
 const QUERY_FIND_BY_RESOURCE_NO_CURSOR: &str = "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs WHERE resource_type = $1 AND resource_id = $2 ORDER BY created_at DESC, id DESC LIMIT $3";
 
 #[derive(Clone)]
+#[must_use]
 pub struct PostgresAuditLogRepository {
     pool: PgPool,
 }
 
 impl PostgresAuditLogRepository {
-    pub fn new(pool: PgPool) -> Self {
+    pub const fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 }
@@ -28,10 +29,10 @@ impl PostgresAuditLogRepository {
 impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRepository {
     async fn insert(&self, log: NewAuditLog) -> DomainResult<()> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details, ip_address, user_agent)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
-            "#,
+            ",
         )
         .bind(log.user_id.map(i64::from))
         .bind(log.action)
@@ -56,7 +57,7 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
             let rows = sqlx::query(QUERY_LIST_WITH_CURSOR)
                 .bind(c.created_at)
                 .bind(c.id)
-                .bind((limit + 1) as i64)
+                .bind(i64::from(limit) + 1)
                 .fetch_all(&self.pool)
                 .await
                 .map_err(map_sqlx)?;
@@ -65,7 +66,7 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
 
         // no cursor
         let rows = sqlx::query(QUERY_LIST_NO_CURSOR)
-            .bind((limit + 1) as i64)
+            .bind(i64::from(limit) + 1)
             .fetch_all(&self.pool)
             .await
             .map_err(map_sqlx)?;
@@ -84,7 +85,7 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
                 .bind(user_id)
                 .bind(c.created_at)
                 .bind(c.id)
-                .bind((limit + 1) as i64)
+                .bind(i64::from(limit) + 1)
                 .fetch_all(&self.pool)
                 .await
                 .map_err(map_sqlx)?;
@@ -93,7 +94,7 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
 
         let rows = sqlx::query(QUERY_FIND_BY_USER_NO_CURSOR)
             .bind(user_id)
-            .bind((limit + 1) as i64)
+            .bind(i64::from(limit) + 1)
             .fetch_all(&self.pool)
             .await
             .map_err(map_sqlx)?;
@@ -114,7 +115,7 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
                 .bind(resource_id)
                 .bind(c.created_at)
                 .bind(c.id)
-                .bind((limit + 1) as i64)
+                .bind(i64::from(limit) + 1)
                 .fetch_all(&self.pool)
                 .await
                 .map_err(map_sqlx)?;
@@ -124,7 +125,7 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
         let rows = sqlx::query(QUERY_FIND_BY_RESOURCE_NO_CURSOR)
             .bind(resource_type)
             .bind(resource_id)
-            .bind((limit + 1) as i64)
+            .bind(i64::from(limit) + 1)
             .fetch_all(&self.pool)
             .await
             .map_err(map_sqlx)?;

@@ -1,8 +1,8 @@
 // src/infrastructure/repositories/articles/revision.rs
 use super::super::map_sqlx;
 use crate::domain::article::{
-    Article, ArticleBody, ArticleId, ArticleRevision, ArticleRevisionRepository, ArticleSlug,
-    ArticleTitle,
+    Article, ArticleBody, ArticleId, ArticleRevision, ArticleRevisionParts,
+    ArticleRevisionRepository, ArticleSlug, ArticleTitle,
 };
 use crate::domain::errors::DomainResult;
 use crate::domain::user::UserId;
@@ -11,12 +11,13 @@ use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool};
 
 #[derive(Clone)]
+#[must_use]
 pub struct PostgresArticleRevisionRepository {
     pool: PgPool,
 }
 
 impl PostgresArticleRevisionRepository {
-    pub fn new(pool: PgPool) -> Self {
+    pub const fn new(pool: PgPool) -> Self {
         Self { pool }
     }
 }
@@ -39,18 +40,19 @@ impl TryFrom<ArticleRevisionRow> for ArticleRevision {
     type Error = crate::domain::errors::DomainError;
 
     fn try_from(row: ArticleRevisionRow) -> Result<Self, Self::Error> {
-        Ok(ArticleRevision::new(
-            ArticleId::new(row.article_id)?,
-            row.version,
-            ArticleTitle::new(row.title)?,
-            ArticleSlug::new(row.slug)?,
-            ArticleBody::new(row.body)?,
-            row.published,
-            row.published_at,
-            UserId::new(row.author_id)?,
-            row.edited_by.map(UserId::new).transpose()?,
-            row.recorded_at,
-        ))
+        Ok(ArticleRevisionParts {
+            article_id: ArticleId::new(row.article_id)?,
+            version: row.version,
+            title: ArticleTitle::new(row.title)?,
+            slug: ArticleSlug::new(row.slug)?,
+            body: ArticleBody::new(row.body)?,
+            published: row.published,
+            published_at: row.published_at,
+            author_id: UserId::new(row.author_id)?,
+            edited_by: row.edited_by.map(UserId::new).transpose()?,
+            recorded_at: row.recorded_at,
+        }
+        .into())
     }
 }
 
@@ -60,7 +62,7 @@ impl ArticleRevisionRepository for PostgresArticleRevisionRepository {
         let edited_by = edited_by.map(i64::from);
 
         sqlx::query(
-            r#"
+            r"
             WITH next_version AS (
                 SELECT COALESCE(MAX(version) + 1, 1) AS version
                 FROM article_revisions
@@ -76,7 +78,7 @@ impl ArticleRevisionRepository for PostgresArticleRevisionRepository {
                 $2, $3, $4, $5, $6,
                 $7, $8
             FROM next_version
-            "#,
+            ",
         )
         .bind(i64::from(article.id))
         .bind(article.title.as_str())
@@ -95,13 +97,13 @@ impl ArticleRevisionRepository for PostgresArticleRevisionRepository {
 
     async fn list_by_article(&self, article_id: ArticleId) -> DomainResult<Vec<ArticleRevision>> {
         let rows = sqlx::query_as::<_, ArticleRevisionRow>(
-            r#"
+            r"
             SELECT article_id, version, title, slug, body, published, published_at,
                    author_id, edited_by, recorded_at
             FROM article_revisions
             WHERE article_id = $1
             ORDER BY version DESC
-            "#,
+            ",
         )
         .bind(i64::from(article_id))
         .fetch_all(&self.pool)
