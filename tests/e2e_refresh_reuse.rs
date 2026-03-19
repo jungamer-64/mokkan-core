@@ -11,8 +11,8 @@ use mokkan_core::application::commands::users::{
     LoginUserCommand, RefreshTokenCommand, UserCommandService,
 };
 use mokkan_core::application::ports::{
-    refresh_token::{DecodedRefreshToken, RefreshTokenCodec},
-    session_revocation::{OpaqueRefreshTokenStore, RefreshNonceStore, SessionRevocation},
+    refresh_token::RefreshTokenCodec,
+    session_revocation::{OpaqueRefreshTokenStore, SessionRevocation},
 };
 use mokkan_core::domain::user::entity::User;
 use mokkan_core::domain::user::value_objects::{PasswordHash, Role, UserId, Username};
@@ -205,13 +205,9 @@ async fn refresh_token_reuse_triggers_revocation_in_memory() {
     let session_id = login.token.session_id.expect("session id");
     assert!(refresh_token.starts_with("rt3."));
 
-    let token_id = match refresh_token_codec
-        .decode(&refresh_token)
-        .expect("decode rt3 token")
-    {
-        DecodedRefreshToken::OpaqueHandle { token_id } => token_id,
-        other => panic!("expected opaque handle token, got {other:?}"),
-    };
+    let token_id = refresh_token_codec
+        .decode_opaque_handle(&refresh_token)
+        .expect("decode rt3 token");
     let stored_record = session_store
         .get_refresh_token_record(&token_id)
         .await
@@ -231,18 +227,14 @@ async fn refresh_token_reuse_triggers_revocation_in_memory() {
         "{}:{}:{}:{}",
         300, legacy_session_id, "legacy-nonce", 0
     ));
-    session_store
-        .set_session_refresh_nonce(&legacy_session_id, "legacy-nonce")
-        .await
-        .expect("set legacy nonce");
     let legacy = svc
         .refresh_token(RefreshTokenCommand {
             token: legacy_refresh_token,
         })
         .await;
     assert!(
-        legacy.is_ok(),
-        "legacy refresh token should remain accepted"
+        legacy.is_err(),
+        "legacy refresh token should now be rejected"
     );
 
     // first refresh should succeed

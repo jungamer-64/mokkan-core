@@ -3,25 +3,16 @@ use crate::{
     application::{
         dto::{AuthTokenDto, TokenSubject},
         error::{ApplicationError, ApplicationResult},
-        ports::{refresh_token::DecodedRefreshToken, session_revocation::RefreshTokenRecord},
+        ports::session_revocation::RefreshTokenRecord,
     },
     domain::user::UserId,
 };
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use uuid::Uuid;
 
-enum ParsedRefreshToken {
-    SessionBacked {
-        session_id: String,
-        nonce: String,
-        token_version: u32,
-    },
-    Legacy {
-        user_id: UserId,
-        session_id: String,
-        nonce: String,
-        token_version: u32,
-    },
+struct ParsedRefreshToken {
+    session_id: String,
+    nonce: String,
+    token_version: u32,
 }
 
 pub struct RefreshTokenCommand {
@@ -49,22 +40,10 @@ impl UserCommandService {
         token: &str,
     ) -> ApplicationResult<(crate::domain::user::User, String, String, u32)> {
         let parsed = self.parse_refresh_token(token).await?;
-        let (user_id, session_id, nonce, token_ver_in_token) = match parsed {
-            ParsedRefreshToken::SessionBacked {
-                session_id,
-                nonce,
-                token_version,
-            } => {
-                let user_id = self.user_id_for_session(&session_id).await?;
-                (user_id, session_id, nonce, token_version)
-            }
-            ParsedRefreshToken::Legacy {
-                user_id,
-                session_id,
-                nonce,
-                token_version,
-            } => (user_id, session_id, nonce, token_version),
-        };
+        let user_id = self.user_id_for_session(&parsed.session_id).await?;
+        let session_id = parsed.session_id;
+        let nonce = parsed.nonce;
+        let token_ver_in_token = parsed.token_version;
 
         if self
             .session_stores
@@ -217,7 +196,7 @@ impl UserCommandService {
             .await?
             .ok_or_else(|| ApplicationError::validation("invalid refresh token"))?;
 
-        Ok(ParsedRefreshToken::SessionBacked {
+        Ok(ParsedRefreshToken {
             session_id: record.session_id,
             nonce: record.nonce,
             token_version: record.token_version,
@@ -225,60 +204,11 @@ impl UserCommandService {
     }
 
     async fn parse_refresh_token(&self, token: &str) -> ApplicationResult<ParsedRefreshToken> {
-        if self.refresh_token_codec.can_decode(token) {
-            return match self.refresh_token_codec.decode(token)? {
-                DecodedRefreshToken::OpaqueHandle { token_id } => {
-                    self.load_opaque_refresh_token(&token_id).await
-                }
-                DecodedRefreshToken::SignedClaims(claims) => {
-                    Ok(ParsedRefreshToken::SessionBacked {
-                        session_id: claims.session_id,
-                        nonce: claims.nonce,
-                        token_version: claims.token_version,
-                    })
-                }
-            };
+        if self.refresh_token_codec.is_opaque_token(token) {
+            let token_id = self.refresh_token_codec.decode_opaque_handle(token)?;
+            return self.load_opaque_refresh_token(&token_id).await;
         }
 
-        let (user_id_part, session_id, nonce, token_ver_str) =
-            Self::decode_legacy_refresh_token_raw(token)?;
-
-        let uid: i64 = user_id_part
-            .parse()
-            .map_err(|_| ApplicationError::validation("invalid refresh token"))?;
-        let user_id = UserId::new(uid)?;
-
-        let token_ver: u32 = token_ver_str
-            .parse()
-            .map_err(|_| ApplicationError::validation("invalid refresh token"))?;
-
-        Ok(ParsedRefreshToken::Legacy {
-            user_id,
-            session_id,
-            nonce,
-            token_version: token_ver,
-        })
-    }
-
-    fn decode_legacy_refresh_token_raw(
-        token: &str,
-    ) -> ApplicationResult<(String, String, String, String)> {
-        let decoded = URL_SAFE_NO_PAD
-            .decode(token.as_bytes())
-            .map_err(|_| ApplicationError::validation("invalid refresh token"))?;
-        let decoded_str = String::from_utf8(decoded)
-            .map_err(|_| ApplicationError::validation("invalid refresh token"))?;
-
-        let parts: Vec<&str> = decoded_str.split(':').collect();
-        if parts.len() != 4 {
-            return Err(ApplicationError::validation("invalid refresh token"));
-        }
-
-        Ok((
-            parts[0].to_string(),
-            parts[1].to_string(),
-            parts[2].to_string(),
-            parts[3].to_string(),
-        ))
+        Err(ApplicationError::validation("invalid refresh token"))
     }
 }
