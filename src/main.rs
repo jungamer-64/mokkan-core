@@ -18,6 +18,7 @@ use mokkan_core::domain::{
 use mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore;
 use mokkan_core::infrastructure::security::authorization_code_store::into_arc as into_auth_code_store;
 use mokkan_core::infrastructure::security::redis_session_store::RedisSessionRevocationStore;
+use mokkan_core::infrastructure::security::refresh_token::HmacRefreshTokenCodec;
 use mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore;
 use mokkan_core::infrastructure::{
     database,
@@ -126,6 +127,7 @@ fn build_services_and_state(
     let token_manager_impl =
         BiscuitTokenManager::new(config.biscuit_private_key(), config.token_ttl())?;
     let token_manager: Arc<dyn TokenManager> = Arc::new(token_manager_impl);
+    let refresh_token_codec = Arc::new(HmacRefreshTokenCodec::new(config.refresh_token_secret())?);
     let clock: Arc<dyn Clock> = Arc::new(SystemClock::default());
     let slugger: Arc<dyn SlugGenerator> = Arc::new(DefaultSlugGenerator::default());
 
@@ -147,6 +149,7 @@ fn build_services_and_state(
         deps,
         Arc::clone(&password_hasher),
         Arc::clone(&token_manager),
+        refresh_token_codec,
         Arc::clone(&session_store),
         Arc::clone(&auth_code_store),
         Arc::clone(&clock),

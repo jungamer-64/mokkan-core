@@ -15,20 +15,29 @@ pub struct SessionInfo {
 }
 
 #[async_trait]
-pub trait SessionRevocationStore: Send + Sync {
+pub trait SessionRevocation: Send + Sync {
     /// Return true if the given session id has been revoked.
     async fn is_revoked(&self, session_id: &str) -> ApplicationResult<bool>;
 
     /// Revoke the given session id (e.g. on logout).
     async fn revoke(&self, session_id: &str) -> ApplicationResult<()>;
 
+    /// Revoke all sessions for a given user (used when refresh reuse is detected).
+    async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()>;
+}
+
+#[async_trait]
+pub trait TokenVersionStore: Send + Sync {
     /// Get the minimum allowed token version for a user. Tokens with a version less
     /// than this should be considered invalid.
     async fn get_min_token_version(&self, user_id: i64) -> ApplicationResult<Option<u32>>;
 
     /// Set the minimum allowed token version for a user.
     async fn set_min_token_version(&self, user_id: i64, min_version: u32) -> ApplicationResult<()>;
+}
 
+#[async_trait]
+pub trait RefreshNonceStore: Send + Sync {
     /// Store the current refresh nonce for a session (used for refresh-token rotation).
     async fn set_session_refresh_nonce(
         &self,
@@ -67,7 +76,10 @@ pub trait SessionRevocationStore: Send + Sync {
         session_id: &str,
         nonce: &str,
     ) -> ApplicationResult<bool>;
+}
 
+#[async_trait]
+pub trait SessionMetadataStore: Send + Sync {
     /// Track that a session id belongs to a user (used for per-user session listing and bulk revocation).
     async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()>;
 
@@ -105,7 +117,19 @@ pub trait SessionRevocationStore: Send + Sync {
 
     /// Delete session metadata (e.g. when a session is removed from the user's list).
     async fn delete_session_metadata(&self, session_id: &str) -> ApplicationResult<()>;
+}
 
-    /// Revoke all sessions for a given user (used when refresh reuse is detected).
-    async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()>;
+pub trait SessionRevocationStore:
+    SessionRevocation + TokenVersionStore + RefreshNonceStore + SessionMetadataStore + Send + Sync
+{
+}
+
+impl<T> SessionRevocationStore for T where
+    T: SessionRevocation
+        + TokenVersionStore
+        + RefreshNonceStore
+        + SessionMetadataStore
+        + Send
+        + Sync
+{
 }

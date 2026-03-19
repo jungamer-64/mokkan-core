@@ -17,7 +17,7 @@ pub struct AuditLogDto {
 impl From<AuditLog> for AuditLogDto {
     fn from(a: AuditLog) -> Self {
         Self {
-            id: a.id.unwrap_or_default(),
+            id: a.id,
             user_id: a.user_id.map(Into::into),
             action: a.action,
             resource_type: a.resource_type,

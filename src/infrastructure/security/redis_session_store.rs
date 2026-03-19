@@ -1,7 +1,10 @@
 // src/infrastructure/security/redis_session_store.rs
 use crate::application::ApplicationResult;
 use crate::application::error::ApplicationError;
-use crate::application::ports::session_revocation::SessionRevocationStore;
+use crate::application::ports::session_revocation::{
+    RefreshNonceStore, SessionMetadataStore, SessionRevocation, SessionRevocationStore,
+    TokenVersionStore,
+};
 use async_trait::async_trait;
 use deadpool_redis::{Config as DeadpoolConfig, Connection, Pool, Runtime};
 use redis::AsyncCommands;
@@ -216,7 +219,7 @@ impl RedisSessionRevocationStore {
 }
 
 #[async_trait]
-impl SessionRevocationStore for RedisSessionRevocationStore {
+impl SessionRevocation for RedisSessionRevocationStore {
     async fn is_revoked(&self, session_id: &str) -> ApplicationResult<bool> {
         let mut conn = self
             .pool
@@ -246,6 +249,52 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
         Ok(())
     }
 
+    async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let key = format!("user_sessions:{}", user_id);
+        let sessions: Vec<String> = conn
+            .smembers(&key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        if sessions.is_empty() {
+            return Ok(());
+        }
+
+        let script = r#"
+            if #ARGV == 0 then
+                return 0
+            end
+            for i=1,#ARGV do
+                local sid = ARGV[i]
+                redis.call('SET', 'revoked:session:' .. sid, 1)
+            end
+            redis.call('DEL', KEYS[1])
+            return #ARGV
+        "#;
+
+        let mut cmd = redis::cmd("EVAL");
+        cmd.arg(script).arg(1).arg(&key);
+        for sid in &sessions {
+            cmd.arg(sid);
+        }
+
+        let _processed: i32 = cmd
+            .query_async(&mut conn)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl TokenVersionStore for RedisSessionRevocationStore {
     async fn get_min_token_version(&self, user_id: i64) -> ApplicationResult<Option<u32>> {
         let mut conn = self
             .pool
@@ -274,7 +323,10 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
         Ok(())
     }
+}
 
+#[async_trait]
+impl RefreshNonceStore for RedisSessionRevocationStore {
     async fn set_session_refresh_nonce(
         &self,
         session_id: &str,
@@ -372,7 +424,10 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
         Ok(exists)
     }
+}
 
+#[async_trait]
+impl SessionMetadataStore for RedisSessionRevocationStore {
     async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()> {
         let mut conn = self
             .pool
@@ -581,54 +636,6 @@ impl SessionRevocationStore for RedisSessionRevocationStore {
             .del(&meta_key)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
-        Ok(())
-    }
-
-    async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()> {
-        let mut conn = self
-            .pool
-            .get()
-            .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
-
-        let key = format!("user_sessions:{}", user_id);
-        let sessions: Vec<String> = conn
-            .smembers(&key)
-            .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
-
-        if sessions.is_empty() {
-            return Ok(());
-        }
-
-        // Atomically mark each session revoked and remove the user's session
-        // set using a Lua script. Instead of re-reading the set server-side
-        // (SMEMBERS), pass the session IDs we already fetched as ARGV to the
-        // script. This avoids a redundant read and keeps the operation atomic.
-        // The script expects the key in KEYS[1] and session IDs in ARGV.
-        let script = r#"
-            if #ARGV == 0 then
-                return 0
-            end
-            for i=1,#ARGV do
-                local sid = ARGV[i]
-                redis.call('SET', 'revoked:session:' .. sid, 1)
-            end
-            redis.call('DEL', KEYS[1])
-            return #ARGV
-        "#;
-
-        let mut cmd = redis::cmd("EVAL");
-        cmd.arg(script).arg(1).arg(&key);
-        for sid in &sessions {
-            cmd.arg(sid);
-        }
-
-        let _processed: i32 = cmd
-            .query_async(&mut conn)
-            .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
-
         Ok(())
     }
 }

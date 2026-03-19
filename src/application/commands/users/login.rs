@@ -64,6 +64,15 @@ impl UserCommandService {
         self.session_revocation_store
             .add_session_for_user(i64::from(user.id), session_id)
             .await?;
+        self.session_revocation_store
+            .set_session_metadata(
+                i64::from(user.id),
+                session_id,
+                None,
+                None,
+                self.clock.now().timestamp(),
+            )
+            .await?;
 
         Ok(token)
     }

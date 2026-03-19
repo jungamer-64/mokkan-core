@@ -134,6 +134,12 @@ fn make_services(
         deps,
         password_hasher,
         token_manager,
+        Arc::new(
+            mokkan_core::infrastructure::security::refresh_token::HmacRefreshTokenCodec::new(
+                "test-refresh-secret",
+            )
+            .expect("refresh token codec"),
+        ),
         Arc::new(mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new()),
         Arc::new(mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore::new()),
         clock,

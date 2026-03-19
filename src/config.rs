@@ -7,6 +7,7 @@ pub struct AppConfig {
     database_url: String,
     listen_addr: String,
     biscuit_private_key: String,
+    refresh_token_secret: String,
     token_ttl: Duration,
     allowed_origins: Vec<String>,
     // Redis-related runtime options
@@ -61,6 +62,8 @@ impl AppConfig {
             .map_err(|_| ConfigError::Missing("BISCUIT_ROOT_PRIVATE_KEY"))?;
 
         validate_biscuit_private_key(&biscuit_private_key)?;
+        let refresh_token_secret =
+            env::var("REFRESH_TOKEN_SECRET").unwrap_or_else(|_| biscuit_private_key.clone());
 
         let token_ttl_secs = env::var("TOKEN_TTL_SECONDS")
             .ok()
@@ -86,6 +89,7 @@ impl AppConfig {
             database_url,
             listen_addr,
             biscuit_private_key,
+            refresh_token_secret,
             token_ttl: Duration::from_secs(token_ttl_secs),
             allowed_origins,
             redis_used_nonce_ttl_secs,
@@ -103,6 +107,10 @@ impl AppConfig {
 
     pub fn biscuit_private_key(&self) -> &str {
         &self.biscuit_private_key
+    }
+
+    pub fn refresh_token_secret(&self) -> &str {
+        &self.refresh_token_secret
     }
 
     pub fn token_ttl(&self) -> Duration {

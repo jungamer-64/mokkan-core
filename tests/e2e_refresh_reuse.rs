@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Duration;
 
 mod support;
@@ -9,7 +10,7 @@ mod support;
 use mokkan_core::application::commands::users::{
     LoginUserCommand, RefreshTokenCommand, UserCommandService,
 };
-use mokkan_core::application::ports::session_revocation::SessionRevocationStore;
+use mokkan_core::application::ports::session_revocation::{RefreshNonceStore, SessionRevocation};
 use mokkan_core::domain::user::entity::User;
 use mokkan_core::domain::user::value_objects::{PasswordHash, Role, UserId, Username};
 
@@ -178,6 +179,12 @@ async fn refresh_token_reuse_triggers_revocation_in_memory() {
         repo,
         password_hasher,
         token_manager,
+        Arc::new(
+            mokkan_core::infrastructure::security::refresh_token::HmacRefreshTokenCodec::new(
+                "test-refresh-secret",
+            )
+            .expect("refresh token codec"),
+        ),
         session_store.clone(),
         clock,
     ));
@@ -192,6 +199,42 @@ async fn refresh_token_reuse_triggers_revocation_in_memory() {
         .expect("login");
     let refresh_token = login.token.refresh_token.expect("refresh token returned");
     let session_id = login.token.session_id.expect("session id");
+    assert!(refresh_token.starts_with("rt2."));
+    let parts: Vec<_> = refresh_token.split('.').collect();
+    assert_eq!(parts.len(), 3);
+    let payload = URL_SAFE_NO_PAD.decode(parts[1]).expect("decode payload");
+    let payload: serde_json::Value = serde_json::from_slice(&payload).expect("json payload");
+    assert!(payload.get("user_id").is_none());
+    assert_eq!(
+        payload.get("sid").and_then(|v| v.as_str()),
+        Some(session_id.as_str())
+    );
+
+    let legacy_login = svc
+        .login(LoginUserCommand {
+            username: "reuse_user".into(),
+            password: "pwd".into(),
+        })
+        .await
+        .expect("legacy login");
+    let legacy_session_id = legacy_login.token.session_id.expect("legacy session id");
+    let legacy_refresh_token = URL_SAFE_NO_PAD.encode(format!(
+        "{}:{}:{}:{}",
+        300, legacy_session_id, "legacy-nonce", 0
+    ));
+    session_store
+        .set_session_refresh_nonce(&legacy_session_id, "legacy-nonce")
+        .await
+        .expect("set legacy nonce");
+    let legacy = svc
+        .refresh_token(RefreshTokenCommand {
+            token: legacy_refresh_token,
+        })
+        .await;
+    assert!(
+        legacy.is_ok(),
+        "legacy refresh token should remain accepted"
+    );
 
     // first refresh should succeed
     let r1 = svc

@@ -1,4 +1,4 @@
-use mokkan_core::application::ports::session_revocation::SessionRevocationStore;
+use mokkan_core::application::ports::session_revocation::RefreshNonceStore;
 use std::env;
 use tokio::time::{Duration, sleep};
 

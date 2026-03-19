@@ -92,6 +92,12 @@ fn test_state(token_manager: Arc<dyn TokenManager>) -> HttpState {
         Arc::new(support::mocks::DummyPasswordHasher) as Arc<dyn PasswordHasher>,
         token_manager,
         Arc::new(
+            mokkan_core::infrastructure::security::refresh_token::HmacRefreshTokenCodec::new(
+                "test-refresh-secret",
+            )
+            .expect("refresh token codec"),
+        ),
+        Arc::new(
             mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new(
             ),
         ),

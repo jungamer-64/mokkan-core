@@ -126,6 +126,12 @@ async fn grant_and_revoke_role_service_flow() {
         repo.clone(),
         password_hasher,
         token_manager,
+        Arc::new(
+            mokkan_core::infrastructure::security::refresh_token::HmacRefreshTokenCodec::new(
+                "test-refresh-secret",
+            )
+            .expect("refresh token codec"),
+        ),
         session_store,
         clock,
     );

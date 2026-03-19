@@ -1,7 +1,7 @@
 // src/infrastructure/repositories/audit/postgres.rs
 use super::super::map_sqlx;
 use crate::domain::audit::cursor::AuditLogCursor;
-use crate::domain::audit::entity::AuditLog;
+use crate::domain::audit::entity::{AuditLog, NewAuditLog};
 use crate::domain::errors::DomainResult;
 use async_trait::async_trait;
 use chrono::Utc;
@@ -26,7 +26,7 @@ impl PostgresAuditLogRepository {
 
 #[async_trait]
 impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRepository {
-    async fn insert(&self, log: AuditLog) -> DomainResult<()> {
+    async fn insert(&self, log: NewAuditLog) -> DomainResult<()> {
         sqlx::query(
             r#"
             INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details, ip_address, user_agent)
@@ -141,21 +141,23 @@ fn map_rows_to_logs(
     let mut items = rows
         .into_iter()
         .map(|row| {
-            let id: i64 = row.try_get("id").unwrap_or_default();
+            let id: i64 = row.try_get("id").expect("audit log id");
             let user_id: Option<i64> = row.try_get::<Option<i64>, _>("user_id").ok().flatten();
             let user_id =
                 user_id.and_then(|id| crate::domain::user::value_objects::UserId::new(id).ok());
-            let action: String = row.try_get("action").unwrap_or_default();
-            let resource_type: String = row.try_get("resource_type").unwrap_or_default();
+            let action: String = row.try_get("action").expect("audit log action");
+            let resource_type: String = row
+                .try_get("resource_type")
+                .expect("audit log resource type");
             let resource_id: Option<i64> = row.try_get("resource_id").ok().flatten();
             let details: Option<serde_json::Value> = row.try_get("details").ok().flatten();
             let ip_address: Option<String> = row.try_get("ip_address").ok().flatten();
             let user_agent: Option<String> = row.try_get("user_agent").ok().flatten();
-            let created_at: Option<chrono::DateTime<Utc>> =
-                row.try_get("created_at").ok().flatten();
+            let created_at: chrono::DateTime<Utc> =
+                row.try_get("created_at").expect("audit log created_at");
 
             AuditLog {
-                id: Some(id),
+                id,
                 user_id,
                 action,
                 resource_type,
@@ -179,11 +181,9 @@ fn trim_to_page_and_build_cursor(items: &mut Vec<AuditLog>, limit: u32) -> Optio
     }
 
     items.truncate(limit as usize);
-    items.last().and_then(|last| {
-        let created_at = last.created_at?;
-        let id = last.id?;
-        Some(AuditLogCursor::new(created_at, id).encode())
-    })
+    items
+        .last()
+        .map(|last| AuditLogCursor::new(last.created_at, last.id).encode())
 }
 
 #[cfg(test)]
@@ -195,7 +195,7 @@ mod tests {
 
     fn audit_log(id: i64, created_at: chrono::DateTime<Utc>) -> AuditLog {
         AuditLog {
-            id: Some(id),
+            id,
             user_id: None,
             action: "test".into(),
             resource_type: "article".into(),
@@ -203,7 +203,7 @@ mod tests {
             details: None,
             ip_address: None,
             user_agent: None,
-            created_at: Some(created_at),
+            created_at,
         }
     }
 
@@ -222,7 +222,7 @@ mod tests {
         assert_eq!(items.len(), 2);
         let cursor = AuditLogCursor::decode(&next_cursor.expect("next cursor")).unwrap();
         assert_eq!(cursor.id, 2);
-        assert_eq!(cursor.created_at, items[1].created_at.unwrap());
-        assert_ne!(cursor.id, third.id.unwrap());
+        assert_eq!(cursor.created_at, items[1].created_at);
+        assert_ne!(cursor.id, third.id);
     }
 }

@@ -38,6 +38,7 @@ httpdate = "1"
 redis = { version = "0.32", features = ["aio", "tokio-comp"] }
 deadpool-redis = "0.22"
 sha2 = "0.10"
+hmac = "0.12"
 uuid = { version = "1", features = ["v4"] }
 
 [package.metadata.commands]

@@ -165,6 +165,12 @@ async fn refresh_token_single_use_and_concurrent_rotation() {
         repo,
         password_hasher,
         token_manager,
+        Arc::new(
+            mokkan_core::infrastructure::security::refresh_token::HmacRefreshTokenCodec::new(
+                "test-refresh-secret",
+            )
+            .expect("refresh token codec"),
+        ),
         session_store,
         clock,
     ));

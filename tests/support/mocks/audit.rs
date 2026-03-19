@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 /// 標準的なサンプル監査ログを生成
 pub fn sample_audit(created_at: DateTime<Utc>) -> mokkan_core::domain::audit::entity::AuditLog {
     mokkan_core::domain::audit::entity::AuditLog {
-        id: Some(1),
+        id: 1,
         user_id: Some(mokkan_core::domain::user::value_objects::UserId::new(1).unwrap()),
         action: "test".into(),
         resource_type: "article".into(),
@@ -12,7 +12,7 @@ pub fn sample_audit(created_at: DateTime<Utc>) -> mokkan_core::domain::audit::en
         details: None,
         ip_address: Some("127.0.0.1".into()),
         user_agent: Some("e2e-test".into()),
-        created_at: Some(created_at),
+        created_at,
     }
 }
 
@@ -23,7 +23,7 @@ pub fn sample_audit_with(
     created_at: DateTime<Utc>,
 ) -> mokkan_core::domain::audit::entity::AuditLog {
     mokkan_core::domain::audit::entity::AuditLog {
-        id: Some(id),
+        id,
         user_id: Some(mokkan_core::domain::user::value_objects::UserId::new(1).unwrap()),
         action: "test".into(),
         resource_type: "article".into(),
@@ -31,6 +31,6 @@ pub fn sample_audit_with(
         details: None,
         ip_address: Some("127.0.0.1".into()),
         user_agent: Some("e2e-test".into()),
-        created_at: Some(created_at),
+        created_at,
     }
 }

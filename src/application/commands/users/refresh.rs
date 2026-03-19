@@ -3,11 +3,26 @@ use crate::{
     application::{
         dto::{AuthTokenDto, TokenSubject},
         error::{ApplicationError, ApplicationResult},
+        ports::refresh_token::RefreshTokenClaims,
     },
     domain::user::UserId,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use uuid::Uuid;
+
+enum ParsedRefreshToken {
+    Signed {
+        session_id: String,
+        nonce: String,
+        token_version: u32,
+    },
+    Legacy {
+        user_id: UserId,
+        session_id: String,
+        nonce: String,
+        token_version: u32,
+    },
+}
 
 pub struct RefreshTokenCommand {
     pub token: String,
@@ -33,8 +48,23 @@ impl UserCommandService {
         &self,
         token: &str,
     ) -> ApplicationResult<(crate::domain::user::User, String, String, u32)> {
-        let (user_id, session_id, nonce, token_ver_in_token) =
-            self.parse_refresh_token_str(token).await?;
+        let parsed = self.parse_refresh_token(token).await?;
+        let (user_id, session_id, nonce, token_ver_in_token) = match parsed {
+            ParsedRefreshToken::Signed {
+                session_id,
+                nonce,
+                token_version,
+            } => {
+                let user_id = self.user_id_for_session(&session_id).await?;
+                (user_id, session_id, nonce, token_version)
+            }
+            ParsedRefreshToken::Legacy {
+                user_id,
+                session_id,
+                nonce,
+                token_version,
+            } => (user_id, session_id, nonce, token_version),
+        };
 
         if self
             .session_revocation_store
@@ -54,6 +84,15 @@ impl UserCommandService {
             .await?;
 
         Ok((user, session_id, nonce, token_ver_in_token))
+    }
+
+    async fn user_id_for_session(&self, session_id: &str) -> ApplicationResult<UserId> {
+        let meta = self
+            .session_revocation_store
+            .get_session_metadata(session_id)
+            .await?
+            .ok_or_else(|| ApplicationError::validation("invalid refresh token"))?;
+        UserId::new(meta.user_id).map_err(Into::into)
     }
 
     async fn ensure_token_version_not_revoked(
@@ -144,23 +183,25 @@ impl UserCommandService {
             .await?
             .unwrap_or(0);
 
-        let raw_refresh = format!(
-            "{}:{}:{}:{}",
-            i64::from(user.id),
-            session_id,
-            nonce,
-            current_min
-        );
-        let new_refresh_token = URL_SAFE_NO_PAD.encode(raw_refresh.as_bytes());
-        Ok(new_refresh_token)
+        self.refresh_token_codec.encode(&RefreshTokenClaims {
+            session_id: session_id.to_string(),
+            nonce: nonce.to_string(),
+            token_version: current_min,
+        })
     }
 
-    async fn parse_refresh_token_str(
-        &self,
-        token: &str,
-    ) -> ApplicationResult<(UserId, String, String, u32)> {
+    async fn parse_refresh_token(&self, token: &str) -> ApplicationResult<ParsedRefreshToken> {
+        if self.refresh_token_codec.can_decode(token) {
+            let claims = self.refresh_token_codec.decode(token)?;
+            return Ok(ParsedRefreshToken::Signed {
+                session_id: claims.session_id,
+                nonce: claims.nonce,
+                token_version: claims.token_version,
+            });
+        }
+
         let (user_id_part, session_id, nonce, token_ver_str) =
-            Self::decode_refresh_token_raw(token)?;
+            Self::decode_legacy_refresh_token_raw(token)?;
 
         let uid: i64 = user_id_part
             .parse()
@@ -171,10 +212,15 @@ impl UserCommandService {
             .parse()
             .map_err(|_| ApplicationError::validation("invalid refresh token"))?;
 
-        Ok((user_id, session_id, nonce, token_ver))
+        Ok(ParsedRefreshToken::Legacy {
+            user_id,
+            session_id,
+            nonce,
+            token_version: token_ver,
+        })
     }
 
-    fn decode_refresh_token_raw(
+    fn decode_legacy_refresh_token_raw(
         token: &str,
     ) -> ApplicationResult<(String, String, String, String)> {
         let decoded = URL_SAFE_NO_PAD

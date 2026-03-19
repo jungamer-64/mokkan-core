@@ -35,7 +35,7 @@ impl MockRepo {
 impl mokkan_core::domain::audit::repository::AuditLogRepository for MockRepo {
     async fn insert(
         &self,
-        _log: mokkan_core::domain::audit::entity::AuditLog,
+        _log: mokkan_core::domain::audit::entity::NewAuditLog,
     ) -> mokkan_core::domain::errors::DomainResult<()> {
         Ok(())
     }
@@ -87,7 +87,7 @@ pub struct MockAuditRepo;
 impl mokkan_core::domain::audit::repository::AuditLogRepository for MockAuditRepo {
     async fn insert(
         &self,
-        _log: mokkan_core::domain::audit::entity::AuditLog,
+        _log: mokkan_core::domain::audit::entity::NewAuditLog,
     ) -> mokkan_core::domain::errors::DomainResult<()> {
         Ok(())
     }
@@ -139,7 +139,7 @@ pub struct CapturingAuditRepo {
     pub items: Vec<mokkan_core::domain::audit::entity::AuditLog>,
     pub next_cursor: Option<String>,
     pub inserted:
-        std::sync::Arc<std::sync::Mutex<Vec<mokkan_core::domain::audit::entity::AuditLog>>>,
+        std::sync::Arc<std::sync::Mutex<Vec<mokkan_core::domain::audit::entity::NewAuditLog>>>,
 }
 
 impl CapturingAuditRepo {
@@ -152,7 +152,7 @@ impl CapturingAuditRepo {
     }
 
     /// 挿入された全てのログを取得
-    pub fn get_inserted(&self) -> Vec<mokkan_core::domain::audit::entity::AuditLog> {
+    pub fn get_inserted(&self) -> Vec<mokkan_core::domain::audit::entity::NewAuditLog> {
         self.inserted.lock().expect("mutex poisoned").clone()
     }
 }
@@ -161,7 +161,7 @@ impl CapturingAuditRepo {
 impl mokkan_core::domain::audit::repository::AuditLogRepository for CapturingAuditRepo {
     async fn insert(
         &self,
-        log: mokkan_core::domain::audit::entity::AuditLog,
+        log: mokkan_core::domain::audit::entity::NewAuditLog,
     ) -> mokkan_core::domain::errors::DomainResult<()> {
         let mut guard = self.inserted.lock().expect("mutex poisoned");
         guard.push(log);

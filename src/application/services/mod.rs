@@ -5,6 +5,7 @@ use crate::{
     application::{
         commands::{articles::ArticleCommandService, users::UserCommandService},
         ports::{
+            refresh_token::RefreshTokenCodec,
             security::{PasswordHasher, TokenManager},
             session_revocation::SessionRevocationStore,
             time::Clock,
@@ -57,6 +58,7 @@ impl ApplicationServices {
         deps: ApplicationDependencies,
         password_hasher: Arc<dyn PasswordHasher>,
         token_manager: Arc<dyn TokenManager>,
+        refresh_token_codec: Arc<dyn RefreshTokenCodec>,
         session_revocation_store: Arc<dyn SessionRevocationStore>,
         authorization_code_store: Arc<
             dyn crate::application::ports::authorization_code::AuthorizationCodeStore,
@@ -68,6 +70,7 @@ impl ApplicationServices {
             Arc::clone(&deps.user_repo),
             Arc::clone(&password_hasher),
             Arc::clone(&token_manager),
+            Arc::clone(&refresh_token_codec),
             Arc::clone(&session_revocation_store),
             Arc::clone(&clock),
         ));

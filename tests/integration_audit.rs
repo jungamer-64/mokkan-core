@@ -26,8 +26,7 @@ async fn integration_audit_write_and_read() {
 
     // insert test rows
     for i in 0..5i64 {
-        let log = mokkan_core::domain::audit::entity::AuditLog {
-            id: None,
+        let log = mokkan_core::domain::audit::entity::NewAuditLog {
             user_id: Some(mokkan_core::domain::user::value_objects::UserId::new(1).unwrap()),
             action: format!("test-integration-{}", i),
             resource_type: "article".to_string(),
@@ -35,7 +34,6 @@ async fn integration_audit_write_and_read() {
             details: Some(serde_json::json!({"i": i})),
             ip_address: Some("127.0.0.1".to_string()),
             user_agent: Some("mokkan-integration-test".to_string()),
-            created_at: None,
         };
         repo.insert(log).await.expect("insert");
     }

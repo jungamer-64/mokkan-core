@@ -1,6 +1,9 @@
 // src/infrastructure/security/session_store.rs
 use crate::application::ApplicationResult;
-use crate::application::ports::session_revocation::SessionRevocationStore;
+use crate::application::ports::session_revocation::{
+    RefreshNonceStore, SessionMetadataStore, SessionRevocation, SessionRevocationStore,
+    TokenVersionStore,
+};
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -47,7 +50,7 @@ impl InMemorySessionRevocationStore {
 }
 
 #[async_trait]
-impl SessionRevocationStore for InMemorySessionRevocationStore {
+impl SessionRevocation for InMemorySessionRevocationStore {
     async fn is_revoked(&self, session_id: &str) -> ApplicationResult<bool> {
         let guard = self.revoked.lock().unwrap();
         Ok(guard.contains(session_id))
@@ -59,6 +62,26 @@ impl SessionRevocationStore for InMemorySessionRevocationStore {
         Ok(())
     }
 
+    async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()> {
+        let sessions = {
+            let mut guard = self.user_sessions.lock().unwrap();
+            match guard.remove(&user_id) {
+                Some(s) => s.into_iter().collect::<Vec<_>>(),
+                None => vec![],
+            }
+        };
+
+        if !sessions.is_empty() {
+            let mut revoked_guard = self.revoked.lock().unwrap();
+            revoked_guard.extend(sessions.into_iter());
+        }
+
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl TokenVersionStore for InMemorySessionRevocationStore {
     async fn get_min_token_version(&self, user_id: i64) -> ApplicationResult<Option<u32>> {
         let guard = self.min_versions.lock().unwrap();
         Ok(guard.get(&user_id).cloned())
@@ -69,7 +92,10 @@ impl SessionRevocationStore for InMemorySessionRevocationStore {
         guard.insert(user_id, min_version);
         Ok(())
     }
+}
 
+#[async_trait]
+impl RefreshNonceStore for InMemorySessionRevocationStore {
     async fn set_session_refresh_nonce(
         &self,
         session_id: &str,
@@ -130,7 +156,10 @@ impl SessionRevocationStore for InMemorySessionRevocationStore {
             .map(|s| s.contains(nonce))
             .unwrap_or(false))
     }
+}
 
+#[async_trait]
+impl SessionMetadataStore for InMemorySessionRevocationStore {
     async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()> {
         let mut guard = self.user_sessions.lock().unwrap();
         let entry = guard.entry(user_id).or_default();
@@ -255,24 +284,6 @@ impl SessionRevocationStore for InMemorySessionRevocationStore {
         } else {
             Ok(None)
         }
-    }
-
-    async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()> {
-        let sessions = {
-            let mut guard = self.user_sessions.lock().unwrap();
-            match guard.remove(&user_id) {
-                Some(s) => s.into_iter().collect::<Vec<_>>(),
-                None => vec![],
-            }
-        };
-
-        // Batch-insert into the revoked set while holding the lock only once.
-        if !sessions.is_empty() {
-            let mut revoked_guard = self.revoked.lock().unwrap();
-            revoked_guard.extend(sessions.into_iter());
-        }
-
-        Ok(())
     }
 }
 
