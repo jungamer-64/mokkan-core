@@ -18,8 +18,7 @@ pub fn parse_claims(
 fn build_authenticated_user(ctx: ClaimsContext) -> ApplicationResult<AuthenticatedUser> {
     let (user_id_i64, username, role, issued_at, expires_at) = validate_claims(&ctx)?;
 
-    let user_id =
-        crate::domain::user::UserId::new(user_id_i64).map_err(|err| ApplicationError::from(err))?;
+    let user_id = crate::domain::user::UserId::new(user_id_i64).map_err(ApplicationError::from)?;
 
     let mut all_caps = role.default_capabilities();
     all_caps.extend(ctx.capabilities);
@@ -54,7 +53,6 @@ fn validate_claims(
         .ok_or_else(|| ApplicationError::unauthorized("missing username"))?;
     let role = ctx
         .role
-        .clone()
         .ok_or_else(|| ApplicationError::unauthorized("missing role"))?;
     let issued_at = ctx
         .issued_at
@@ -111,40 +109,34 @@ impl ClaimsContext {
     }
 
     fn handle_role(&mut self, predicate: &biscuit_auth::builder::Predicate) {
-        if let Some(term) = predicate.terms.first() {
-            if let biscuit_auth::builder::Term::Str(role_name) = term.clone() {
-                if let Ok(parsed) = role_name.parse() {
-                    self.role = Some(parsed);
-                }
-            }
+        if let Some(term) = predicate.terms.first()
+            && let biscuit_auth::builder::Term::Str(role_name) = term.clone()
+            && let Ok(parsed) = role_name.parse()
+        {
+            self.role = Some(parsed);
         }
     }
 
     fn handle_issued_at(&mut self, predicate: &biscuit_auth::builder::Predicate) {
-        if let Some(term) = predicate.terms.first() {
-            if let biscuit_auth::builder::Term::Date(seconds) = term {
-                self.issued_at = Some(UNIX_EPOCH + std::time::Duration::from_secs(*seconds));
-            }
+        if let Some(biscuit_auth::builder::Term::Date(seconds)) = predicate.terms.first() {
+            self.issued_at = Some(UNIX_EPOCH + std::time::Duration::from_secs(*seconds));
         }
     }
 
     fn handle_expires_at(&mut self, predicate: &biscuit_auth::builder::Predicate) {
-        if let Some(term) = predicate.terms.first() {
-            if let biscuit_auth::builder::Term::Date(seconds) = term {
-                self.expires_at = Some(UNIX_EPOCH + std::time::Duration::from_secs(*seconds));
-            }
+        if let Some(biscuit_auth::builder::Term::Date(seconds)) = predicate.terms.first() {
+            self.expires_at = Some(UNIX_EPOCH + std::time::Duration::from_secs(*seconds));
         }
     }
 
     fn handle_right(&mut self, predicate: &biscuit_auth::builder::Predicate) {
-        if predicate.terms.len() == 2 {
-            if let (
+        if predicate.terms.len() == 2
+            && let (
                 biscuit_auth::builder::Term::Str(resource),
                 biscuit_auth::builder::Term::Str(action),
             ) = (predicate.terms[0].clone(), predicate.terms[1].clone())
-            {
-                self.capabilities.insert(Capability::new(resource, action));
-            }
+        {
+            self.capabilities.insert(Capability::new(resource, action));
         }
     }
 

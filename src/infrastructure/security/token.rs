@@ -163,41 +163,40 @@ fn build_and_serialize_biscuit_with_block(
     seal_and_serialize(token)
 }
 
-fn extract_root_token_type_from_facts(facts: &Vec<biscuit_auth::builder::Fact>) -> Option<String> {
-    for f in facts.iter() {
-        if f.predicate.name == "token_type" {
-            if let Some(term) = f.predicate.terms.first() {
-                if let Term::Str(s) = term.clone() {
-                    return Some(s);
-                }
-            }
+fn extract_root_token_type_from_facts(facts: &[biscuit_auth::builder::Fact]) -> Option<String> {
+    for f in facts {
+        if f.predicate.name == "token_type"
+            && let Some(term) = f.predicate.terms.first()
+            && let Term::Str(s) = term.clone()
+        {
+            return Some(s);
         }
     }
     None
 }
 
 fn ensure_checks_match_root_tt(
-    checks: &Vec<biscuit_auth::builder::Check>,
+    checks: &[biscuit_auth::builder::Check],
     root_tt: &str,
 ) -> Result<(), ApplicationError> {
-    for check in checks.iter() {
-        for rule in check.queries.iter() {
-            for pred in rule.body.iter() {
-                if pred.name == "token_type" {
-                    if let Some(term) = pred.terms.first() {
-                        match term.clone() {
-                            Term::Str(ref s) => {
-                                if s != root_tt {
-                                    return Err(ApplicationError::unauthorized(
-                                        "token caveat does not match authority token_type",
-                                    ));
-                                }
-                            }
-                            _ => {
+    for check in checks {
+        for rule in &check.queries {
+            for pred in &rule.body {
+                if pred.name == "token_type"
+                    && let Some(term) = pred.terms.first()
+                {
+                    match term.clone() {
+                        Term::Str(ref s) => {
+                            if s != root_tt {
                                 return Err(ApplicationError::unauthorized(
-                                    "invalid token_type term in caveat",
+                                    "token caveat does not match authority token_type",
                                 ));
                             }
+                        }
+                        _ => {
+                            return Err(ApplicationError::unauthorized(
+                                "invalid token_type term in caveat",
+                            ));
                         }
                     }
                 }

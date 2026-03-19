@@ -84,6 +84,12 @@ impl ArticleQuery {
     }
 }
 
+impl Default for ArticleQuery {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 pub trait ArticleRevisionRepository: Send + Sync {
     async fn append(&self, article: &Article, edited_by: Option<UserId>) -> DomainResult<()>;

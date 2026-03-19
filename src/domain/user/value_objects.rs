@@ -45,11 +45,14 @@ impl Capability {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash, Type, ToSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash, Type, ToSchema, Default,
+)]
 #[sqlx(type_name = "user_role", rename_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Admin,
+    #[default]
     Author,
 }
 
@@ -82,12 +85,6 @@ impl Role {
                 Cap::new("articles", "view:drafts"),
             ]),
         }
-    }
-}
-
-impl Default for Role {
-    fn default() -> Self {
-        Role::Author
     }
 }
 

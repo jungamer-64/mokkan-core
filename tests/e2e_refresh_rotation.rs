@@ -155,7 +155,7 @@ async fn refresh_token_single_use_and_concurrent_rotation() {
 
     let repo = Arc::new(InMemoryUserRepo::new(users));
     let password_hasher = Arc::new(support::DummyPasswordHasher);
-    let token_manager = Arc::new(FakeTokenManager::default());
+    let token_manager = Arc::new(FakeTokenManager);
     let clock = Arc::new(support::DummyClock);
     let session_store = Arc::new(
         mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new(),

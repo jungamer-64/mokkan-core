@@ -113,16 +113,16 @@ pub fn weak_match(a: &str, b: &str) -> bool {
 /// ETag value. Supports the `*` wildcard and comma-separated candidate
 /// lists. Returns `true` if any candidate weakly matches `actual`.
 pub fn inm_matches(headers: &HeaderMap, actual: &str) -> bool {
-    if let Some(v) = headers.get(header::IF_NONE_MATCH) {
-        if let Ok(sv) = v.to_str() {
-            let s = sv.trim();
-            if s == "*" {
+    if let Some(v) = headers.get(header::IF_NONE_MATCH)
+        && let Ok(sv) = v.to_str()
+    {
+        let s = sv.trim();
+        if s == "*" {
+            return true;
+        }
+        for candidate in s.split(',').map(str::trim) {
+            if weak_match(candidate, actual) {
                 return true;
-            }
-            for candidate in s.split(',').map(str::trim) {
-                if weak_match(candidate, actual) {
-                    return true;
-                }
             }
         }
     }
@@ -132,12 +132,11 @@ pub fn inm_matches(headers: &HeaderMap, actual: &str) -> bool {
 /// Check whether the request `If-Modified-Since` header matches the
 /// server's Last-Modified value. Returns `true` when present and equal.
 pub fn ims_matches(headers: &HeaderMap) -> bool {
-    if let Some(v) = headers.get(header::IF_MODIFIED_SINCE) {
-        if let Ok(s) = v.to_str() {
-            if let Some(lm) = last_modified_str() {
-                return s == lm;
-            }
-        }
+    if let Some(v) = headers.get(header::IF_MODIFIED_SINCE)
+        && let Ok(s) = v.to_str()
+        && let Some(lm) = last_modified_str()
+    {
+        return s == lm;
     }
     false
 }

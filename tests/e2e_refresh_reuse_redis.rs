@@ -226,7 +226,7 @@ async fn refresh_token_single_use_with_redis_store() {
     let password_hasher: Arc<dyn mokkan_core::application::ports::security::PasswordHasher> =
         Arc::new(support::mocks::DummyPasswordHasher);
     let token_manager: Arc<dyn mokkan_core::application::ports::security::TokenManager> =
-        Arc::new(FakeTokenManager::default());
+        Arc::new(FakeTokenManager);
     let clock: Arc<dyn mokkan_core::application::ports::time::Clock> =
         Arc::new(support::mocks::DummyClock);
 

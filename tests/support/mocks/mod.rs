@@ -1,8 +1,6 @@
 // tests/support/mocks/mod.rs
 //! テストサポートモック再エクスポートモジュール
 #![cfg(test)]
-#![allow(dead_code)]
-#![allow(unused_imports)]
 
 pub mod article_repos;
 pub mod audit;

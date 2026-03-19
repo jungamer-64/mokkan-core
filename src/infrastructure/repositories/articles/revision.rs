@@ -111,6 +111,5 @@ impl ArticleRevisionRepository for PostgresArticleRevisionRepository {
         rows.into_iter()
             .map(ArticleRevision::try_from)
             .collect::<Result<Vec<_>, _>>()
-            .map_err(Into::into)
     }
 }

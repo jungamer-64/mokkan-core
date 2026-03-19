@@ -84,9 +84,7 @@ type SessionRevocationPort =
         + Send
         + Sync
         + 'static;
-
-/// テスト用のHTTPステートを構築
-fn default_dependencies() -> (
+type DefaultDeps = (
     Arc<UserRepo>,
     Arc<ArticleWriteRepo>,
     Arc<ArticleReadRepo>,
@@ -95,7 +93,10 @@ fn default_dependencies() -> (
     Arc<TokenManagerPort>,
     Arc<ClockPort>,
     Arc<SlugGeneratorPort>,
-) {
+);
+
+/// テスト用のHTTPステートを構築
+fn default_dependencies() -> DefaultDeps {
     (
         Arc::new(mocks::DummyUserRepo),
         Arc::new(mocks::DummyArticleWrite),

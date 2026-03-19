@@ -21,13 +21,12 @@ impl ArticleCommandService {
     ) -> ApplicationResult<ArticleDto> {
         ensure_capability(actor, "articles", "publish")?;
         let id = ArticleId::new(command.id)?;
-        let original_updated_at;
         let mut article = self
             .read_repo
             .find_by_id(id)
             .await?
             .ok_or_else(|| ApplicationError::not_found("article not found"))?;
-        original_updated_at = article.updated_at;
+        let original_updated_at = article.updated_at;
         if article.published == command.publish {
             return Ok(article.into());
         }

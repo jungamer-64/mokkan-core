@@ -39,31 +39,19 @@ impl UserCommandService {
         &self,
         token: &str,
     ) -> ApplicationResult<(crate::domain::user::User, String, String, u32)> {
-        let parsed = self.parse_refresh_token(token).await?;
-        let user_id = self.user_id_for_session(&parsed.session_id).await?;
-        let session_id = parsed.session_id;
-        let nonce = parsed.nonce;
-        let token_ver_in_token = parsed.token_version;
+        let ParsedRefreshToken {
+            session_id,
+            nonce,
+            token_version,
+        } = self.parse_refresh_token(token).await?;
+        let user_id = self.user_id_for_session(&session_id).await?;
+        self.ensure_session_not_revoked(&session_id).await?;
+        let user = self.load_user_for_refresh(user_id).await?;
 
-        if self
-            .session_stores
-            .revocation
-            .is_revoked(&session_id)
-            .await?
-        {
-            return Err(ApplicationError::forbidden("session revoked"));
-        }
-
-        let user = self
-            .user_repo
-            .find_by_id(user_id)
-            .await?
-            .ok_or_else(|| ApplicationError::not_found("user not found"))?;
-
-        self.ensure_token_version_not_revoked(&user, token_ver_in_token)
+        self.ensure_token_version_not_revoked(&user, token_version)
             .await?;
 
-        Ok((user, session_id, nonce, token_ver_in_token))
+        Ok((user, session_id, nonce, token_version))
     }
 
     async fn user_id_for_session(&self, session_id: &str) -> ApplicationResult<UserId> {
@@ -76,6 +64,29 @@ impl UserCommandService {
         UserId::new(meta.user_id).map_err(Into::into)
     }
 
+    async fn ensure_session_not_revoked(&self, session_id: &str) -> ApplicationResult<()> {
+        if self
+            .session_stores
+            .revocation
+            .is_revoked(session_id)
+            .await?
+        {
+            return Err(ApplicationError::forbidden("session revoked"));
+        }
+
+        Ok(())
+    }
+
+    async fn load_user_for_refresh(
+        &self,
+        user_id: UserId,
+    ) -> ApplicationResult<crate::domain::user::User> {
+        self.user_repo
+            .find_by_id(user_id)
+            .await?
+            .ok_or_else(|| ApplicationError::not_found("user not found"))
+    }
+
     async fn ensure_token_version_not_revoked(
         &self,
         user: &crate::domain::user::User,
@@ -86,10 +97,9 @@ impl UserCommandService {
             .token_versions
             .get_min_token_version(i64::from(user.id))
             .await?
+            && token_ver_in_token < min_version
         {
-            if token_ver_in_token < min_version {
-                return Err(ApplicationError::forbidden("token version revoked"));
-            }
+            return Err(ApplicationError::forbidden("token version revoked"));
         }
 
         Ok(())

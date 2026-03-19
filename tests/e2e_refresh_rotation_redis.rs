@@ -166,15 +166,14 @@ async fn redis_available(url: &str) -> bool {
         s.to_string()
     };
 
-    match tokio::time::timeout(
-        Duration::from_secs(2),
-        tokio::net::TcpStream::connect(host_port.clone()),
+    matches!(
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            tokio::net::TcpStream::connect(host_port.clone()),
+        )
+        .await,
+        Ok(Ok(_))
     )
-    .await
-    {
-        Ok(Ok(_)) => true,
-        _ => false,
-    }
 }
 
 #[tokio::test]
@@ -216,7 +215,7 @@ async fn refresh_token_single_use_with_redis_store() {
     let password_hasher: Arc<dyn mokkan_core::application::ports::security::PasswordHasher> =
         Arc::new(support::mocks::DummyPasswordHasher);
     let token_manager: Arc<dyn mokkan_core::application::ports::security::TokenManager> =
-        Arc::new(FakeTokenManager::default());
+        Arc::new(FakeTokenManager);
     let clock: Arc<dyn mokkan_core::application::ports::time::Clock> =
         Arc::new(support::mocks::DummyClock);
 

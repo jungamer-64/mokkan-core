@@ -123,13 +123,13 @@ fn build_services_and_state(
     let article_revision_repo: Arc<dyn ArticleRevisionRepository> =
         Arc::new(PostgresArticleRevisionRepository::new(pool.clone()));
 
-    let password_hasher: Arc<dyn PasswordHasher> = Arc::new(Argon2PasswordHasher::default());
+    let password_hasher: Arc<dyn PasswordHasher> = Arc::new(Argon2PasswordHasher);
     let token_manager_impl =
         BiscuitTokenManager::new(config.biscuit_private_key(), config.token_ttl())?;
     let token_manager: Arc<dyn TokenManager> = Arc::new(token_manager_impl);
     let refresh_token_codec = Arc::new(HmacRefreshTokenCodec::new(config.refresh_token_secret())?);
-    let clock: Arc<dyn Clock> = Arc::new(SystemClock::default());
-    let slugger: Arc<dyn SlugGenerator> = Arc::new(DefaultSlugGenerator::default());
+    let clock: Arc<dyn Clock> = Arc::new(SystemClock);
+    let slugger: Arc<dyn SlugGenerator> = Arc::new(DefaultSlugGenerator);
 
     let audit_log_repo: Arc<dyn mokkan_core::domain::audit::repository::AuditLogRepository> =
         Arc::new(PostgresAuditLogRepository::new(pool.clone()));

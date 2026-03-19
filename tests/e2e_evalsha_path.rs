@@ -89,10 +89,10 @@ async fn script_loads_and_evalsha_path_behavior() {
     // Use a blocking redis client in a spawn_blocking to avoid blocking the async runtime.
     let url_clone = url.clone();
     let _ = tokio::task::spawn_blocking(move || {
-        if let Ok(client) = redis::Client::open(url_clone) {
-            if let Ok(mut conn) = client.get_connection() {
-                let _: redis::RedisResult<()> = redis::cmd("SCRIPT").arg("FLUSH").query(&mut conn);
-            }
+        if let Ok(client) = redis::Client::open(url_clone)
+            && let Ok(mut conn) = client.get_connection()
+        {
+            let _: redis::RedisResult<()> = redis::cmd("SCRIPT").arg("FLUSH").query(&mut conn);
         }
     })
     .await;

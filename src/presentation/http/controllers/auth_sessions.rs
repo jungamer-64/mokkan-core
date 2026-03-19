@@ -32,7 +32,7 @@ pub async fn list_sessions(
             let created = if si.created_at_unix > 0 {
                 Utc.timestamp_opt(si.created_at_unix, 0)
                     .single()
-                    .unwrap_or_else(|| Utc::now())
+                    .unwrap_or_else(Utc::now)
             } else {
                 Utc::now()
             };
@@ -89,12 +89,12 @@ pub async fn revoke_session(
 
     revocation_store.revoke(&id).await.into_http()?;
 
-    if let Some(meta) = metadata_store.get_session_metadata(&id).await.into_http()? {
-        if meta.user_id != 0 {
-            let _ = metadata_store
-                .remove_session_for_user(meta.user_id, &id)
-                .await;
-        }
+    if let Some(meta) = metadata_store.get_session_metadata(&id).await.into_http()?
+        && meta.user_id != 0
+    {
+        let _ = metadata_store
+            .remove_session_for_user(meta.user_id, &id)
+            .await;
     }
     let _ = metadata_store.delete_session_metadata(&id).await;
 

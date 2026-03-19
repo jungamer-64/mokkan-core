@@ -163,12 +163,11 @@ impl ApplicationServices {
         stored: &AuthorizationCode,
         redirect_uri: Option<&str>,
     ) -> crate::application::ApplicationResult<()> {
-        if let Some(provided) = redirect_uri {
-            if let Some(expected) = stored.redirect_uri.as_deref() {
-                if provided != expected {
-                    return Err(ApplicationError::validation("redirect_uri mismatch"));
-                }
-            }
+        if let Some(provided) = redirect_uri
+            && let Some(expected) = stored.redirect_uri.as_deref()
+            && provided != expected
+        {
+            return Err(ApplicationError::validation("redirect_uri mismatch"));
         }
 
         Ok(())
@@ -241,15 +240,14 @@ impl ApplicationServices {
     ) -> crate::application::ApplicationResult<()> {
         use crate::application::error::ApplicationError;
 
-        if let Some(session_id) = &user.session_id {
-            if self
+        if let Some(session_id) = &user.session_id
+            && self
                 .session_stores
                 .revocation
                 .is_revoked(session_id)
                 .await?
-            {
-                return Err(ApplicationError::unauthorized("session revoked"));
-            }
+        {
+            return Err(ApplicationError::unauthorized("session revoked"));
         }
 
         Ok(())
@@ -261,17 +259,15 @@ impl ApplicationServices {
     ) -> crate::application::ApplicationResult<()> {
         use crate::application::error::ApplicationError;
 
-        if let Some(token_ver) = user.token_version {
-            if let Some(min_ver) = self
+        if let Some(token_ver) = user.token_version
+            && let Some(min_ver) = self
                 .session_stores
                 .token_versions
                 .get_min_token_version(i64::from(user.id))
                 .await?
-            {
-                if token_ver < min_ver {
-                    return Err(ApplicationError::unauthorized("token revoked"));
-                }
-            }
+            && token_ver < min_ver
+        {
+            return Err(ApplicationError::unauthorized("token revoked"));
         }
 
         Ok(())

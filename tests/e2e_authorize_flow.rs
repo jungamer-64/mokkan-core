@@ -2,7 +2,6 @@ use axum::body::Body;
 use axum::http::{Method, Request, StatusCode, header::AUTHORIZATION};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use serde_urlencoded;
 use sha2::{Digest, Sha256};
 use tower::util::ServiceExt as _;
 
@@ -35,7 +34,7 @@ async fn authorize_code_flow_pkce_plain() {
         .expect("code present");
 
     // Exchange the code for tokens using PKCE (plain verifier)
-    let body = serde_urlencoded::to_string(&[
+    let body = serde_urlencoded::to_string([
         ("grant_type", "authorization_code"),
         ("code", code),
         ("code_verifier", "verifier"),
@@ -96,7 +95,7 @@ async fn authorize_code_flow_pkce_s256() {
         .expect("code present");
 
     // Exchange the code for tokens using PKCE S256
-    let body = serde_urlencoded::to_string(&[
+    let body = serde_urlencoded::to_string([
         ("grant_type", "authorization_code"),
         ("code", code),
         ("code_verifier", verifier),

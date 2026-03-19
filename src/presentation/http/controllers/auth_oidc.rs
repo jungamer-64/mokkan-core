@@ -186,15 +186,14 @@ pub async fn revoke(
         .token_manager()
         .authenticate(&payload.token)
         .await
+        && let Some(session_id) = user.session_id.as_ref()
     {
-        if let Some(session_id) = user.session_id.as_ref() {
-            state
-                .services
-                .session_revocation()
-                .revoke(session_id)
-                .await
-                .into_http()?;
-        }
+        state
+            .services
+            .session_revocation()
+            .revoke(session_id)
+            .await
+            .into_http()?;
     }
 
     Ok(Json(crate::presentation::http::openapi::StatusResponse {

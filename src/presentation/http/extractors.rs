@@ -5,7 +5,6 @@ use crate::{
 };
 use axum::{Extension, extract::FromRequestParts, http::request::Parts};
 use headers::{Authorization, HeaderMapExt, authorization::Bearer};
-use std::future::Future;
 
 use super::error::HttpError;
 
@@ -48,12 +47,11 @@ async fn validate_not_revoked(
             .get_min_token_version(user.id.into())
             .await
             .map_err(HttpError::from_error)?
+            && token_ver < min_ver
         {
-            if token_ver < min_ver {
-                return Err(HttpError::from_error(ApplicationError::unauthorized(
-                    "token revoked",
-                )));
-            }
+            return Err(HttpError::from_error(ApplicationError::unauthorized(
+                "token revoked",
+            )));
         }
     }
 
@@ -63,80 +61,67 @@ async fn validate_not_revoked(
 impl FromRequestParts<()> for Authenticated {
     type Rejection = HttpError;
 
-    fn from_request_parts(
-        parts: &mut Parts,
-        state: &(),
-    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        async move {
-            let Extension(app_state) = Extension::<HttpState>::from_request_parts(parts, state)
-                .await
-                .map_err(|_| {
-                    HttpError::from_error(ApplicationError::infrastructure(
-                        "application state missing",
-                    ))
-                })?;
+    async fn from_request_parts(parts: &mut Parts, state: &()) -> Result<Self, Self::Rejection> {
+        let Extension(app_state) = Extension::<HttpState>::from_request_parts(parts, state)
+            .await
+            .map_err(|_| {
+                HttpError::from_error(ApplicationError::infrastructure(
+                    "application state missing",
+                ))
+            })?;
 
-            if let Some(user) = cached_authenticated_user(parts) {
-                return Ok(Self(user));
-            }
-
-            let header = parts
-                .headers
-                .typed_get::<Authorization<Bearer>>()
-                .ok_or_else(|| {
-                    HttpError::from_error(ApplicationError::unauthorized(
-                        "missing Authorization header",
-                    ))
-                })?;
-
-            let token = header.token();
-            let manager = app_state.services.token_manager();
-            // Authorization header present, attempt to authenticate
-            let user = manager
-                .authenticate(token)
-                .await
-                .map_err(HttpError::from_error)?;
-
-            // Validate revocation/token-version using the shared helper
-            validate_not_revoked(&app_state, &user).await?;
-            Ok(Self(user))
+        if let Some(user) = cached_authenticated_user(parts) {
+            return Ok(Self(user));
         }
+
+        let header = parts
+            .headers
+            .typed_get::<Authorization<Bearer>>()
+            .ok_or_else(|| {
+                HttpError::from_error(ApplicationError::unauthorized(
+                    "missing Authorization header",
+                ))
+            })?;
+
+        let token = header.token();
+        let manager = app_state.services.token_manager();
+        let user = manager
+            .authenticate(token)
+            .await
+            .map_err(HttpError::from_error)?;
+
+        validate_not_revoked(&app_state, &user).await?;
+        Ok(Self(user))
     }
 }
 
 impl FromRequestParts<()> for MaybeAuthenticated {
     type Rejection = HttpError;
 
-    fn from_request_parts(
-        parts: &mut Parts,
-        state: &(),
-    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
-        async move {
-            let Extension(app_state) = Extension::<HttpState>::from_request_parts(parts, state)
+    async fn from_request_parts(parts: &mut Parts, state: &()) -> Result<Self, Self::Rejection> {
+        let Extension(app_state) = Extension::<HttpState>::from_request_parts(parts, state)
+            .await
+            .map_err(|_| {
+                HttpError::from_error(ApplicationError::infrastructure(
+                    "application state missing",
+                ))
+            })?;
+
+        if let Some(user) = cached_authenticated_user(parts) {
+            return Ok(Self(Some(user)));
+        }
+
+        if let Some(header) = parts.headers.typed_get::<Authorization<Bearer>>() {
+            let token = header.token();
+            let manager = app_state.services.token_manager();
+            let user = manager
+                .authenticate(token)
                 .await
-                .map_err(|_| {
-                    HttpError::from_error(ApplicationError::infrastructure(
-                        "application state missing",
-                    ))
-                })?;
-
-            if let Some(user) = cached_authenticated_user(parts) {
-                return Ok(Self(Some(user)));
-            }
-
-            if let Some(header) = parts.headers.typed_get::<Authorization<Bearer>>() {
-                let token = header.token();
-                let manager = app_state.services.token_manager();
-                let user = manager
-                    .authenticate(token)
-                    .await
-                    .map_err(HttpError::from_error)?;
-                // Validate revocation/token-version using the shared helper
-                validate_not_revoked(&app_state, &user).await?;
-                Ok(Self(Some(user)))
-            } else {
-                Ok(Self(None))
-            }
+                .map_err(HttpError::from_error)?;
+            validate_not_revoked(&app_state, &user).await?;
+            Ok(Self(Some(user)))
+        } else {
+            Ok(Self(None))
         }
     }
 }

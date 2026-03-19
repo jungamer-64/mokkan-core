@@ -90,7 +90,7 @@ async fn e2e_audit_list_endpoint_returns_200() {
     assert!(
         json.get("items")
             .and_then(|v| v.as_array())
-            .map(|a| a.len() >= 1)
+            .map(|a| !a.is_empty())
             .unwrap_or(false)
     );
 }

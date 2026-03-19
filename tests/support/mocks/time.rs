@@ -11,5 +11,5 @@ static FIXED_NOW: Lazy<DateTime<Utc>> = Lazy::new(|| {
 
 /// 決定論的なタイムスタンプを返す
 pub fn fixed_now() -> DateTime<Utc> {
-    FIXED_NOW.clone()
+    *FIXED_NOW
 }
