@@ -79,7 +79,9 @@ impl ArticleCommandService {
         let new_title = title_opt.clone().unwrap_or_else(|| article.title.clone());
         let new_body = body_opt.clone().unwrap_or_else(|| article.body.clone());
         article.set_content(new_title.clone(), new_body.clone(), now)?;
-        update = update.with_title(new_title.clone()).with_body(new_body.clone());
+        update = update
+            .with_title(new_title.clone())
+            .with_body(new_body.clone());
         update.set_updated_at(article.updated_at);
 
         if let Some(title) = &title_opt {

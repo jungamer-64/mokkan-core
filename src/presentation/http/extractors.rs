@@ -15,6 +15,10 @@ pub struct Authenticated(pub AuthenticatedUser);
 #[derive(Debug, Clone)]
 pub struct MaybeAuthenticated(pub Option<AuthenticatedUser>);
 
+fn cached_authenticated_user(parts: &Parts) -> Option<AuthenticatedUser> {
+    parts.extensions.get::<AuthenticatedUser>().cloned()
+}
+
 // Validate that the authenticated user/session is not revoked and that the
 // token version in the token is greater-or-equal to the user's minimum
 // allowed token version. This centralizes the logic used by both the
@@ -72,6 +76,10 @@ impl FromRequestParts<()> for Authenticated {
                     ))
                 })?;
 
+            if let Some(user) = cached_authenticated_user(parts) {
+                return Ok(Self(user));
+            }
+
             let header = parts
                 .headers
                 .typed_get::<Authorization<Bearer>>()
@@ -112,7 +120,9 @@ impl FromRequestParts<()> for MaybeAuthenticated {
                     ))
                 })?;
 
-            // MaybeAuthenticated: proceed if header present
+            if let Some(user) = cached_authenticated_user(parts) {
+                return Ok(Self(Some(user)));
+            }
 
             if let Some(header) = parts.headers.typed_get::<Authorization<Bearer>>() {
                 let token = header.token();

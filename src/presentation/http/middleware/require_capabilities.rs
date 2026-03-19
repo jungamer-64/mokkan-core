@@ -14,7 +14,7 @@ use headers::{Authorization, HeaderMapExt, authorization::Bearer};
 ///
 /// Usage: `axum::middleware::from_fn(move |req, next| require_capability(req, next, "articles", "create"))`
 pub async fn require_capability(
-    req: Request<Body>,
+    mut req: Request<Body>,
     next: Next,
     resource: &'static str,
     action: &'static str,
@@ -31,7 +31,8 @@ pub async fn require_capability(
                 .authenticate_and_authorize(token, resource, action)
                 .await
             {
-                Ok(_user) => {
+                Ok(user) => {
+                    req.extensions_mut().insert(user);
                     return next.run(req).await;
                 }
                 Err(err) => {

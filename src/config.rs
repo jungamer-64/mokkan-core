@@ -38,6 +38,16 @@ fn default_allowed_origins() -> Vec<String> {
     vec!["http://localhost:3000".into()]
 }
 
+fn validate_biscuit_private_key(value: &str) -> Result<(), ConfigError> {
+    if value.len() != 64 || !value.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(ConfigError::Invalid(
+            "BISCUIT_ROOT_PRIVATE_KEY must be a 32-byte hex string".into(),
+        ));
+    }
+
+    Ok(())
+}
+
 impl AppConfig {
     /// Build configuration from environment variables. Uses sensible defaults
     /// for optional values and validates required keys.
@@ -50,11 +60,7 @@ impl AppConfig {
         let biscuit_private_key = env::var("BISCUIT_ROOT_PRIVATE_KEY")
             .map_err(|_| ConfigError::Missing("BISCUIT_ROOT_PRIVATE_KEY"))?;
 
-        if biscuit_private_key.len() != 64 {
-            return Err(ConfigError::Invalid(
-                "BISCUIT_ROOT_PRIVATE_KEY must be a 32-byte hex string".into(),
-            ));
-        }
+        validate_biscuit_private_key(&biscuit_private_key)?;
 
         let token_ttl_secs = env::var("TOKEN_TTL_SECONDS")
             .ok()
@@ -132,5 +138,22 @@ impl AppConfig {
     /// the configured listen address.
     pub fn oidc_issuer_from_env() -> String {
         std::env::var("OIDC_ISSUER").unwrap_or_else(|_| format!("http://{}", default_listen_addr()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_biscuit_private_key;
+
+    #[test]
+    fn biscuit_private_key_rejects_non_hex_input() {
+        let key = "z".repeat(64);
+        assert!(validate_biscuit_private_key(&key).is_err());
+    }
+
+    #[test]
+    fn biscuit_private_key_accepts_64_hex_chars() {
+        let key = "a".repeat(64);
+        assert!(validate_biscuit_private_key(&key).is_ok());
     }
 }

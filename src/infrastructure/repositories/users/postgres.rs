@@ -176,7 +176,7 @@ impl UserRepository for PostgresUserRepository {
             ));
         }
 
-    let mut builder = self.build_update_query(id, is_active, role, password_hash);
+        let mut builder = self.build_update_query(id, is_active, role, password_hash);
 
         let row = builder
             .build_query_as::<UserRow>()

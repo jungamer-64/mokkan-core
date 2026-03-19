@@ -138,12 +138,9 @@ fn map_rows_to_logs(
     limit: u32,
 ) -> (Vec<AuditLog>, Option<String>) {
     use sqlx::Row;
-    let mut items = Vec::new();
-    // detect if we have an extra row (rows.len() > limit) to set next cursor
-    let mut next_cursor: Option<String> = None;
-    let mut iter = rows.into_iter();
-    for _ in 0..(limit as usize) {
-        if let Some(row) = iter.next() {
+    let mut items = rows
+        .into_iter()
+        .map(|row| {
             let id: i64 = row.try_get("id").unwrap_or_default();
             let user_id: Option<i64> = row.try_get::<Option<i64>, _>("user_id").ok().flatten();
             let user_id =
@@ -157,7 +154,7 @@ fn map_rows_to_logs(
             let created_at: Option<chrono::DateTime<Utc>> =
                 row.try_get("created_at").ok().flatten();
 
-            items.push(AuditLog {
+            AuditLog {
                 id: Some(id),
                 user_id,
                 action,
@@ -167,23 +164,65 @@ fn map_rows_to_logs(
                 ip_address,
                 user_agent,
                 created_at,
-            });
-        }
-    }
-
-    // if remaining iterator has an element, that means there were more than limit rows
-    if let Some(last_row) = iter.next() {
-        // build a cursor from the extra row's created_at and id
-        if let (Ok(created_at_opt), Ok(last_id)) = (
-            last_row.try_get::<Option<chrono::DateTime<Utc>>, _>("created_at"),
-            last_row.try_get::<i64, _>("id"),
-        ) {
-            if let Some(created_at) = created_at_opt {
-                let cursor = AuditLogCursor::new(created_at, last_id);
-                next_cursor = Some(cursor.encode());
             }
-        }
-    }
+        })
+        .collect::<Vec<_>>();
+
+    let next_cursor = trim_to_page_and_build_cursor(&mut items, limit);
 
     (items, next_cursor)
+}
+
+fn trim_to_page_and_build_cursor(items: &mut Vec<AuditLog>, limit: u32) -> Option<String> {
+    if items.len() <= limit as usize {
+        return None;
+    }
+
+    items.truncate(limit as usize);
+    items.last().and_then(|last| {
+        let created_at = last.created_at?;
+        let id = last.id?;
+        Some(AuditLogCursor::new(created_at, id).encode())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::trim_to_page_and_build_cursor;
+    use crate::domain::audit::cursor::AuditLogCursor;
+    use crate::domain::audit::entity::AuditLog;
+    use chrono::{Duration, Utc};
+
+    fn audit_log(id: i64, created_at: chrono::DateTime<Utc>) -> AuditLog {
+        AuditLog {
+            id: Some(id),
+            user_id: None,
+            action: "test".into(),
+            resource_type: "article".into(),
+            resource_id: Some(id),
+            details: None,
+            ip_address: None,
+            user_agent: None,
+            created_at: Some(created_at),
+        }
+    }
+
+    #[test]
+    fn next_cursor_uses_last_item_in_current_page() {
+        let now = Utc::now();
+        let third = audit_log(3, now - Duration::minutes(3));
+        let mut items = vec![
+            audit_log(1, now - Duration::minutes(1)),
+            audit_log(2, now - Duration::minutes(2)),
+            third.clone(),
+        ];
+
+        let next_cursor = trim_to_page_and_build_cursor(&mut items, 2);
+
+        assert_eq!(items.len(), 2);
+        let cursor = AuditLogCursor::decode(&next_cursor.expect("next cursor")).unwrap();
+        assert_eq!(cursor.id, 2);
+        assert_eq!(cursor.created_at, items[1].created_at.unwrap());
+        assert_ne!(cursor.id, third.id.unwrap());
+    }
 }
