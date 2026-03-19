@@ -29,7 +29,7 @@ async fn validate_not_revoked(
 ) -> Result<(), HttpError> {
     // Session-level revocation check
     if let Some(session_id) = &user.session_id {
-        let session_store = app_state.services.session_revocation_store();
+        let session_store = app_state.services.session_revocation();
         if session_store
             .is_revoked(session_id)
             .await
@@ -43,7 +43,7 @@ async fn validate_not_revoked(
 
     // Global token-version check
     if let Some(token_ver) = user.token_version {
-        let session_store = app_state.services.session_revocation_store();
+        let session_store = app_state.services.token_version_store();
         if let Some(min_ver) = session_store
             .get_min_token_version(user.id.into())
             .await

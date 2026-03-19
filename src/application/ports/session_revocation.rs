@@ -1,6 +1,7 @@
 use crate::application::ApplicationResult;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// Information about a session stored in the backing store.
 /// `created_at_unix` is seconds since epoch (UTC).
@@ -132,4 +133,23 @@ impl<T> SessionRevocationStore for T where
         + Send
         + Sync
 {
+}
+
+#[derive(Clone)]
+pub struct SessionStorePorts {
+    pub revocation: Arc<dyn SessionRevocation>,
+    pub token_versions: Arc<dyn TokenVersionStore>,
+    pub refresh_nonces: Arc<dyn RefreshNonceStore>,
+    pub session_metadata: Arc<dyn SessionMetadataStore>,
+}
+
+impl SessionStorePorts {
+    pub fn from_store(store: Arc<dyn SessionRevocationStore>) -> Self {
+        Self {
+            revocation: store.clone(),
+            token_versions: store.clone(),
+            refresh_nonces: store.clone(),
+            session_metadata: store,
+        }
+    }
 }

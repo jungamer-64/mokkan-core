@@ -61,10 +61,12 @@ impl UserCommandService {
             .await?;
         token.refresh_token = Some(refresh_token);
 
-        self.session_revocation_store
+        self.session_stores
+            .session_metadata
             .add_session_for_user(i64::from(user.id), session_id)
             .await?;
-        self.session_revocation_store
+        self.session_stores
+            .session_metadata
             .set_session_metadata(
                 i64::from(user.id),
                 session_id,
@@ -79,7 +81,8 @@ impl UserCommandService {
 
     async fn create_session_refresh_nonce(&self, session_id: &str) -> ApplicationResult<String> {
         let refresh_nonce = Uuid::new_v4().to_string();
-        self.session_revocation_store
+        self.session_stores
+            .refresh_nonces
             .set_session_refresh_nonce(session_id, &refresh_nonce)
             .await?;
         Ok(refresh_nonce)

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::application::ports::{
     refresh_token::RefreshTokenCodec,
     security::{PasswordHasher, TokenManager},
-    session_revocation::SessionRevocationStore,
+    session_revocation::{SessionRevocationStore, SessionStorePorts},
     time::Clock,
 };
 use crate::domain::user::UserRepository;
@@ -13,7 +13,7 @@ pub struct UserCommandService {
     pub(super) password_hasher: Arc<dyn PasswordHasher>,
     pub(super) token_manager: Arc<dyn TokenManager>,
     pub(super) refresh_token_codec: Arc<dyn RefreshTokenCodec>,
-    pub(super) session_revocation_store: Arc<dyn SessionRevocationStore>,
+    pub(super) session_stores: SessionStorePorts,
     pub(super) clock: Arc<dyn Clock>,
 }
 
@@ -31,7 +31,7 @@ impl UserCommandService {
             password_hasher,
             token_manager,
             refresh_token_codec,
-            session_revocation_store,
+            session_stores: SessionStorePorts::from_store(session_revocation_store),
             clock,
         }
     }

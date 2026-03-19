@@ -7,7 +7,10 @@ use crate::{
         ports::{
             refresh_token::RefreshTokenCodec,
             security::{PasswordHasher, TokenManager},
-            session_revocation::SessionRevocationStore,
+            session_revocation::{
+                SessionMetadataStore, SessionRevocation, SessionRevocationStore, SessionStorePorts,
+                TokenVersionStore,
+            },
             time::Clock,
             util::SlugGenerator,
         },
@@ -34,6 +37,7 @@ pub struct ApplicationServices {
     pub article_queries: Arc<ArticleQueryService>,
     pub user_queries: Arc<UserQueryService>,
     token_manager: Arc<dyn TokenManager>,
+    session_stores: SessionStorePorts,
     session_revocation_store: Arc<dyn SessionRevocationStore>,
     authorization_code_store:
         Arc<dyn crate::application::ports::authorization_code::AuthorizationCodeStore>,
@@ -93,6 +97,7 @@ impl ApplicationServices {
             Arc::clone(&deps.article_revision_repo),
         ));
         let user_queries = Arc::new(UserQueryService::new(Arc::clone(&deps.user_repo)));
+        let session_stores = SessionStorePorts::from_store(Arc::clone(&session_revocation_store));
 
         Self {
             user_commands,
@@ -100,6 +105,7 @@ impl ApplicationServices {
             article_queries,
             user_queries,
             token_manager,
+            session_stores,
             session_revocation_store,
             authorization_code_store,
             audit_log_repo: deps.audit_log_repo,
@@ -112,6 +118,18 @@ impl ApplicationServices {
 
     pub fn session_revocation_store(&self) -> Arc<dyn SessionRevocationStore> {
         Arc::clone(&self.session_revocation_store)
+    }
+
+    pub fn session_revocation(&self) -> Arc<dyn SessionRevocation> {
+        Arc::clone(&self.session_stores.revocation)
+    }
+
+    pub fn token_version_store(&self) -> Arc<dyn TokenVersionStore> {
+        Arc::clone(&self.session_stores.token_versions)
+    }
+
+    pub fn session_metadata_store(&self) -> Arc<dyn SessionMetadataStore> {
+        Arc::clone(&self.session_stores.session_metadata)
     }
 
     pub fn authorization_code_store(
@@ -224,7 +242,12 @@ impl ApplicationServices {
         use crate::application::error::ApplicationError;
 
         if let Some(session_id) = &user.session_id {
-            if self.session_revocation_store.is_revoked(session_id).await? {
+            if self
+                .session_stores
+                .revocation
+                .is_revoked(session_id)
+                .await?
+            {
                 return Err(ApplicationError::unauthorized("session revoked"));
             }
         }
@@ -240,7 +263,8 @@ impl ApplicationServices {
 
         if let Some(token_ver) = user.token_version {
             if let Some(min_ver) = self
-                .session_revocation_store
+                .session_stores
+                .token_versions
                 .get_min_token_version(i64::from(user.id))
                 .await?
             {

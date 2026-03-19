@@ -67,7 +67,8 @@ impl UserCommandService {
         };
 
         if self
-            .session_revocation_store
+            .session_stores
+            .revocation
             .is_revoked(&session_id)
             .await?
         {
@@ -88,7 +89,8 @@ impl UserCommandService {
 
     async fn user_id_for_session(&self, session_id: &str) -> ApplicationResult<UserId> {
         let meta = self
-            .session_revocation_store
+            .session_stores
+            .session_metadata
             .get_session_metadata(session_id)
             .await?
             .ok_or_else(|| ApplicationError::validation("invalid refresh token"))?;
@@ -101,7 +103,8 @@ impl UserCommandService {
         token_ver_in_token: u32,
     ) -> ApplicationResult<()> {
         if let Some(min_version) = self
-            .session_revocation_store
+            .session_stores
+            .token_versions
             .get_min_token_version(i64::from(user.id))
             .await?
         {
@@ -121,18 +124,21 @@ impl UserCommandService {
     ) -> ApplicationResult<AuthTokenDto> {
         let new_nonce = Uuid::new_v4().to_string();
         let swapped = self
-            .session_revocation_store
+            .session_stores
+            .refresh_nonces
             .compare_and_swap_session_refresh_nonce(session_id, expected_nonce, &new_nonce)
             .await?;
 
         if !swapped {
             let used = self
-                .session_revocation_store
+                .session_stores
+                .refresh_nonces
                 .is_session_refresh_nonce_used(session_id, expected_nonce)
                 .await?;
 
             if used {
-                self.session_revocation_store
+                self.session_stores
+                    .revocation
                     .revoke_sessions_for_user(i64::from(user.id))
                     .await?;
                 return Err(ApplicationError::forbidden("refresh token reused"));
@@ -178,7 +184,8 @@ impl UserCommandService {
         nonce: &str,
     ) -> ApplicationResult<String> {
         let current_min = self
-            .session_revocation_store
+            .session_stores
+            .token_versions
             .get_min_token_version(i64::from(user.id))
             .await?
             .unwrap_or(0);
