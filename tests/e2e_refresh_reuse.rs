@@ -10,7 +10,10 @@ mod support;
 use mokkan_core::application::commands::users::{
     LoginUserCommand, RefreshTokenCommand, UserCommandService,
 };
-use mokkan_core::application::ports::session_revocation::{RefreshNonceStore, SessionRevocation};
+use mokkan_core::application::ports::{
+    refresh_token::{DecodedRefreshToken, RefreshTokenCodec},
+    session_revocation::{OpaqueRefreshTokenStore, RefreshNonceStore, SessionRevocation},
+};
 use mokkan_core::domain::user::entity::User;
 use mokkan_core::domain::user::value_objects::{PasswordHash, Role, UserId, Username};
 
@@ -174,17 +177,18 @@ async fn refresh_token_reuse_triggers_revocation_in_memory() {
     let session_store = Arc::new(
         mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new(),
     );
+    let refresh_token_codec = Arc::new(
+        mokkan_core::infrastructure::security::refresh_token::HmacRefreshTokenCodec::new(
+            "test-refresh-secret",
+        )
+        .expect("refresh token codec"),
+    );
 
     let svc = Arc::new(UserCommandService::new(
         repo,
         password_hasher,
         token_manager,
-        Arc::new(
-            mokkan_core::infrastructure::security::refresh_token::HmacRefreshTokenCodec::new(
-                "test-refresh-secret",
-            )
-            .expect("refresh token codec"),
-        ),
+        refresh_token_codec.clone(),
         session_store.clone(),
         clock,
     ));
@@ -199,16 +203,21 @@ async fn refresh_token_reuse_triggers_revocation_in_memory() {
         .expect("login");
     let refresh_token = login.token.refresh_token.expect("refresh token returned");
     let session_id = login.token.session_id.expect("session id");
-    assert!(refresh_token.starts_with("rt2."));
-    let parts: Vec<_> = refresh_token.split('.').collect();
-    assert_eq!(parts.len(), 3);
-    let payload = URL_SAFE_NO_PAD.decode(parts[1]).expect("decode payload");
-    let payload: serde_json::Value = serde_json::from_slice(&payload).expect("json payload");
-    assert!(payload.get("user_id").is_none());
-    assert_eq!(
-        payload.get("sid").and_then(|v| v.as_str()),
-        Some(session_id.as_str())
-    );
+    assert!(refresh_token.starts_with("rt3."));
+
+    let token_id = match refresh_token_codec
+        .decode(&refresh_token)
+        .expect("decode rt3 token")
+    {
+        DecodedRefreshToken::OpaqueHandle { token_id } => token_id,
+        other => panic!("expected opaque handle token, got {other:?}"),
+    };
+    let stored_record = session_store
+        .get_refresh_token_record(&token_id)
+        .await
+        .expect("load stored rt3 record")
+        .expect("stored rt3 record");
+    assert_eq!(stored_record.session_id, session_id);
 
     let legacy_login = svc
         .login(LoginUserCommand {
@@ -258,4 +267,13 @@ async fn refresh_token_reuse_triggers_revocation_in_memory() {
         .await
         .expect("check revoked");
     assert!(revoked, "session should be revoked after reuse detection");
+
+    let stored_after_revoke = session_store
+        .get_refresh_token_record(&token_id)
+        .await
+        .expect("load stored rt3 record after revoke");
+    assert!(
+        stored_after_revoke.is_none(),
+        "revoking the session should clean up stored opaque refresh handles"
+    );
 }

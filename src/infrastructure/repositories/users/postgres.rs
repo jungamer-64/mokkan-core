@@ -24,8 +24,8 @@ impl PostgresUserRepository {
         is_active: Option<bool>,
         role: Option<Role>,
         password_hash: Option<PasswordHash>,
-    ) -> QueryBuilder<Postgres> {
-        let mut builder: QueryBuilder<Postgres> = QueryBuilder::new("UPDATE users SET ");
+    ) -> QueryBuilder<'_, Postgres> {
+        let mut builder: QueryBuilder<'_, Postgres> = QueryBuilder::new("UPDATE users SET ");
         let mut first = true;
 
         if let Some(is_active) = is_active {
@@ -50,7 +50,6 @@ impl PostgresUserRepository {
             if !first {
                 builder.push(", ");
             }
-            first = false;
             builder.push("password_hash = ");
             let value: String = password_hash.into();
             builder.push_bind(value);

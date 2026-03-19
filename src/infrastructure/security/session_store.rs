@@ -1,8 +1,8 @@
 // src/infrastructure/security/session_store.rs
 use crate::application::ApplicationResult;
 use crate::application::ports::session_revocation::{
-    RefreshNonceStore, SessionMetadataStore, SessionRevocation, SessionRevocationStore,
-    TokenVersionStore,
+    OpaqueRefreshTokenStore, RefreshNonceStore, RefreshTokenRecord, SessionMetadataStore,
+    SessionRevocation, SessionRevocationStore, TokenVersionStore,
 };
 use async_trait::async_trait;
 use std::collections::{HashMap, HashSet};
@@ -30,6 +30,10 @@ pub struct InMemorySessionRevocationStore {
     user_sessions: Mutex<HashMap<i64, HashSet<String>>>,
     // per-session metadata (session_id -> SessionMeta)
     session_meta: Mutex<HashMap<String, SessionMeta>>,
+    // opaque refresh token record (token_id -> record)
+    refresh_token_records: Mutex<HashMap<String, RefreshTokenRecord>>,
+    // reverse index for refresh token cleanup (session_id -> token_ids)
+    session_refresh_tokens: Mutex<HashMap<String, HashSet<String>>>,
 }
 
 impl InMemorySessionRevocationStore {
@@ -45,6 +49,8 @@ impl InMemorySessionRevocationStore {
             used_nonces: Mutex::new(HashMap::new()),
             user_sessions: Mutex::new(HashMap::new()),
             session_meta: Mutex::new(HashMap::new()),
+            refresh_token_records: Mutex::new(HashMap::new()),
+            session_refresh_tokens: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -59,6 +65,18 @@ impl SessionRevocation for InMemorySessionRevocationStore {
     async fn revoke(&self, session_id: &str) -> ApplicationResult<()> {
         let mut guard = self.revoked.lock().unwrap();
         guard.insert(session_id.to_string());
+        drop(guard);
+
+        let mut tokens_guard = self.session_refresh_tokens.lock().unwrap();
+        let token_ids = tokens_guard.remove(session_id);
+        drop(tokens_guard);
+
+        if let Some(token_ids) = token_ids {
+            let mut records_guard = self.refresh_token_records.lock().unwrap();
+            for token_id in token_ids {
+                records_guard.remove(&token_id);
+            }
+        }
         Ok(())
     }
 
@@ -73,7 +91,20 @@ impl SessionRevocation for InMemorySessionRevocationStore {
 
         if !sessions.is_empty() {
             let mut revoked_guard = self.revoked.lock().unwrap();
-            revoked_guard.extend(sessions.into_iter());
+            revoked_guard.extend(sessions.iter().cloned());
+            drop(revoked_guard);
+
+            let mut tokens_guard = self.session_refresh_tokens.lock().unwrap();
+            let mut token_ids = Vec::new();
+            for session_id in sessions {
+                token_ids.extend(tokens_guard.remove(&session_id).into_iter().flatten());
+            }
+            drop(tokens_guard);
+
+            let mut records_guard = self.refresh_token_records.lock().unwrap();
+            for token_id in token_ids {
+                records_guard.remove(&token_id);
+            }
         }
 
         Ok(())
@@ -284,6 +315,63 @@ impl SessionMetadataStore for InMemorySessionRevocationStore {
         } else {
             Ok(None)
         }
+    }
+}
+
+#[async_trait]
+impl OpaqueRefreshTokenStore for InMemorySessionRevocationStore {
+    async fn store_refresh_token_record(
+        &self,
+        token_id: &str,
+        record: &RefreshTokenRecord,
+    ) -> ApplicationResult<()> {
+        let mut records_guard = self.refresh_token_records.lock().unwrap();
+        records_guard.insert(token_id.to_string(), record.clone());
+        drop(records_guard);
+
+        let mut session_tokens_guard = self.session_refresh_tokens.lock().unwrap();
+        session_tokens_guard
+            .entry(record.session_id.clone())
+            .or_default()
+            .insert(token_id.to_string());
+        Ok(())
+    }
+
+    async fn get_refresh_token_record(
+        &self,
+        token_id: &str,
+    ) -> ApplicationResult<Option<RefreshTokenRecord>> {
+        let guard = self.refresh_token_records.lock().unwrap();
+        Ok(guard.get(token_id).cloned())
+    }
+
+    async fn delete_refresh_token_record(&self, token_id: &str) -> ApplicationResult<()> {
+        let mut records_guard = self.refresh_token_records.lock().unwrap();
+        if let Some(record) = records_guard.remove(token_id) {
+            drop(records_guard);
+            let mut session_tokens_guard = self.session_refresh_tokens.lock().unwrap();
+            if let Some(token_ids) = session_tokens_guard.get_mut(&record.session_id) {
+                token_ids.remove(token_id);
+                if token_ids.is_empty() {
+                    session_tokens_guard.remove(&record.session_id);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn delete_refresh_tokens_for_session(&self, session_id: &str) -> ApplicationResult<()> {
+        let mut session_tokens_guard = self.session_refresh_tokens.lock().unwrap();
+        if let Some(token_ids) = session_tokens_guard.remove(session_id) {
+            drop(session_tokens_guard);
+            let mut records_guard = self.refresh_token_records.lock().unwrap();
+            for token_id in token_ids {
+                records_guard.remove(&token_id);
+            }
+        }
+
+        Ok(())
     }
 }
 

@@ -3,7 +3,7 @@ use crate::{
     application::{
         dto::{AuthTokenDto, TokenSubject},
         error::{ApplicationError, ApplicationResult},
-        ports::refresh_token::RefreshTokenClaims,
+        ports::{refresh_token::DecodedRefreshToken, session_revocation::RefreshTokenRecord},
     },
     domain::user::UserId,
 };
@@ -11,7 +11,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use uuid::Uuid;
 
 enum ParsedRefreshToken {
-    Signed {
+    SessionBacked {
         session_id: String,
         nonce: String,
         token_version: u32,
@@ -50,7 +50,7 @@ impl UserCommandService {
     ) -> ApplicationResult<(crate::domain::user::User, String, String, u32)> {
         let parsed = self.parse_refresh_token(token).await?;
         let (user_id, session_id, nonce, token_ver_in_token) = match parsed {
-            ParsedRefreshToken::Signed {
+            ParsedRefreshToken::SessionBacked {
                 session_id,
                 nonce,
                 token_version,
@@ -190,21 +190,54 @@ impl UserCommandService {
             .await?
             .unwrap_or(0);
 
-        self.refresh_token_codec.encode(&RefreshTokenClaims {
-            session_id: session_id.to_string(),
-            nonce: nonce.to_string(),
-            token_version: current_min,
+        let token_id = Uuid::new_v4().to_string();
+        self.session_stores
+            .opaque_refresh_tokens
+            .store_refresh_token_record(
+                &token_id,
+                &RefreshTokenRecord {
+                    session_id: session_id.to_string(),
+                    nonce: nonce.to_string(),
+                    token_version: current_min,
+                },
+            )
+            .await?;
+
+        self.refresh_token_codec.encode_opaque_handle(&token_id)
+    }
+
+    async fn load_opaque_refresh_token(
+        &self,
+        token_id: &str,
+    ) -> ApplicationResult<ParsedRefreshToken> {
+        let record = self
+            .session_stores
+            .opaque_refresh_tokens
+            .get_refresh_token_record(token_id)
+            .await?
+            .ok_or_else(|| ApplicationError::validation("invalid refresh token"))?;
+
+        Ok(ParsedRefreshToken::SessionBacked {
+            session_id: record.session_id,
+            nonce: record.nonce,
+            token_version: record.token_version,
         })
     }
 
     async fn parse_refresh_token(&self, token: &str) -> ApplicationResult<ParsedRefreshToken> {
         if self.refresh_token_codec.can_decode(token) {
-            let claims = self.refresh_token_codec.decode(token)?;
-            return Ok(ParsedRefreshToken::Signed {
-                session_id: claims.session_id,
-                nonce: claims.nonce,
-                token_version: claims.token_version,
-            });
+            return match self.refresh_token_codec.decode(token)? {
+                DecodedRefreshToken::OpaqueHandle { token_id } => {
+                    self.load_opaque_refresh_token(&token_id).await
+                }
+                DecodedRefreshToken::SignedClaims(claims) => {
+                    Ok(ParsedRefreshToken::SessionBacked {
+                        session_id: claims.session_id,
+                        nonce: claims.nonce,
+                        token_version: claims.token_version,
+                    })
+                }
+            };
         }
 
         let (user_id_part, session_id, nonce, token_ver_str) =

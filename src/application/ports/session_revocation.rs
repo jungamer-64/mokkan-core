@@ -15,6 +15,13 @@ pub struct SessionInfo {
     pub revoked: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RefreshTokenRecord {
+    pub session_id: String,
+    pub nonce: String,
+    pub token_version: u32,
+}
+
 #[async_trait]
 pub trait SessionRevocation: Send + Sync {
     /// Return true if the given session id has been revoked.
@@ -120,8 +127,36 @@ pub trait SessionMetadataStore: Send + Sync {
     async fn delete_session_metadata(&self, session_id: &str) -> ApplicationResult<()>;
 }
 
+#[async_trait]
+pub trait OpaqueRefreshTokenStore: Send + Sync {
+    /// Store the server-side record for an opaque refresh token handle.
+    async fn store_refresh_token_record(
+        &self,
+        token_id: &str,
+        record: &RefreshTokenRecord,
+    ) -> ApplicationResult<()>;
+
+    /// Load the stored record for an opaque refresh token handle.
+    async fn get_refresh_token_record(
+        &self,
+        token_id: &str,
+    ) -> ApplicationResult<Option<RefreshTokenRecord>>;
+
+    /// Delete a single opaque refresh token handle.
+    async fn delete_refresh_token_record(&self, token_id: &str) -> ApplicationResult<()>;
+
+    /// Delete every opaque refresh token handle associated with a session.
+    async fn delete_refresh_tokens_for_session(&self, session_id: &str) -> ApplicationResult<()>;
+}
+
 pub trait SessionRevocationStore:
-    SessionRevocation + TokenVersionStore + RefreshNonceStore + SessionMetadataStore + Send + Sync
+    SessionRevocation
+    + TokenVersionStore
+    + RefreshNonceStore
+    + SessionMetadataStore
+    + OpaqueRefreshTokenStore
+    + Send
+    + Sync
 {
 }
 
@@ -130,6 +165,7 @@ impl<T> SessionRevocationStore for T where
         + TokenVersionStore
         + RefreshNonceStore
         + SessionMetadataStore
+        + OpaqueRefreshTokenStore
         + Send
         + Sync
 {
@@ -141,6 +177,7 @@ pub struct SessionStorePorts {
     pub token_versions: Arc<dyn TokenVersionStore>,
     pub refresh_nonces: Arc<dyn RefreshNonceStore>,
     pub session_metadata: Arc<dyn SessionMetadataStore>,
+    pub opaque_refresh_tokens: Arc<dyn OpaqueRefreshTokenStore>,
 }
 
 impl SessionStorePorts {
@@ -149,7 +186,8 @@ impl SessionStorePorts {
             revocation: store.clone(),
             token_versions: store.clone(),
             refresh_nonces: store.clone(),
-            session_metadata: store,
+            session_metadata: store.clone(),
+            opaque_refresh_tokens: store,
         }
     }
 }

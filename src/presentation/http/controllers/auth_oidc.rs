@@ -190,7 +190,7 @@ pub async fn revoke(
         if let Some(session_id) = user.session_id.as_ref() {
             state
                 .services
-                .session_revocation_store()
+                .session_revocation()
                 .revoke(session_id)
                 .await
                 .into_http()?;

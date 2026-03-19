@@ -363,7 +363,7 @@ pub async fn logout(
     if let Some(session_id) = &user.session_id {
         state
             .services
-            .session_revocation_store()
+            .session_revocation()
             .revoke(session_id)
             .await
             .into_http()?;

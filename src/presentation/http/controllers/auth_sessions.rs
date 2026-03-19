@@ -20,7 +20,7 @@ pub async fn list_sessions(
     Extension(state): Extension<HttpState>,
     Authenticated(user): Authenticated,
 ) -> HttpResult<Json<Vec<crate::application::dto::SessionInfoDto>>> {
-    let store = state.services.session_revocation_store();
+    let store = state.services.session_metadata_store();
     let infos = store
         .list_sessions_for_user_with_meta(user.id.into())
         .await
@@ -68,10 +68,11 @@ pub async fn revoke_session(
     Authenticated(user): Authenticated,
     Path(id): Path<String>,
 ) -> HttpResult<Json<crate::presentation::http::openapi::StatusResponse>> {
-    let store = state.services.session_revocation_store();
+    let metadata_store = state.services.session_metadata_store();
+    let revocation_store = state.services.session_revocation();
 
     let is_owner = {
-        let sessions = store
+        let sessions = metadata_store
             .list_sessions_for_user(user.id.into())
             .await
             .into_http()?;
@@ -86,14 +87,16 @@ pub async fn revoke_session(
         ));
     }
 
-    store.revoke(&id).await.into_http()?;
+    revocation_store.revoke(&id).await.into_http()?;
 
-    if let Some(meta) = store.get_session_metadata(&id).await.into_http()? {
+    if let Some(meta) = metadata_store.get_session_metadata(&id).await.into_http()? {
         if meta.user_id != 0 {
-            let _ = store.remove_session_for_user(meta.user_id, &id).await;
+            let _ = metadata_store
+                .remove_session_for_user(meta.user_id, &id)
+                .await;
         }
     }
-    let _ = store.delete_session_metadata(&id).await;
+    let _ = metadata_store.delete_session_metadata(&id).await;
 
     Ok(Json(crate::presentation::http::openapi::StatusResponse {
         status: "session_revoked".into(),

@@ -2,8 +2,8 @@
 use crate::application::ApplicationResult;
 use crate::application::error::ApplicationError;
 use crate::application::ports::session_revocation::{
-    RefreshNonceStore, SessionMetadataStore, SessionRevocation, SessionRevocationStore,
-    TokenVersionStore,
+    OpaqueRefreshTokenStore, RefreshNonceStore, RefreshTokenRecord, SessionMetadataStore,
+    SessionRevocation, SessionRevocationStore, TokenVersionStore,
 };
 use async_trait::async_trait;
 use deadpool_redis::{Config as DeadpoolConfig, Connection, Pool, Runtime};
@@ -216,6 +216,41 @@ impl RedisSessionRevocationStore {
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
         Ok(replaced)
     }
+
+    fn refresh_token_record_key(token_id: &str) -> String {
+        format!("refresh_token:record:{token_id}")
+    }
+
+    fn session_refresh_tokens_key(session_id: &str) -> String {
+        format!("session_refresh_tokens:{session_id}")
+    }
+
+    async fn delete_refresh_tokens_for_session_inner(
+        &self,
+        conn: &mut Connection,
+        session_id: &str,
+    ) -> ApplicationResult<()> {
+        let session_tokens_key = Self::session_refresh_tokens_key(session_id);
+        let token_ids: Vec<String> = conn
+            .smembers(&session_tokens_key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        for token_id in token_ids {
+            let record_key = Self::refresh_token_record_key(&token_id);
+            let _: () = conn
+                .del(record_key)
+                .await
+                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        }
+
+        let _: () = conn
+            .del(session_tokens_key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -246,6 +281,8 @@ impl SessionRevocation for RedisSessionRevocationStore {
         conn.set::<_, _, ()>(key, 1)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        self.delete_refresh_tokens_for_session_inner(&mut conn, session_id)
+            .await?;
         Ok(())
     }
 
@@ -288,6 +325,11 @@ impl SessionRevocation for RedisSessionRevocationStore {
             .query_async(&mut conn)
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        for session_id in sessions {
+            self.delete_refresh_tokens_for_session_inner(&mut conn, &session_id)
+                .await?;
+        }
 
         Ok(())
     }
@@ -593,14 +635,20 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
             return Ok(None);
         }
 
-        // Retrieve multiple fields at once
-        let (ua, ip, created_opt, user_id_val): (
-            Option<String>,
-            Option<String>,
-            Option<String>,
-            Option<i64>,
-        ) = conn
-            .hget(&meta_key, ("user_agent", "ip", "created_at", "user_id"))
+        let ua: Option<String> = conn
+            .hget(&meta_key, "user_agent")
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        let ip: Option<String> = conn
+            .hget(&meta_key, "ip")
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        let created_opt: Option<String> = conn
+            .hget(&meta_key, "created_at")
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        let user_id_val: Option<i64> = conn
+            .hget(&meta_key, "user_id")
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
 
@@ -637,6 +685,99 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
             .await
             .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
         Ok(())
+    }
+}
+
+#[async_trait]
+impl OpaqueRefreshTokenStore for RedisSessionRevocationStore {
+    async fn store_refresh_token_record(
+        &self,
+        token_id: &str,
+        record: &RefreshTokenRecord,
+    ) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let record_key = Self::refresh_token_record_key(token_id);
+        let session_tokens_key = Self::session_refresh_tokens_key(&record.session_id);
+        let encoded = serde_json::to_string(record)
+            .map_err(|_| ApplicationError::infrastructure("invalid refresh token record"))?;
+
+        conn.set::<_, _, ()>(&record_key, encoded)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        conn.sadd::<_, _, ()>(&session_tokens_key, token_id)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn get_refresh_token_record(
+        &self,
+        token_id: &str,
+    ) -> ApplicationResult<Option<RefreshTokenRecord>> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let record_key = Self::refresh_token_record_key(token_id);
+        let encoded: Option<String> = conn
+            .get(record_key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        encoded
+            .map(|value| {
+                serde_json::from_str(&value)
+                    .map_err(|_| ApplicationError::infrastructure("invalid refresh token record"))
+            })
+            .transpose()
+    }
+
+    async fn delete_refresh_token_record(&self, token_id: &str) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        let record_key = Self::refresh_token_record_key(token_id);
+        let encoded: Option<String> = conn
+            .get(&record_key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        if let Some(value) = encoded {
+            let record: RefreshTokenRecord = serde_json::from_str(&value)
+                .map_err(|_| ApplicationError::infrastructure("invalid refresh token record"))?;
+            let session_tokens_key = Self::session_refresh_tokens_key(&record.session_id);
+            conn.srem::<_, _, ()>(&session_tokens_key, token_id)
+                .await
+                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        }
+
+        let _: () = conn
+            .del(record_key)
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+
+        Ok(())
+    }
+
+    async fn delete_refresh_tokens_for_session(&self, session_id: &str) -> ApplicationResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        self.delete_refresh_tokens_for_session_inner(&mut conn, session_id)
+            .await
     }
 }
 
