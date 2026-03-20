@@ -18,13 +18,12 @@ pub struct DummyTokenManager;
 impl mokkan_core::application::ports::security::TokenManager for DummyTokenManager {
     async fn issue(
         &self,
-        _subject: mokkan_core::application::dto::TokenSubject,
-    ) -> mokkan_core::application::ApplicationResult<mokkan_core::application::dto::AuthTokenDto>
-    {
+        _subject: mokkan_core::application::TokenSubject,
+    ) -> mokkan_core::application::AppResult<mokkan_core::application::AuthTokenDto> {
         // For tests return a deterministic token payload so exchange flows can be tested
         let now = super::time::fixed_now();
         let expires_at = now + chrono::Duration::hours(1);
-        Ok(mokkan_core::application::dto::AuthTokenDto {
+        Ok(mokkan_core::application::AuthTokenDto {
             token: format!("issued-{}", i64::from(_subject.user_id)),
             issued_at: now,
             expires_at,
@@ -37,31 +36,30 @@ impl mokkan_core::application::ports::security::TokenManager for DummyTokenManag
     async fn authenticate(
         &self,
         token: &str,
-    ) -> mokkan_core::application::ApplicationResult<mokkan_core::application::dto::AuthenticatedUser>
-    {
+    ) -> mokkan_core::application::AppResult<mokkan_core::application::AuthenticatedUser> {
         let now = super::time::fixed_now();
         match token {
             TEST_TOKEN => Ok(admin_audit_user(now)),
             SESSION_TOKEN => Ok(session_user(now)),
             NO_AUDIT_TOKEN => Ok(author_user(now)),
             // Expired tokens should be rejected at authentication time
-            EXPIRED_TOKEN => Err(
-                mokkan_core::application::error::ApplicationError::unauthorized("expired token"),
-            ),
-            _ => Err(
-                mokkan_core::application::error::ApplicationError::unauthorized("invalid token"),
-            ),
+            EXPIRED_TOKEN => Err(mokkan_core::application::error::AppError::unauthorized(
+                "expired token",
+            )),
+            _ => Err(mokkan_core::application::error::AppError::unauthorized(
+                "invalid token",
+            )),
         }
     }
 
-    async fn public_jwk(&self) -> mokkan_core::application::ApplicationResult<serde_json::Value> {
+    async fn public_jwk(&self) -> mokkan_core::application::AppResult<serde_json::Value> {
         // Return a minimal JWKS structure for tests. Real implementations will return
         // the actual public key material used to verify tokens.
         Ok(serde_json::json!({ "keys": [] }))
     }
 }
 
-fn admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::dto::AuthenticatedUser {
+fn admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::AuthenticatedUser {
     // For tests, treat the admin test-token as having the Admin role's default capabilities
     // plus the audit:read capability so it can access audit endpoints used in tests.
     let mut caps = mokkan_core::domain::user::value_objects::Role::Admin.default_capabilities();
@@ -69,7 +67,7 @@ fn admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::dto::Authen
         "audit", "read",
     ));
 
-    mokkan_core::application::dto::AuthenticatedUser {
+    mokkan_core::application::AuthenticatedUser {
         id: mokkan_core::domain::user::value_objects::UserId::new(1).expect("invalid user id"),
         username: "tester".into(),
         role: mokkan_core::domain::user::value_objects::Role::Admin,
@@ -81,8 +79,8 @@ fn admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::dto::Authen
     }
 }
 
-fn author_user(now: DateTime<Utc>) -> mokkan_core::application::dto::AuthenticatedUser {
-    mokkan_core::application::dto::AuthenticatedUser {
+fn author_user(now: DateTime<Utc>) -> mokkan_core::application::AuthenticatedUser {
+    mokkan_core::application::AuthenticatedUser {
         id: mokkan_core::domain::user::value_objects::UserId::new(2).expect("invalid user id"),
         username: "noaudit".into(),
         role: mokkan_core::domain::user::value_objects::Role::Author,
@@ -94,8 +92,8 @@ fn author_user(now: DateTime<Utc>) -> mokkan_core::application::dto::Authenticat
     }
 }
 
-fn session_user(now: DateTime<Utc>) -> mokkan_core::application::dto::AuthenticatedUser {
-    mokkan_core::application::dto::AuthenticatedUser {
+fn session_user(now: DateTime<Utc>) -> mokkan_core::application::AuthenticatedUser {
+    mokkan_core::application::AuthenticatedUser {
         id: mokkan_core::domain::user::value_objects::UserId::new(4).expect("invalid user id"),
         username: "sessioned".into(),
         role: mokkan_core::domain::user::value_objects::Role::Author,
@@ -110,10 +108,8 @@ fn session_user(now: DateTime<Utc>) -> mokkan_core::application::dto::Authentica
 }
 
 #[allow(dead_code)]
-fn expired_admin_audit_user(
-    now: DateTime<Utc>,
-) -> mokkan_core::application::dto::AuthenticatedUser {
-    mokkan_core::application::dto::AuthenticatedUser {
+fn expired_admin_audit_user(now: DateTime<Utc>) -> mokkan_core::application::AuthenticatedUser {
+    mokkan_core::application::AuthenticatedUser {
         id: mokkan_core::domain::user::value_objects::UserId::new(3).expect("invalid user id"),
         username: "expired".into(),
         role: mokkan_core::domain::user::value_objects::Role::Admin,
@@ -135,7 +131,7 @@ pub struct DummyPasswordHasher;
 
 #[async_trait]
 impl mokkan_core::application::ports::security::PasswordHasher for DummyPasswordHasher {
-    async fn hash(&self, _password: &str) -> mokkan_core::application::ApplicationResult<String> {
+    async fn hash(&self, _password: &str) -> mokkan_core::application::AppResult<String> {
         Ok("hash".into())
     }
 
@@ -143,7 +139,7 @@ impl mokkan_core::application::ports::security::PasswordHasher for DummyPassword
         &self,
         _password: &str,
         _expected_hash: &str,
-    ) -> mokkan_core::application::ApplicationResult<()> {
+    ) -> mokkan_core::application::AppResult<()> {
         Ok(())
     }
 }
@@ -154,7 +150,7 @@ pub struct StrictPasswordHasher;
 
 #[async_trait]
 impl mokkan_core::application::ports::security::PasswordHasher for StrictPasswordHasher {
-    async fn hash(&self, password: &str) -> mokkan_core::application::ApplicationResult<String> {
+    async fn hash(&self, password: &str) -> mokkan_core::application::AppResult<String> {
         Ok(format!("hash::{password}"))
     }
 
@@ -162,11 +158,13 @@ impl mokkan_core::application::ports::security::PasswordHasher for StrictPasswor
         &self,
         password: &str,
         expected_hash: &str,
-    ) -> mokkan_core::application::ApplicationResult<()> {
+    ) -> mokkan_core::application::AppResult<()> {
         if format!("hash::{password}") == expected_hash {
             Ok(())
         } else {
-            Err(mokkan_core::application::error::ApplicationError::unauthorized("bad password"))
+            Err(mokkan_core::application::error::AppError::unauthorized(
+                "bad password",
+            ))
         }
     }
 }

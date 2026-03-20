@@ -1,11 +1,9 @@
-#![allow(clippy::module_name_repetitions)]
-
 // src/config.rs
 use std::{env, time::Duration};
 use thiserror::Error;
 
 #[derive(Clone, Debug)]
-pub struct AppConfig {
+pub struct Settings {
     database_url: String,
     listen_addr: String,
     biscuit_private_key: String,
@@ -18,7 +16,7 @@ pub struct AppConfig {
 }
 
 #[derive(Debug, Error)]
-pub enum ConfigError {
+pub enum Error {
     #[error("missing environment variable: {0}")]
     Missing(&'static str),
     #[error("invalid configuration: {0}")]
@@ -41,9 +39,9 @@ fn default_allowed_origins() -> Vec<String> {
     vec!["http://localhost:3000".into()]
 }
 
-fn validate_biscuit_private_key(value: &str) -> Result<(), ConfigError> {
+fn validate_biscuit_private_key(value: &str) -> Result<(), Error> {
     if value.len() != 64 || !value.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Err(ConfigError::Invalid(
+        return Err(Error::Invalid(
             "BISCUIT_ROOT_PRIVATE_KEY must be a 32-byte hex string".into(),
         ));
     }
@@ -51,7 +49,7 @@ fn validate_biscuit_private_key(value: &str) -> Result<(), ConfigError> {
     Ok(())
 }
 
-impl AppConfig {
+impl Settings {
     /// Build configuration from environment variables. Uses sensible defaults
     /// for optional values and validates required keys.
     ///
@@ -59,14 +57,14 @@ impl AppConfig {
     ///
     /// Returns an error if a required environment variable is missing or any
     /// configured value fails validation.
-    pub fn from_env() -> Result<Self, ConfigError> {
+    pub fn from_env() -> Result<Self, Error> {
         // Allow dotenv files to populate env vars when present.
         dotenvy::dotenv().ok();
 
         let database_url = env::var("DATABASE_URL").unwrap_or_else(|_| default_database_url());
         let listen_addr = env::var("LISTEN_ADDR").unwrap_or_else(|_| default_listen_addr());
         let biscuit_private_key = env::var("BISCUIT_ROOT_PRIVATE_KEY")
-            .map_err(|_| ConfigError::Missing("BISCUIT_ROOT_PRIVATE_KEY"))?;
+            .map_err(|_| Error::Missing("BISCUIT_ROOT_PRIVATE_KEY"))?;
 
         validate_biscuit_private_key(&biscuit_private_key)?;
         let refresh_token_secret =
@@ -129,14 +127,14 @@ impl AppConfig {
         self.token_ttl
     }
 
-    /// Return the allowed `CORS` origins as configured on `AppConfig`.
+    /// Return the allowed `CORS` origins as configured on `Settings`.
     #[must_use]
     pub fn allowed_origins(&self) -> &[String] {
         &self.allowed_origins
     }
 
     /// Backwards-compatible helper used by router construction in a few places
-    /// where creating a full `AppConfig` is unnecessary for tests.
+    /// where creating a full `Settings` is unnecessary for tests.
     #[must_use]
     pub fn allowed_origins_from_env() -> Vec<String> {
         env::var("ALLOWED_ORIGINS")

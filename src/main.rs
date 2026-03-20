@@ -3,21 +3,20 @@
 // src/main.rs
 use anyhow::Result;
 use axum::{ServiceExt, body::Body};
-use mokkan_core::application::ports::session_revocation::SessionRevocationStore;
+use mokkan_core::application::ports::session_revocation::Store;
 use mokkan_core::application::ports::util::SlugGenerator;
 use mokkan_core::application::{
     ports::{
         security::{PasswordHasher, TokenManager},
         time::Clock,
     },
-    services::{ApplicationDependencies, ApplicationRuntimeDependencies, ApplicationServices},
+    services::{Dependencies, Registry, RuntimeDependencies},
 };
-use mokkan_core::config::AppConfig;
+use mokkan_core::config::Settings;
 use mokkan_core::domain::{
-    article::{ArticleReadRepository, ArticleRevisionRepository, ArticleWriteRepository},
-    user::UserRepository,
+    ArticleReadRepository, ArticleRevisionRepository, ArticleWriteRepository, UserRepository,
 };
-use mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore;
+use mokkan_core::infrastructure::security::authorization_code_store::InMemoryStore;
 use mokkan_core::infrastructure::security::authorization_code_store::into_arc as into_auth_code_store;
 use mokkan_core::infrastructure::security::redis_session_store::RedisSessionRevocationStore;
 use mokkan_core::infrastructure::security::refresh_token::HmacRefreshTokenCodec;
@@ -44,7 +43,7 @@ async fn main() {
     // or development workflows. Avoid relying on command-line args for this control.
     if std::env::var("OPENAPI_SNAPSHOT").as_deref() == Ok("1") {
         dotenvy::dotenv().ok();
-        if let Err(err) = mokkan_core::presentation::http::openapi::write_openapi_snapshot() {
+        if let Err(err) = mokkan_core::presentation::http::openapi::write_snapshot() {
             eprintln!("failed to write OpenAPI snapshot: {err}");
             std::process::exit(1);
         }
@@ -69,7 +68,7 @@ async fn bootstrap() -> Result<()> {
     let (_services, state) = build_services_and_state(&pool, &config)?;
 
     let app = build_router(state);
-    if let Err(err) = mokkan_core::presentation::http::openapi::write_openapi_snapshot() {
+    if let Err(err) = mokkan_core::presentation::http::openapi::write_snapshot() {
         tracing::warn!(error = %err, "failed to write OpenAPI snapshot");
     }
     let service = app.into_service::<Body>().into_make_service();
@@ -85,9 +84,9 @@ async fn bootstrap() -> Result<()> {
     Ok(())
 }
 
-async fn init_config_and_db() -> Result<(AppConfig, PgPool)> {
+async fn init_config_and_db() -> Result<(Settings, PgPool)> {
     dotenvy::dotenv().ok();
-    let config = AppConfig::from_env()?;
+    let config = Settings::from_env()?;
 
     let pool = database::init_pool(config.database_url()).await?;
     database::run_migrations(&pool).await?;
@@ -95,7 +94,7 @@ async fn init_config_and_db() -> Result<(AppConfig, PgPool)> {
     Ok((config, pool))
 }
 
-fn init_session_store(config: &AppConfig) -> Arc<dyn SessionRevocationStore> {
+fn init_session_store(config: &Settings) -> Arc<dyn Store> {
     if let Ok(redis_url) = std::env::var("REDIS_URL") {
         match RedisSessionRevocationStore::from_url_with_options(
             &redis_url,
@@ -115,8 +114,8 @@ fn init_session_store(config: &AppConfig) -> Arc<dyn SessionRevocationStore> {
 
 fn build_services_and_state(
     pool: &PgPool,
-    config: &AppConfig,
-) -> Result<(Arc<ApplicationServices>, HttpContext)> {
+    config: &Settings,
+) -> Result<(Arc<Registry>, HttpContext)> {
     let user_repo: Arc<dyn UserRepository> = Arc::new(PostgresUserRepository::new(pool.clone()));
     let article_write_repo: Arc<dyn ArticleWriteRepository> =
         Arc::new(PostgresArticleWriteRepository::new(pool.clone()));
@@ -137,9 +136,9 @@ fn build_services_and_state(
         Arc::new(PostgresAuditLogRepository::new(pool.clone()));
 
     let session_store = init_session_store(config);
-    let auth_code_store = into_auth_code_store(InMemoryAuthorizationCodeStore::new());
+    let auth_code_store = into_auth_code_store(InMemoryStore::new());
 
-    let deps = ApplicationDependencies {
+    let deps = Dependencies {
         user_repo: Arc::clone(&user_repo),
         article_write_repo: Arc::clone(&article_write_repo),
         article_read_repo: Arc::clone(&article_read_repo),
@@ -147,9 +146,9 @@ fn build_services_and_state(
         audit_log_repo: Arc::clone(&audit_log_repo),
     };
 
-    let services = Arc::new(ApplicationServices::new(
+    let services = Arc::new(Registry::new(
         deps,
-        ApplicationRuntimeDependencies {
+        RuntimeDependencies {
             password_hasher: Arc::clone(&password_hasher),
             token_manager: Arc::clone(&token_manager),
             refresh_token_codec,

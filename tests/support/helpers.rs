@@ -68,13 +68,11 @@ macro_rules! to_json_async {
 // Short aliases to keep function signatures compact for static analysis tools
 type AuditRepo =
     dyn mokkan_core::domain::audit::repository::AuditLogRepository + Send + Sync + 'static;
-type UserRepo = dyn mokkan_core::domain::user::repository::UserRepository + Send + Sync + 'static;
-type ArticleWriteRepo =
-    dyn mokkan_core::domain::article::repository::ArticleWriteRepository + Send + Sync + 'static;
-type ArticleReadRepo =
-    dyn mokkan_core::domain::article::repository::ArticleReadRepository + Send + Sync + 'static;
+type UserRepo = dyn mokkan_core::domain::UserRepository + Send + Sync + 'static;
+type ArticleWriteRepo = dyn mokkan_core::domain::ArticleWriteRepository + Send + Sync + 'static;
+type ArticleReadRepo = dyn mokkan_core::domain::ArticleReadRepository + Send + Sync + 'static;
 type ArticleRevisionRepo =
-    dyn mokkan_core::domain::article::repository::ArticleRevisionRepository + Send + Sync + 'static;
+    dyn mokkan_core::domain::ArticleRevisionRepository + Send + Sync + 'static;
 type PasswordHasherPort =
     dyn mokkan_core::application::ports::security::PasswordHasher + Send + Sync + 'static;
 type TokenManagerPort =
@@ -83,10 +81,7 @@ type ClockPort = dyn mokkan_core::application::ports::time::Clock + Send + Sync 
 type SlugGeneratorPort =
     dyn mokkan_core::application::ports::util::SlugGenerator + Send + Sync + 'static;
 type SessionRevocationPort =
-    dyn mokkan_core::application::ports::session_revocation::SessionRevocationStore
-        + Send
-        + Sync
-        + 'static;
+    dyn mokkan_core::application::ports::session_revocation::Store + Send + Sync + 'static;
 type DefaultDeps = (
     Arc<UserRepo>,
     Arc<ArticleWriteRepo>,
@@ -112,9 +107,7 @@ fn default_dependencies() -> DefaultDeps {
     )
 }
 
-fn make_services(
-    audit_repo: Arc<AuditRepo>,
-) -> Arc<mokkan_core::application::services::ApplicationServices> {
+fn make_services(audit_repo: Arc<AuditRepo>) -> Arc<mokkan_core::application::services::Registry> {
     let (
         user_repo,
         article_write,
@@ -126,7 +119,7 @@ fn make_services(
         slugger,
     ) = default_dependencies();
 
-    let deps = mokkan_core::application::services::ApplicationDependencies {
+    let deps = mokkan_core::application::services::Dependencies {
         user_repo,
         article_write_repo: article_write,
         article_read_repo: article_read,
@@ -134,9 +127,9 @@ fn make_services(
         audit_log_repo: audit_repo,
     };
 
-    Arc::new(mokkan_core::application::services::ApplicationServices::new(
+    Arc::new(mokkan_core::application::services::Registry::new(
         deps,
-        mokkan_core::application::services::ApplicationRuntimeDependencies {
+        mokkan_core::application::services::RuntimeDependencies {
             password_hasher,
             token_manager,
             refresh_token_codec: Arc::new(
@@ -149,7 +142,7 @@ fn make_services(
                 mokkan_core::infrastructure::security::session_store::InMemorySessionRevocationStore::new(),
             ),
             authorization_code_store: Arc::new(
-                mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore::new(),
+                mokkan_core::infrastructure::security::authorization_code_store::InMemoryStore::new(),
             ),
             clock,
             slugger,

@@ -1,5 +1,5 @@
 // src/domain/audit/entity.rs
-use crate::domain::user::UserId;
+use crate::domain::UserId;
 use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone)]

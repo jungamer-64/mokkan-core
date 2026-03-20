@@ -44,7 +44,7 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for MockRepo {
     async fn list(
         &self,
         _limit: u32,
-        _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
+        _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
     ) -> mokkan_core::domain::errors::DomainResult<(
         Vec<mokkan_core::domain::audit::entity::AuditLog>,
         Option<String>,
@@ -56,7 +56,7 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for MockRepo {
         &self,
         _user_id: i64,
         _limit: u32,
-        _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
+        _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
     ) -> mokkan_core::domain::errors::DomainResult<(
         Vec<mokkan_core::domain::audit::entity::AuditLog>,
         Option<String>,
@@ -69,7 +69,7 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for MockRepo {
         _resource_type: &str,
         _resource_id: i64,
         _limit: u32,
-        _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
+        _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
     ) -> mokkan_core::domain::errors::DomainResult<(
         Vec<mokkan_core::domain::audit::entity::AuditLog>,
         Option<String>,
@@ -96,7 +96,7 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for MockAuditRep
     async fn list(
         &self,
         _limit: u32,
-        _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
+        _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
     ) -> mokkan_core::domain::errors::DomainResult<(
         Vec<mokkan_core::domain::audit::entity::AuditLog>,
         Option<String>,
@@ -109,7 +109,7 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for MockAuditRep
         &self,
         _user_id: i64,
         _limit: u32,
-        _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
+        _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
     ) -> mokkan_core::domain::errors::DomainResult<(
         Vec<mokkan_core::domain::audit::entity::AuditLog>,
         Option<String>,
@@ -122,7 +122,7 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for MockAuditRep
         _resource_type: &str,
         _resource_id: i64,
         _limit: u32,
-        _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
+        _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
     ) -> mokkan_core::domain::errors::DomainResult<(
         Vec<mokkan_core::domain::audit::entity::AuditLog>,
         Option<String>,
@@ -174,7 +174,7 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for CapturingAud
     async fn list(
         &self,
         _limit: u32,
-        _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
+        _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
     ) -> mokkan_core::domain::errors::DomainResult<(
         Vec<mokkan_core::domain::audit::entity::AuditLog>,
         Option<String>,
@@ -186,7 +186,7 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for CapturingAud
         &self,
         _user_id: i64,
         _limit: u32,
-        _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
+        _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
     ) -> mokkan_core::domain::errors::DomainResult<(
         Vec<mokkan_core::domain::audit::entity::AuditLog>,
         Option<String>,
@@ -199,7 +199,7 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for CapturingAud
         _resource_type: &str,
         _resource_id: i64,
         _limit: u32,
-        _cursor: Option<mokkan_core::domain::audit::cursor::AuditLogCursor>,
+        _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
     ) -> mokkan_core::domain::errors::DomainResult<(
         Vec<mokkan_core::domain::audit::entity::AuditLog>,
         Option<String>,

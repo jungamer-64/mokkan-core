@@ -1,10 +1,10 @@
 use super::UserQueryService;
 use crate::{
     application::{
-        dto::{AuthenticatedUser, CursorPage, UserDto},
-        error::{ApplicationError, ApplicationResult},
+        AuthenticatedUser, CursorPage, UserDto,
+        error::{AppError, AppResult},
     },
-    domain::user::UserListCursor,
+    domain::UserListCursor,
 };
 
 pub struct ListUsersQuery {
@@ -24,9 +24,9 @@ impl UserQueryService {
         &self,
         actor: &AuthenticatedUser,
         query: ListUsersQuery,
-    ) -> ApplicationResult<CursorPage<UserDto>> {
+    ) -> AppResult<CursorPage<UserDto>> {
         if !actor.has_capability("users", "read") {
-            return Err(ApplicationError::forbidden("missing capability users:read"));
+            return Err(AppError::forbidden("missing capability users:read"));
         }
 
         let limit = Self::normalize_limit(query.limit);
@@ -55,13 +55,13 @@ impl UserQueryService {
         }
     }
 
-    fn decode_cursor(token: Option<&str>) -> ApplicationResult<Option<UserListCursor>> {
+    fn decode_cursor(token: Option<&str>) -> AppResult<Option<UserListCursor>> {
         token.map_or_else(
             || Ok(None),
             |value| {
                 UserListCursor::decode(value)
                     .map(Some)
-                    .map_err(ApplicationError::from)
+                    .map_err(AppError::from)
             },
         )
     }

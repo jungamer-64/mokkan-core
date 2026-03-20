@@ -1,12 +1,12 @@
 use super::ArticleQueryService;
 use crate::{
     application::{
-        dto::{ArticleRevisionDto, AuthenticatedUser},
-        error::{ApplicationError, ApplicationResult},
+        ArticleRevisionDto, AuthenticatedUser,
+        error::{AppError, AppResult},
     },
-    domain::article::{
+    domain::{
         ArticleId,
-        specifications::{ArticleSpecification, CanUpdateArticleSpec},
+        article::specifications::{ArticleSpecification, CanUpdateArticleSpec},
     },
 };
 
@@ -25,17 +25,17 @@ impl ArticleQueryService {
         &self,
         actor: &AuthenticatedUser,
         query: ListArticleRevisionsQuery,
-    ) -> ApplicationResult<Vec<ArticleRevisionDto>> {
+    ) -> AppResult<Vec<ArticleRevisionDto>> {
         let article_id = ArticleId::new(query.article_id)?;
         let article = self
             .read_repo
             .find_by_id(article_id)
             .await?
-            .ok_or_else(|| ApplicationError::not_found("article not found"))?;
+            .ok_or_else(|| AppError::not_found("article not found"))?;
 
         let spec = CanUpdateArticleSpec::new(&actor.capabilities, &article, actor.id);
         if !spec.is_satisfied() {
-            return Err(ApplicationError::forbidden(
+            return Err(AppError::forbidden(
                 "insufficient privileges to view revisions",
             ));
         }

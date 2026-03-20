@@ -1,15 +1,10 @@
-#![allow(clippy::module_name_repetitions)]
-
 // src/domain/user/repository.rs
 use crate::domain::errors::DomainResult;
-use crate::domain::user::{
-    entity::{NewUser, User, UserUpdate},
-    value_objects::{UserId, UserListCursor, Username},
-};
+use crate::domain::{NewUser, User, UserId, UserListCursor, UserUpdate, Username};
 use async_trait::async_trait;
 
 #[async_trait]
-pub trait UserRepository: Send + Sync {
+pub trait Repo: Send + Sync {
     async fn count(&self) -> DomainResult<u64>;
 
     async fn insert(&self, new_user: NewUser) -> DomainResult<User>;

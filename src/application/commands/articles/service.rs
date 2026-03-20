@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use crate::{
     application::ports::time::Clock,
-    domain::article::{
+    domain::{
         ArticleReadRepository, ArticleRevisionRepository, ArticleWriteRepository,
-        services::ArticleSlugService,
+        article::services::ArticleSlugService,
     },
 };
 

@@ -1,10 +1,7 @@
 use super::{UserCommandService, capability::ensure_capability};
 use crate::{
-    application::{
-        dto::{AuthenticatedUser, UserDto},
-        error::ApplicationResult,
-    },
-    domain::user::{Role, UserId, UserUpdate},
+    application::{AuthenticatedUser, UserDto, error::AppResult},
+    domain::{Role, UserId, UserUpdate},
 };
 
 pub struct GrantRoleCommand {
@@ -27,7 +24,7 @@ impl UserCommandService {
         &self,
         actor: &AuthenticatedUser,
         command: GrantRoleCommand,
-    ) -> ApplicationResult<UserDto> {
+    ) -> AppResult<UserDto> {
         ensure_capability(actor, "users", "update")?;
 
         let user_id = UserId::new(command.user_id)?;
@@ -47,7 +44,7 @@ impl UserCommandService {
         &self,
         actor: &AuthenticatedUser,
         command: RevokeRoleCommand,
-    ) -> ApplicationResult<UserDto> {
+    ) -> AppResult<UserDto> {
         ensure_capability(actor, "users", "update")?;
 
         let user_id = UserId::new(command.user_id)?;

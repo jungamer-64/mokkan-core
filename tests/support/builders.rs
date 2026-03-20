@@ -1,8 +1,7 @@
 // tests/support/builders.rs
 use chrono::Utc;
 
-use mokkan_core::domain::article::*;
-use mokkan_core::domain::user::UserId;
+use mokkan_core::domain::{Article, ArticleBody, ArticleId, ArticleSlug, ArticleTitle, UserId};
 
 #[must_use]
 pub struct ArticleBuilder {

@@ -1,14 +1,12 @@
-#![allow(clippy::module_name_repetitions)]
-
 // src/application/error.rs
 use crate::domain::errors::DomainError;
 use anyhow::Error as AnyhowError;
 use thiserror::Error;
 
-pub type ApplicationResult<T> = Result<T, ApplicationError>;
+pub type AppResult<T> = std::result::Result<T, AppError>;
 
 #[derive(Debug, Error)]
-pub enum ApplicationError {
+pub enum AppError {
     #[error(transparent)]
     Domain(#[from] DomainError),
 
@@ -31,7 +29,7 @@ pub enum ApplicationError {
     Infrastructure(#[source] AnyhowError),
 }
 
-impl ApplicationError {
+impl AppError {
     pub fn validation(msg: impl Into<String>) -> Self {
         Self::Validation(msg.into())
     }

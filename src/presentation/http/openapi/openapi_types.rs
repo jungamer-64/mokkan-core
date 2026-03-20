@@ -2,7 +2,7 @@
 //!
 //! These are lightweight wrappers around application DTOs to expose stable
 //! response schemas for the `OpenAPI` document.
-use crate::application::dto::{ArticleDto, CursorPage, UserDto};
+use crate::application::{ArticleDto, CursorPage, UserDto};
 use serde::{Deserialize, Serialize};
 
 // Simple status response used by health endpoints and docs.

@@ -8,13 +8,13 @@ use chrono::{Duration, Utc};
 
 mod support;
 
+use mokkan_core::application::AuthenticatedUser;
 use mokkan_core::application::commands::users::{
     GrantRoleCommand, RevokeRoleCommand, UserCommandService,
 };
-use mokkan_core::application::dto::AuthenticatedUser;
+use mokkan_core::domain::UserRepository;
 use mokkan_core::domain::errors::DomainResult;
 use mokkan_core::domain::user::entity::{NewUser, User, UserUpdate};
-use mokkan_core::domain::user::repository::UserRepository;
 use mokkan_core::domain::user::value_objects::{
     PasswordHash, Role, UserId, UserListCursor, Username,
 };

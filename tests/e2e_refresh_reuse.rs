@@ -13,8 +13,8 @@ use mokkan_core::application::commands::users::{
     LoginUserCommand, RefreshTokenCommand, UserCommandService,
 };
 use mokkan_core::application::ports::{
-    refresh_token::RefreshTokenCodec,
-    session_revocation::{OpaqueRefreshTokenStore, SessionRevocation},
+    refresh_token::Codec,
+    session_revocation::{OpaqueRefreshTokenStore, Revocation},
 };
 use mokkan_core::domain::user::entity::User;
 use mokkan_core::domain::user::value_objects::{PasswordHash, Role, UserId, Username};
@@ -27,14 +27,13 @@ struct FakeTokenManager;
 impl mokkan_core::application::ports::security::TokenManager for FakeTokenManager {
     async fn issue(
         &self,
-        subject: mokkan_core::application::dto::TokenSubject,
-    ) -> mokkan_core::application::ApplicationResult<mokkan_core::application::dto::AuthTokenDto>
-    {
+        subject: mokkan_core::application::TokenSubject,
+    ) -> mokkan_core::application::AppResult<mokkan_core::application::AuthTokenDto> {
         let issued_at = chrono::Utc::now();
         let expires_at = issued_at + Duration::hours(1);
         let expires_in = (expires_at.signed_duration_since(issued_at)).num_seconds();
         let sid = subject.session_id.clone();
-        Ok(mokkan_core::application::dto::AuthTokenDto {
+        Ok(mokkan_core::application::AuthTokenDto {
             token: format!(
                 "access-{}-{}",
                 i64::from(subject.user_id),
@@ -51,16 +50,13 @@ impl mokkan_core::application::ports::security::TokenManager for FakeTokenManage
     async fn authenticate(
         &self,
         _token: &str,
-    ) -> mokkan_core::application::ApplicationResult<mokkan_core::application::dto::AuthenticatedUser>
-    {
-        Err(
-            mokkan_core::application::error::ApplicationError::unauthorized(
-                "not implemented for test",
-            ),
-        )
+    ) -> mokkan_core::application::AppResult<mokkan_core::application::AuthenticatedUser> {
+        Err(mokkan_core::application::error::AppError::unauthorized(
+            "not implemented for test",
+        ))
     }
 
-    async fn public_jwk(&self) -> mokkan_core::application::ApplicationResult<serde_json::Value> {
+    async fn public_jwk(&self) -> mokkan_core::application::AppResult<serde_json::Value> {
         Ok(serde_json::json!({"keys":[]}))
     }
 }
@@ -79,7 +75,7 @@ impl InMemoryUserRepo {
 }
 
 #[async_trait]
-impl mokkan_core::domain::user::repository::UserRepository for InMemoryUserRepo {
+impl mokkan_core::domain::UserRepository for InMemoryUserRepo {
     async fn count(&self) -> mokkan_core::domain::errors::DomainResult<u64> {
         let map = self.inner.lock().unwrap();
         Ok(map.len() as u64)

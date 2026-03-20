@@ -1,6 +1,4 @@
-use crate::application::{
-    ApplicationResult, error::ApplicationError, ports::refresh_token::RefreshTokenCodec,
-};
+use crate::application::{AppResult, error::AppError, ports::refresh_token::Codec};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -20,9 +18,9 @@ impl HmacRefreshTokenCodec {
     /// # Errors
     ///
     /// Returns an error if the provided secret is empty.
-    pub fn new(secret: &str) -> ApplicationResult<Self> {
+    pub fn new(secret: &str) -> AppResult<Self> {
         if secret.is_empty() {
-            return Err(ApplicationError::infrastructure(
+            return Err(AppError::infrastructure(
                 "refresh token secret must not be empty",
             ));
         }
@@ -32,23 +30,23 @@ impl HmacRefreshTokenCodec {
         })
     }
 
-    fn sign(&self, payload: &[u8]) -> ApplicationResult<Vec<u8>> {
+    fn sign(&self, payload: &[u8]) -> AppResult<Vec<u8>> {
         let mut mac = HmacSha256::new_from_slice(&self.secret)
-            .map_err(|_| ApplicationError::infrastructure("invalid refresh token secret"))?;
+            .map_err(|_| AppError::infrastructure("invalid refresh token secret"))?;
         mac.update(payload);
         Ok(mac.finalize().into_bytes().to_vec())
     }
 
-    fn verify_signature(&self, payload: &[u8], signature: &[u8]) -> ApplicationResult<()> {
+    fn verify_signature(&self, payload: &[u8], signature: &[u8]) -> AppResult<()> {
         let mut mac = HmacSha256::new_from_slice(&self.secret)
-            .map_err(|_| ApplicationError::infrastructure("invalid refresh token secret"))?;
+            .map_err(|_| AppError::infrastructure("invalid refresh token secret"))?;
         mac.update(payload);
         mac.verify_slice(signature)
-            .map_err(|_| ApplicationError::validation("invalid refresh token"))?;
+            .map_err(|_| AppError::validation("invalid refresh token"))?;
         Ok(())
     }
 
-    fn parse_parts(token: &str) -> ApplicationResult<(&str, &str)> {
+    fn parse_parts(token: &str) -> AppResult<(&str, &str)> {
         let mut parts = token.split('.');
         let prefix = parts.next();
         let token_id = parts.next();
@@ -59,22 +57,22 @@ impl HmacRefreshTokenCodec {
             || signature.is_none()
             || parts.next().is_some()
         {
-            return Err(ApplicationError::validation("invalid refresh token"));
+            return Err(AppError::validation("invalid refresh token"));
         }
 
         Ok((token_id.unwrap(), signature.unwrap()))
     }
 }
 
-impl RefreshTokenCodec for HmacRefreshTokenCodec {
+impl Codec for HmacRefreshTokenCodec {
     fn is_opaque_token(&self, token: &str) -> bool {
         token.starts_with(OPAQUE_TOKEN_PREFIX)
             && token[OPAQUE_TOKEN_PREFIX.len()..].starts_with('.')
     }
 
-    fn encode_opaque_handle(&self, token_id: &str) -> ApplicationResult<String> {
+    fn encode_opaque_handle(&self, token_id: &str) -> AppResult<String> {
         if token_id.is_empty() {
-            return Err(ApplicationError::validation("invalid refresh token"));
+            return Err(AppError::validation("invalid refresh token"));
         }
 
         let signature = self.sign(token_id.as_bytes())?;
@@ -84,11 +82,11 @@ impl RefreshTokenCodec for HmacRefreshTokenCodec {
         ))
     }
 
-    fn decode_opaque_handle(&self, token: &str) -> ApplicationResult<String> {
+    fn decode_opaque_handle(&self, token: &str) -> AppResult<String> {
         let (token_id, signature) = Self::parse_parts(token)?;
         let signature = URL_SAFE_NO_PAD
             .decode(signature.as_bytes())
-            .map_err(|_| ApplicationError::validation("invalid refresh token"))?;
+            .map_err(|_| AppError::validation("invalid refresh token"))?;
 
         self.verify_signature(token_id.as_bytes(), &signature)?;
         Ok(token_id.to_string())
@@ -98,7 +96,7 @@ impl RefreshTokenCodec for HmacRefreshTokenCodec {
 #[cfg(test)]
 mod tests {
     use super::HmacRefreshTokenCodec;
-    use crate::application::ports::refresh_token::RefreshTokenCodec;
+    use crate::application::ports::refresh_token::Codec;
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
     #[test]

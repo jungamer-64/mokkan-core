@@ -1,10 +1,10 @@
 use super::ArticleQueryService;
 use crate::{
     application::{
-        dto::ArticleDto,
-        error::{ApplicationError, ApplicationResult},
+        ArticleDto,
+        error::{AppError, AppResult},
     },
-    domain::article::ArticleId,
+    domain::ArticleId,
 };
 
 pub struct GetArticleByIdQuery {
@@ -18,16 +18,13 @@ impl ArticleQueryService {
     ///
     /// Returns an error if the id is invalid, the article does not exist, or
     /// the repository lookup fails.
-    pub async fn get_article_by_id(
-        &self,
-        query: GetArticleByIdQuery,
-    ) -> ApplicationResult<ArticleDto> {
+    pub async fn get_article_by_id(&self, query: GetArticleByIdQuery) -> AppResult<ArticleDto> {
         let id = ArticleId::new(query.id)?;
         let article = self
             .read_repo
             .find_by_id(id)
             .await?
-            .ok_or_else(|| ApplicationError::not_found("article not found"))?;
+            .ok_or_else(|| AppError::not_found("article not found"))?;
         Ok(article.into())
     }
 }

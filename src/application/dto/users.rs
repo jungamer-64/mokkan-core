@@ -1,9 +1,11 @@
-use crate::domain::user::{Capability, Role, User};
+use crate::domain::{Capability, Role, User};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use super::{AuthenticatedUser, serde_time};
+use crate::application::AuthenticatedUser;
+
+use super::serde_time;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 pub struct UserDto {

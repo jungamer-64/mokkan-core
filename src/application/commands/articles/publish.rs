@@ -2,10 +2,10 @@
 use super::{ArticleCommandService, capability::ensure_capability};
 use crate::{
     application::{
-        dto::{ArticleDto, AuthenticatedUser},
-        error::{ApplicationError, ApplicationResult},
+        ArticleDto, AuthenticatedUser,
+        error::{AppError, AppResult},
     },
-    domain::article::{ArticleId, ArticleUpdate},
+    domain::{ArticleId, ArticleUpdate},
 };
 
 pub struct SetPublishStateCommand {
@@ -24,14 +24,14 @@ impl ArticleCommandService {
         &self,
         actor: &AuthenticatedUser,
         command: SetPublishStateCommand,
-    ) -> ApplicationResult<ArticleDto> {
+    ) -> AppResult<ArticleDto> {
         ensure_capability(actor, "articles", "publish")?;
         let id = ArticleId::new(command.id)?;
         let mut article = self
             .read_repo
             .find_by_id(id)
             .await?
-            .ok_or_else(|| ApplicationError::not_found("article not found"))?;
+            .ok_or_else(|| AppError::not_found("article not found"))?;
         let original_updated_at = article.updated_at;
         if article.published == command.publish {
             return Ok(article.into());
@@ -52,9 +52,9 @@ impl ArticleCommandService {
         &self,
         id: ArticleId,
         original_updated_at: chrono::DateTime<chrono::Utc>,
-        article: &crate::domain::article::Article,
+        article: &crate::domain::Article,
         actor: &AuthenticatedUser,
-    ) -> ApplicationResult<ArticleDto> {
+    ) -> AppResult<ArticleDto> {
         let mut update = ArticleUpdate::new(id, original_updated_at)
             .with_publish_state(article.published, article.published_at);
         update.set_updated_at(article.updated_at);

@@ -1,7 +1,7 @@
 // src/infrastructure/repositories/users/postgres.rs
 use super::super::map_sqlx;
 use crate::domain::errors::{DomainError, DomainResult};
-use crate::domain::user::{
+use crate::domain::{
     NewUser, PasswordHash, Role, User, UserId, UserListCursor, UserRepository, UserUpdate, Username,
 };
 use async_trait::async_trait;

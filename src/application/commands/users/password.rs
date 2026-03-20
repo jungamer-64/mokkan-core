@@ -1,10 +1,10 @@
-use crate::application::error::{ApplicationError, ApplicationResult};
+use crate::application::error::{AppError, AppResult};
 
 pub(super) const MIN_PASSWORD_LENGTH: usize = 12;
 
-pub(super) fn validate_password(password: &str) -> ApplicationResult<()> {
+pub(super) fn validate_password(password: &str) -> AppResult<()> {
     if password.len() < MIN_PASSWORD_LENGTH {
-        return Err(ApplicationError::validation(format!(
+        return Err(AppError::validation(format!(
             "password must be at least {MIN_PASSWORD_LENGTH} characters"
         )));
     }
@@ -15,7 +15,7 @@ pub(super) fn validate_password(password: &str) -> ApplicationResult<()> {
     let has_special = password.chars().any(|c| !c.is_alphanumeric());
 
     if !(has_uppercase && has_lowercase && has_digit && has_special) {
-        return Err(ApplicationError::validation(
+        return Err(AppError::validation(
             "password must contain uppercase, lowercase, digit, and special character",
         ));
     }

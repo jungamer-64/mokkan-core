@@ -1,58 +1,56 @@
-#![allow(clippy::module_name_repetitions)]
-
 // src/presentation/http/openapi.rs
 // Minimal OpenAPI helpers used by the HTTP layer and tests.
 pub mod openapi_meta;
 pub mod openapi_mutation;
 use axum::Router;
-use axum::routing::{get, head};
+use axum::routing::{get, head as route_head};
 use bytes::Bytes;
 use std::sync::OnceLock;
 // types for openapi payloads live in the `openapi` submodule (openapi/openapi_types.rs)
 
 // Caches for generated OpenAPI JSON and derived metadata.
-static OPENAPI_BYTES: OnceLock<Bytes> = OnceLock::new();
-static OPENAPI_ETAG: OnceLock<String> = OnceLock::new();
-static OPENAPI_CONTENT_LENGTH: OnceLock<usize> = OnceLock::new();
-static OPENAPI_CONTENT_LENGTH_STR: OnceLock<String> = OnceLock::new();
+static BYTES: OnceLock<Bytes> = OnceLock::new();
+static ETAG: OnceLock<String> = OnceLock::new();
+static CONTENT_LENGTH: OnceLock<usize> = OnceLock::new();
+static CONTENT_LENGTH_STR: OnceLock<String> = OnceLock::new();
 
 /// Content-Type used for the `OpenAPI` JSON representation.
-pub const OPENAPI_CONTENT_TYPE_JSON: &str = "application/json";
+pub const CONTENT_TYPE_JSON: &str = "application/json";
 
-// Canonical minimal OpenAPI JSON as a static byte slice so the `openapi_bytes`
+// Canonical minimal OpenAPI JSON as a static byte slice so the `bytes`
 // accessor can stay very small (this also keeps static analysis tools happy).
-static OPENAPI_JSON_BYTES: &[u8] = b"{\"openapi\":\"3.0.0\",\"info\":{\"title\":\"mokkan_core\",\"version\":\"0.1.0\"},\"paths\":{}}";
+static JSON_BYTES: &[u8] =
+    b"{\"openapi\":\"3.0.0\",\"info\":{\"title\":\"mokkan_core\",\"version\":\"0.1.0\"},\"paths\":{}}";
 
 // Minimal OpenAPI JSON bytes used for tests (stable across calls)
 /// Return a reference to the canonical `OpenAPI` JSON bytes used by the
 /// application and tests. The value is cached in a `OnceLock` so repeated
 /// calls are cheap and return the same `Bytes` instance.
-pub fn openapi_bytes() -> &'static Bytes {
-    OPENAPI_BYTES.get_or_init(|| Bytes::from_static(OPENAPI_JSON_BYTES))
+pub fn bytes() -> &'static Bytes {
+    BYTES.get_or_init(|| Bytes::from_static(JSON_BYTES))
 }
 
 pub mod openapi_types;
 pub use openapi_types::{ArticleListResponse, StatusResponse, UserListResponse};
 /// Return the content length, in bytes, of the `OpenAPI` JSON payload.
-pub fn openapi_content_length() -> usize {
-    *OPENAPI_CONTENT_LENGTH.get_or_init(|| openapi_bytes().len())
+pub fn content_length() -> usize {
+    *CONTENT_LENGTH.get_or_init(|| bytes().len())
 }
 
 /// Return a shared string value for the `OpenAPI` `Content-Length` header so
 /// callers can pass a &'static str without allocating repeatedly.
-pub fn openapi_content_length_str() -> &'static str {
-    OPENAPI_CONTENT_LENGTH_STR
-        .get_or_init(|| openapi_content_length().to_string())
+pub fn content_length_str() -> &'static str {
+    CONTENT_LENGTH_STR
+        .get_or_init(|| content_length().to_string())
         .as_str()
 }
 
-pub fn openapi_etag() -> &'static str {
-    OPENAPI_ETAG
-        .get_or_init(|| openapi_meta::compute_simple_etag(openapi_bytes()))
+pub fn etag() -> &'static str {
+    ETAG.get_or_init(|| openapi_meta::compute_simple_etag(bytes()))
         .as_str()
 }
 pub mod handlers;
-pub use handlers::{head_openapi, serve_openapi};
+pub use handlers::{head, serve};
 pub use openapi_meta::{inm_matches, weak_match};
 
 /// Minimal docs router used by the application router builder. Tests don't need the UI
@@ -68,12 +66,12 @@ pub fn docs_router() -> Router {
 /// This keeps behavior simple and deterministic for unit and integration
 /// tests by exposing only the JSON and `HEAD` endpoints asserted by the
 /// test suite.
-pub fn docs_router_with_options(_serve_ui: bool, write_snapshot: bool) -> Router {
+pub fn docs_router_with_options(_serve_ui: bool, persist_snapshot: bool) -> Router {
     // The flags are intentionally simple; tests call with (true, false).
-    if write_snapshot {
+    if persist_snapshot {
         // Best-effort: try to write the snapshot but don't panic the caller on
         // failure. The application caller in `main.rs` already logs failures.
-        let _ = write_openapi_snapshot();
+        let _ = write_snapshot();
     }
 
     // Build a minimal router exposing /openapi.json GET and HEAD. If `serve_ui`
@@ -81,14 +79,14 @@ pub fn docs_router_with_options(_serve_ui: bool, write_snapshot: bool) -> Router
     // minimal here. Register the handlers directly — axum will invoke the
     // extractor-based async functions (they accept a `HeaderMap`).
     Router::new()
-        .route("/openapi.json", get(serve_openapi))
-        .route("/openapi.json", head(head_openapi))
+        .route("/openapi.json", get(serve))
+        .route("/openapi.json", route_head(head))
 }
 
 /// Write the canonical `OpenAPI` snapshot to `spec/openapi.json`.
 ///
 /// This is intentionally small and deterministic: it writes the bytes from
-/// `openapi_bytes()` and returns an `std::io::Result<()>` so callers can
+/// `bytes()` and returns an `std::io::Result<()>` so callers can
 /// decide how to react when writing fails. This is used by `CI` and local
 /// tooling to persist the generated `OpenAPI` spec.
 ///
@@ -96,12 +94,12 @@ pub fn docs_router_with_options(_serve_ui: bool, write_snapshot: bool) -> Router
 ///
 /// Returns any filesystem error raised while creating the output directory or
 /// writing the snapshot file.
-pub fn write_openapi_snapshot() -> std::io::Result<()> {
+pub fn write_snapshot() -> std::io::Result<()> {
     let out_path = std::path::Path::new("spec").join("openapi.json");
     if let Some(parent) = out_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(out_path, openapi_bytes().as_ref())
+    std::fs::write(out_path, bytes().as_ref())
 }
 
 // Use the external tests file under `openapi/tests.rs` to keep this file small.

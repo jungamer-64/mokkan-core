@@ -9,9 +9,9 @@ use chrono::{TimeZone, Utc};
     get,
     path = "/api/v1/auth/sessions",
     responses(
-        (status = 200, description = "List of sessions for the current user", body = [crate::application::dto::SessionInfoDto]),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+        (status = 200, description = "List of sessions for the current user", body = [crate::application::SessionInfoDto]),
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
     ),
     security(("bearerAuth" = [])),
     tag = "Auth"
@@ -24,14 +24,14 @@ use chrono::{TimeZone, Utc};
 pub async fn list_sessions(
     Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
-) -> HttpResult<Json<Vec<crate::application::dto::SessionInfoDto>>> {
+) -> HttpResult<Json<Vec<crate::application::SessionInfoDto>>> {
     let store = state.services.session_metadata_store();
     let infos = store
         .list_sessions_for_user_with_meta(user.id.into())
         .await
         .into_http()?;
 
-    let dtos: Vec<crate::application::dto::SessionInfoDto> = infos
+    let dtos: Vec<crate::application::SessionInfoDto> = infos
         .into_iter()
         .map(|si| {
             let created = if si.created_at_unix > 0 {
@@ -42,7 +42,7 @@ pub async fn list_sessions(
                 Utc::now()
             };
 
-            crate::application::dto::SessionInfoDto {
+            crate::application::SessionInfoDto {
                 session_id: si.session_id,
                 user_agent: si.user_agent,
                 ip_address: si.ip_address,
@@ -61,9 +61,9 @@ pub async fn list_sessions(
     params(("id" = String, Path, description = "Session identifier")),
     responses(
         (status = 200, description = "Session revoked.", body = crate::presentation::http::openapi::StatusResponse),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
     ),
     security(("bearerAuth" = [])),
     tag = "Auth"
@@ -91,10 +91,8 @@ pub async fn revoke_session(
     };
 
     if !is_owner && !user.has_capability("users", "update") {
-        return Err(crate::presentation::http::error::HttpError::from_error(
-            crate::application::error::ApplicationError::forbidden(
-                "not authorized to revoke this session",
-            ),
+        return Err(crate::presentation::http::error::Error::from_error(
+            crate::application::error::AppError::forbidden("not authorized to revoke this session"),
         ));
     }
 

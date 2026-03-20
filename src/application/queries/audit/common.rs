@@ -1,13 +1,13 @@
 use crate::application::{
-    dto::AuthenticatedUser,
-    error::{ApplicationError, ApplicationResult},
+    AuthenticatedUser,
+    error::{AppError, AppResult},
 };
 
-pub(super) fn ensure_audit_capability(actor: &AuthenticatedUser) -> ApplicationResult<()> {
+pub(super) fn ensure_audit_capability(actor: &AuthenticatedUser) -> AppResult<()> {
     if actor.has_capability("audit", "read") {
         Ok(())
     } else {
-        Err(ApplicationError::forbidden("missing capability audit:read"))
+        Err(AppError::forbidden("missing capability audit:read"))
     }
 }
 

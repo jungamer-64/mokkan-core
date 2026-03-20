@@ -1,7 +1,7 @@
 // src/domain/article/entity.rs
+use crate::domain::UserId;
 use crate::domain::article::value_objects::{ArticleBody, ArticleId, ArticleSlug, ArticleTitle};
 use crate::domain::errors::DomainResult;
-use crate::domain::user::UserId;
 use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone)]
@@ -69,7 +69,7 @@ mod tests {
             body: ArticleBody::new("body").unwrap(),
             published: false,
             published_at: None,
-            author_id: crate::domain::user::UserId::new(1).unwrap(),
+            author_id: crate::domain::UserId::new(1).unwrap(),
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }

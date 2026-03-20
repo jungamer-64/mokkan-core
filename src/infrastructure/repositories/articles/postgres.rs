@@ -1,11 +1,11 @@
 // src/infrastructure/repositories/articles/postgres.rs
 use super::super::map_sqlx;
-use crate::domain::article::{
+use crate::domain::UserId;
+use crate::domain::errors::{DomainError, DomainResult};
+use crate::domain::{
     Article, ArticleBody, ArticleId, ArticleListCursor, ArticleReadRepository, ArticleSlug,
     ArticleTitle, ArticleUpdate, ArticleWriteRepository, NewArticle,
 };
-use crate::domain::errors::{DomainError, DomainResult};
-use crate::domain::user::UserId;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};

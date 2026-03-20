@@ -7,7 +7,7 @@ use async_trait::async_trait;
 pub struct DummyArticleWrite;
 
 #[async_trait]
-impl mokkan_core::domain::article::repository::ArticleWriteRepository for DummyArticleWrite {
+impl mokkan_core::domain::ArticleWriteRepository for DummyArticleWrite {
     async fn insert(
         &self,
         _new: mokkan_core::domain::article::entity::NewArticle,
@@ -42,7 +42,7 @@ impl mokkan_core::domain::article::repository::ArticleWriteRepository for DummyA
 pub struct DummyArticleRead;
 
 #[async_trait]
-impl mokkan_core::domain::article::repository::ArticleReadRepository for DummyArticleRead {
+impl mokkan_core::domain::ArticleReadRepository for DummyArticleRead {
     async fn find_by_id(
         &self,
         _id: mokkan_core::domain::article::value_objects::ArticleId,
@@ -81,7 +81,7 @@ impl mokkan_core::domain::article::repository::ArticleReadRepository for DummyAr
 pub struct DummyArticleRevision;
 
 #[async_trait]
-impl mokkan_core::domain::article::repository::ArticleRevisionRepository for DummyArticleRevision {
+impl mokkan_core::domain::ArticleRevisionRepository for DummyArticleRevision {
     async fn append(
         &self,
         _article: &mokkan_core::domain::article::entity::Article,
@@ -93,9 +93,7 @@ impl mokkan_core::domain::article::repository::ArticleRevisionRepository for Dum
     async fn list_by_article(
         &self,
         _article_id: mokkan_core::domain::article::value_objects::ArticleId,
-    ) -> mokkan_core::domain::errors::DomainResult<
-        Vec<mokkan_core::domain::article::revision::ArticleRevision>,
-    > {
+    ) -> mokkan_core::domain::errors::DomainResult<Vec<mokkan_core::domain::ArticleRevision>> {
         Ok(vec![])
     }
 }

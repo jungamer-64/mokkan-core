@@ -5,7 +5,7 @@ use async_trait::async_trait;
 pub struct DummyRepo;
 
 #[async_trait]
-impl mokkan_core::domain::user::repository::UserRepository for DummyRepo {
+impl mokkan_core::domain::UserRepository for DummyRepo {
     async fn count(&self) -> mokkan_core::domain::errors::DomainResult<u64> {
         Ok(0)
     }

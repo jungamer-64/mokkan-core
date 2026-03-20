@@ -17,7 +17,7 @@ use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 pub fn build_router_with_rate_limiter(state: HttpContext, enable_rate_limiter: bool) -> Router {
     // prefer reading allowed origins from env directly so tests don't have to provide BISCUIT key
-    let origins = crate::config::AppConfig::allowed_origins_from_env();
+    let origins = crate::config::Settings::allowed_origins_from_env();
 
     let cors = if origins.iter().any(|o| o == "*") {
         CorsLayer::new().allow_origin(tower_http::cors::Any)

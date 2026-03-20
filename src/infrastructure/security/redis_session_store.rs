@@ -1,9 +1,9 @@
 // src/infrastructure/security/redis_session_store.rs
-use crate::application::ApplicationResult;
-use crate::application::error::ApplicationError;
+use crate::application::AppResult;
+use crate::application::error::AppError;
 use crate::application::ports::session_revocation::{
-    OpaqueRefreshTokenStore, RefreshNonceStore, RefreshTokenRecord, SessionMetadataStore,
-    SessionRevocation, SessionRevocationStore, TokenVersionStore,
+    OpaqueRefreshTokenStore, RefreshNonceStore, RefreshTokenRecord, Revocation,
+    SessionMetadataStore, Store, TokenVersionStore,
 };
 use async_trait::async_trait;
 use deadpool_redis::{Config as DeadpoolConfig, Connection, Pool, Runtime};
@@ -53,7 +53,7 @@ impl RedisSessionRevocationStore {
     /// # Errors
     ///
     /// Returns an error if the Redis pool cannot be created.
-    pub fn from_url(url: &str) -> Result<Self, ApplicationError> {
+    pub fn from_url(url: &str) -> Result<Self, AppError> {
         // Delegate to the options based constructor using environment defaults.
         let used_nonce_ttl_secs = std::env::var("REDIS_USED_NONCE_TTL_SECS")
             .ok()
@@ -78,11 +78,11 @@ impl RedisSessionRevocationStore {
         url: &str,
         used_nonce_ttl_secs: usize,
         preload_cas_script: bool,
-    ) -> Result<Self, ApplicationError> {
+    ) -> Result<Self, AppError> {
         let cfg = DeadpoolConfig::from_url(url);
         let pool = cfg
             .create_pool(Some(Runtime::Tokio1))
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let store = Self {
             pool: pool.clone(),
@@ -133,12 +133,12 @@ impl RedisSessionRevocationStore {
         used_key: &str,
         expected: &str,
         new_nonce: &str,
-    ) -> ApplicationResult<i32> {
+    ) -> AppResult<i32> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         // 1) Try using the cached SHA (if present). This helper will clear the
         // cached value on NOSCRIPT and return None so we can fall back.
@@ -164,7 +164,7 @@ impl RedisSessionRevocationStore {
         used_key: &str,
         expected: &str,
         new_nonce: &str,
-    ) -> ApplicationResult<Option<i32>> {
+    ) -> AppResult<Option<i32>> {
         let cached_sha = {
             let sha_guard = self.cas_script_sha.lock().await;
             sha_guard.clone()
@@ -193,20 +193,20 @@ impl RedisSessionRevocationStore {
                         return Ok(None);
                     }
 
-                    return Err(ApplicationError::infrastructure(err.to_string()));
+                    return Err(AppError::infrastructure(err.to_string()));
                 }
             }
         }
         Ok(None)
     }
 
-    async fn load_script_and_cache(&self, conn: &mut Connection) -> ApplicationResult<String> {
+    async fn load_script_and_cache(&self, conn: &mut Connection) -> AppResult<String> {
         let loaded_sha: String = redis::cmd("SCRIPT")
             .arg("LOAD")
             .arg(CAS_LUA_SCRIPT)
             .query_async(conn)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         // Count the script load for observability/testing.
         self.script_load_count.fetch_add(1, Ordering::SeqCst);
@@ -232,7 +232,7 @@ impl RedisSessionRevocationStore {
         used_key: &str,
         expected: &str,
         new_nonce: &str,
-    ) -> ApplicationResult<i32> {
+    ) -> AppResult<i32> {
         let replaced: i32 = redis::cmd("EVALSHA")
             .arg(sha)
             .arg(2)
@@ -243,7 +243,7 @@ impl RedisSessionRevocationStore {
             .arg(self.used_nonce_ttl_secs)
             .query_async(conn)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         Ok(replaced)
     }
 
@@ -259,75 +259,75 @@ impl RedisSessionRevocationStore {
         &self,
         conn: &mut Connection,
         session_id: &str,
-    ) -> ApplicationResult<()> {
+    ) -> AppResult<()> {
         let session_tokens_key = Self::session_refresh_tokens_key(session_id);
         let token_ids: Vec<String> = conn
             .smembers(&session_tokens_key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         for token_id in token_ids {
             let record_key = Self::refresh_token_record_key(&token_id);
             let _: () = conn
                 .del(record_key)
                 .await
-                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
         }
 
         let _: () = conn
             .del(session_tokens_key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         Ok(())
     }
 }
 
 #[async_trait]
-impl SessionRevocation for RedisSessionRevocationStore {
-    async fn is_revoked(&self, session_id: &str) -> ApplicationResult<bool> {
+impl Revocation for RedisSessionRevocationStore {
+    async fn is_revoked(&self, session_id: &str) -> AppResult<bool> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let key = format!("revoked:session:{session_id}");
         let exists: bool = conn
             .exists(key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         Ok(exists)
     }
 
-    async fn revoke(&self, session_id: &str) -> ApplicationResult<()> {
+    async fn revoke(&self, session_id: &str) -> AppResult<()> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let key = format!("revoked:session:{session_id}");
         conn.set::<_, _, ()>(key, 1)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         self.delete_refresh_tokens_for_session_inner(&mut conn, session_id)
             .await?;
         Ok(())
     }
 
-    async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()> {
+    async fn revoke_sessions_for_user(&self, user_id: i64) -> AppResult<()> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let key = format!("user_sessions:{user_id}");
         let sessions: Vec<String> = conn
             .smembers(&key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         if sessions.is_empty() {
             return Ok(());
@@ -354,7 +354,7 @@ impl SessionRevocation for RedisSessionRevocationStore {
         let _processed: i32 = cmd
             .query_async(&mut conn)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         for session_id in sessions {
             self.delete_refresh_tokens_for_session_inner(&mut conn, &session_id)
@@ -367,71 +367,64 @@ impl SessionRevocation for RedisSessionRevocationStore {
 
 #[async_trait]
 impl TokenVersionStore for RedisSessionRevocationStore {
-    async fn get_min_token_version(&self, user_id: i64) -> ApplicationResult<Option<u32>> {
+    async fn get_min_token_version(&self, user_id: i64) -> AppResult<Option<u32>> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let key = format!("min_token_version:{user_id}");
         let val: Option<u32> = conn
             .get(key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         Ok(val)
     }
 
-    async fn set_min_token_version(&self, user_id: i64, min_version: u32) -> ApplicationResult<()> {
+    async fn set_min_token_version(&self, user_id: i64, min_version: u32) -> AppResult<()> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let key = format!("min_token_version:{user_id}");
         conn.set::<_, _, ()>(key, min_version)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         Ok(())
     }
 }
 
 #[async_trait]
 impl RefreshNonceStore for RedisSessionRevocationStore {
-    async fn set_session_refresh_nonce(
-        &self,
-        session_id: &str,
-        nonce: &str,
-    ) -> ApplicationResult<()> {
+    async fn set_session_refresh_nonce(&self, session_id: &str, nonce: &str) -> AppResult<()> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let key = format!("session_refresh_nonce:{session_id}");
         conn.set::<_, _, ()>(key, nonce)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         Ok(())
     }
 
-    async fn get_session_refresh_nonce(
-        &self,
-        session_id: &str,
-    ) -> ApplicationResult<Option<String>> {
+    async fn get_session_refresh_nonce(&self, session_id: &str) -> AppResult<Option<String>> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let key = format!("session_refresh_nonce:{session_id}");
         let val: Option<String> = conn
             .get(key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         Ok(val)
     }
 
@@ -440,7 +433,7 @@ impl RefreshNonceStore for RedisSessionRevocationStore {
         session_id: &str,
         expected: &str,
         new_nonce: &str,
-    ) -> ApplicationResult<bool> {
+    ) -> AppResult<bool> {
         let key = format!("session_refresh_nonce:{session_id}");
         let used_key = format!("used_refresh_nonce:{session_id}:{expected}");
 
@@ -455,18 +448,18 @@ impl RefreshNonceStore for RedisSessionRevocationStore {
         &self,
         session_id: &str,
         nonce: &str,
-    ) -> ApplicationResult<()> {
+    ) -> AppResult<()> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let used_key = format!("used_refresh_nonce:{session_id}:{nonce}");
         // default TTL
         conn.set::<_, _, ()>(&used_key, 1)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         // Use explicit EXPIRE command to avoid type inference issues with the
         // high-level helper and to use the shared TTL constant.
         let _: i32 = redis::cmd("EXPIRE")
@@ -474,7 +467,7 @@ impl RefreshNonceStore for RedisSessionRevocationStore {
             .arg(self.used_nonce_ttl_secs)
             .query_async(&mut conn)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         Ok(())
     }
 
@@ -482,86 +475,82 @@ impl RefreshNonceStore for RedisSessionRevocationStore {
         &self,
         session_id: &str,
         nonce: &str,
-    ) -> ApplicationResult<bool> {
+    ) -> AppResult<bool> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let used_key = format!("used_refresh_nonce:{session_id}:{nonce}");
         let exists: bool = conn
             .exists(used_key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         Ok(exists)
     }
 }
 
 #[async_trait]
 impl SessionMetadataStore for RedisSessionRevocationStore {
-    async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()> {
+    async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> AppResult<()> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let key = format!("user_sessions:{user_id}");
         conn.sadd::<_, _, ()>(key, session_id)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         Ok(())
     }
 
-    async fn remove_session_for_user(
-        &self,
-        user_id: i64,
-        session_id: &str,
-    ) -> ApplicationResult<()> {
+    async fn remove_session_for_user(&self, user_id: i64, session_id: &str) -> AppResult<()> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let key = format!("user_sessions:{user_id}");
         conn.srem::<_, _, ()>(key, session_id)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         Ok(())
     }
 
-    async fn list_sessions_for_user(&self, user_id: i64) -> ApplicationResult<Vec<String>> {
+    async fn list_sessions_for_user(&self, user_id: i64) -> AppResult<Vec<String>> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let key = format!("user_sessions:{user_id}");
         let members: Vec<String> = conn
             .smembers(key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         Ok(members)
     }
 
     async fn list_sessions_for_user_with_meta(
         &self,
         user_id: i64,
-    ) -> ApplicationResult<Vec<crate::application::ports::session_revocation::SessionInfo>> {
+    ) -> AppResult<Vec<crate::application::ports::session_revocation::SessionInfo>> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let key = format!("user_sessions:{user_id}");
         let sessions: Vec<String> = conn
             .smembers(&key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let mut out = Vec::with_capacity(sessions.len());
         for sid in sessions {
@@ -570,22 +559,22 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
             let ua: Option<String> = conn
                 .hget(&meta_key, "user_agent")
                 .await
-                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
             let ip: Option<String> = conn
                 .hget(&meta_key, "ip")
                 .await
-                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
             let created_str: Option<String> = conn
                 .hget(&meta_key, "created_at")
                 .await
-                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
             let created_at_unix: i64 = created_str.and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
 
             let revoked_key = format!("revoked:session:{sid}");
             let revoked: bool = conn
                 .exists(&revoked_key)
                 .await
-                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
             out.push(crate::application::ports::session_revocation::SessionInfo {
                 user_id,
@@ -607,17 +596,17 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
         user_agent: Option<&str>,
         ip_address: Option<&str>,
         created_at_unix: i64,
-    ) -> ApplicationResult<()> {
+    ) -> AppResult<()> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let user_sessions_key = format!("user_sessions:{user_id}");
         conn.sadd::<_, _, ()>(user_sessions_key, session_id)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let meta_key = format!("session:meta:{session_id}");
         // Use a single HSET invocation to reduce branching and RTTs. Store empty string
@@ -639,7 +628,7 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
         let _: i32 = cmd
             .query_async(&mut conn)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         Ok(())
     }
@@ -647,19 +636,19 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
     async fn get_session_metadata(
         &self,
         session_id: &str,
-    ) -> ApplicationResult<Option<crate::application::ports::session_revocation::SessionInfo>> {
+    ) -> AppResult<Option<crate::application::ports::session_revocation::SessionInfo>> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let meta_key = format!("session:meta:{session_id}");
         // If the meta hash does not exist, return None
         let exists: bool = conn
             .exists(&meta_key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         if !exists {
             return Ok(None);
@@ -668,19 +657,19 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
         let ua: Option<String> = conn
             .hget(&meta_key, "user_agent")
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         let ip: Option<String> = conn
             .hget(&meta_key, "ip")
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         let created_opt: Option<String> = conn
             .hget(&meta_key, "created_at")
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         let user_id_val: Option<i64> = conn
             .hget(&meta_key, "user_id")
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let created_at_unix: i64 = created_opt.and_then(|s| s.parse::<i64>().ok()).unwrap_or(0);
 
@@ -688,7 +677,7 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
         let revoked: bool = conn
             .exists(&revoked_key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         Ok(Some(
             crate::application::ports::session_revocation::SessionInfo {
@@ -702,18 +691,18 @@ impl SessionMetadataStore for RedisSessionRevocationStore {
         ))
     }
 
-    async fn delete_session_metadata(&self, session_id: &str) -> ApplicationResult<()> {
+    async fn delete_session_metadata(&self, session_id: &str) -> AppResult<()> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let meta_key = format!("session:meta:{session_id}");
         let _: () = conn
             .del(&meta_key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         Ok(())
     }
 }
@@ -724,24 +713,24 @@ impl OpaqueRefreshTokenStore for RedisSessionRevocationStore {
         &self,
         token_id: &str,
         record: &RefreshTokenRecord,
-    ) -> ApplicationResult<()> {
+    ) -> AppResult<()> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let record_key = Self::refresh_token_record_key(token_id);
         let session_tokens_key = Self::session_refresh_tokens_key(&record.session_id);
         let encoded = serde_json::to_string(record)
-            .map_err(|_| ApplicationError::infrastructure("invalid refresh token record"))?;
+            .map_err(|_| AppError::infrastructure("invalid refresh token record"))?;
 
         conn.set::<_, _, ()>(&record_key, encoded)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         conn.sadd::<_, _, ()>(&session_tokens_key, token_id)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         Ok(())
     }
@@ -749,69 +738,69 @@ impl OpaqueRefreshTokenStore for RedisSessionRevocationStore {
     async fn get_refresh_token_record(
         &self,
         token_id: &str,
-    ) -> ApplicationResult<Option<RefreshTokenRecord>> {
+    ) -> AppResult<Option<RefreshTokenRecord>> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let record_key = Self::refresh_token_record_key(token_id);
         let encoded: Option<String> = conn
             .get(record_key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         encoded
             .map(|value| {
                 serde_json::from_str(&value)
-                    .map_err(|_| ApplicationError::infrastructure("invalid refresh token record"))
+                    .map_err(|_| AppError::infrastructure("invalid refresh token record"))
             })
             .transpose()
     }
 
-    async fn delete_refresh_token_record(&self, token_id: &str) -> ApplicationResult<()> {
+    async fn delete_refresh_token_record(&self, token_id: &str) -> AppResult<()> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         let record_key = Self::refresh_token_record_key(token_id);
         let encoded: Option<String> = conn
             .get(&record_key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         if let Some(value) = encoded {
             let record: RefreshTokenRecord = serde_json::from_str(&value)
-                .map_err(|_| ApplicationError::infrastructure("invalid refresh token record"))?;
+                .map_err(|_| AppError::infrastructure("invalid refresh token record"))?;
             let session_tokens_key = Self::session_refresh_tokens_key(&record.session_id);
             conn.srem::<_, _, ()>(&session_tokens_key, token_id)
                 .await
-                .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
         }
 
         let _: () = conn
             .del(record_key)
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
         Ok(())
     }
 
-    async fn delete_refresh_tokens_for_session(&self, session_id: &str) -> ApplicationResult<()> {
+    async fn delete_refresh_tokens_for_session(&self, session_id: &str) -> AppResult<()> {
         let mut conn = self
             .pool
             .get()
             .await
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         self.delete_refresh_tokens_for_session_inner(&mut conn, session_id)
             .await
     }
 }
 
 #[must_use]
-pub fn into_arc(store: RedisSessionRevocationStore) -> std::sync::Arc<dyn SessionRevocationStore> {
+pub fn into_arc(store: RedisSessionRevocationStore) -> std::sync::Arc<dyn Store> {
     std::sync::Arc::new(store)
 }

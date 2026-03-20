@@ -43,7 +43,7 @@ fn inm_matches_handles_escaped_values() {
         HeaderValue::from_static("W/\"a\\\"b\" , \"other\""),
     );
 
-    // The actual value (as returned by openapi_etag() style) should match the
+    // The actual value (as returned by etag() style) should match the
     // first candidate when normalized.
     assert!(inm_matches(&headers, "\"a\\\"b\""));
 }
@@ -64,22 +64,19 @@ fn weak_match_handles_inner_escaped_quote() {
 }
 
 #[tokio::test]
-async fn serve_openapi_returns_not_modified_when_if_none_match_matches() {
+async fn serve_returns_not_modified_when_if_none_match_matches() {
     // build headers that match current etag
     let mut headers = HeaderMap::new();
-    headers.insert(
-        header::IF_NONE_MATCH,
-        HeaderValue::from_static(openapi_etag()),
-    );
+    headers.insert(header::IF_NONE_MATCH, HeaderValue::from_static(etag()));
 
-    let resp = serve_openapi(headers).await;
+    let resp = serve(headers).await;
     assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
 }
 
 #[tokio::test]
-async fn head_openapi_ok_sets_headers_and_no_body() {
+async fn head_ok_sets_headers_and_no_body() {
     let headers = HeaderMap::new();
-    let resp = head_openapi(headers).await;
+    let resp = head(headers).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let hs = resp.headers();
     assert!(hs.get(header::ETAG).is_some());
@@ -87,17 +84,14 @@ async fn head_openapi_ok_sets_headers_and_no_body() {
     assert!(hs.get(header::CONTENT_LENGTH).is_some());
     // HEAD so body must be empty — Content-Length should equal the OpenAPI length
     let cl = hs.get(header::CONTENT_LENGTH).unwrap().to_str().unwrap();
-    assert_eq!(cl, openapi_content_length().to_string());
+    assert_eq!(cl, content_length().to_string());
 }
 
 #[tokio::test]
-async fn head_openapi_returns_not_modified_when_if_none_match_matches() {
+async fn head_returns_not_modified_when_if_none_match_matches() {
     let mut headers = HeaderMap::new();
-    headers.insert(
-        header::IF_NONE_MATCH,
-        HeaderValue::from_static(openapi_etag()),
-    );
-    let resp = head_openapi(headers).await;
+    headers.insert(header::IF_NONE_MATCH, HeaderValue::from_static(etag()));
+    let resp = head(headers).await;
     assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
     assert!(resp.headers().get(header::ETAG).is_some());
 }
@@ -112,7 +106,7 @@ async fn get_openapi_returns_not_modified_on_ims() {
         header::IF_MODIFIED_SINCE,
         HeaderValue::from_static(build_date),
     );
-    let resp = serve_openapi(headers).await;
+    let resp = serve(headers).await;
     assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
 }
 
@@ -120,15 +114,12 @@ async fn get_openapi_returns_not_modified_on_ims() {
 async fn get_openapi_inm_takes_precedence_over_ims() {
     // If both INM and IMS are present, INM must take precedence per RFC.
     let mut headers = HeaderMap::new();
-    headers.insert(
-        header::IF_NONE_MATCH,
-        HeaderValue::from_static(openapi_etag()),
-    );
+    headers.insert(header::IF_NONE_MATCH, HeaderValue::from_static(etag()));
     headers.insert(
         header::IF_MODIFIED_SINCE,
         HeaderValue::from_static("Thu, 01 Jan 1970 00:00:00 GMT"),
     );
-    let resp = serve_openapi(headers).await;
+    let resp = serve(headers).await;
     assert_eq!(resp.status(), StatusCode::NOT_MODIFIED);
 }
 
@@ -144,6 +135,6 @@ async fn get_openapi_returns_ok_when_inm_mismatch_even_if_ims_matches() {
         HeaderValue::from_static("\"some-other\""),
     );
     headers.insert(header::IF_MODIFIED_SINCE, HeaderValue::from_static(lm));
-    let resp = serve_openapi(headers).await;
+    let resp = serve(headers).await;
     assert_eq!(resp.status(), StatusCode::OK);
 }

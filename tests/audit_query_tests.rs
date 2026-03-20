@@ -1,8 +1,10 @@
 #![allow(clippy::multiple_crate_versions)]
 
 // tests/audit_query_tests.rs
-use mokkan_core::application::dto::AuthenticatedUser;
-use mokkan_core::application::queries::audit::{AuditQueryService, ListAuditLogsQuery};
+use mokkan_core::application::AuthenticatedUser;
+use mokkan_core::application::queries::audit::{
+    list::ListAuditLogsQuery, service::AuditQueryService,
+};
 use mokkan_core::domain::user::value_objects::Capability;
 use mokkan_core::domain::user::value_objects::UserId;
 // domain errors are not needed in this test

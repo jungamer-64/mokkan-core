@@ -1,6 +1,4 @@
-#![allow(clippy::module_name_repetitions)]
-
-use crate::application::ApplicationResult;
+use crate::application::AppResult;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -25,41 +23,34 @@ pub struct RefreshTokenRecord {
 }
 
 #[async_trait]
-pub trait SessionRevocation: Send + Sync {
+pub trait Revocation: Send + Sync {
     /// Return true if the given session id has been revoked.
-    async fn is_revoked(&self, session_id: &str) -> ApplicationResult<bool>;
+    async fn is_revoked(&self, session_id: &str) -> AppResult<bool>;
 
     /// Revoke the given session id (e.g. on logout).
-    async fn revoke(&self, session_id: &str) -> ApplicationResult<()>;
+    async fn revoke(&self, session_id: &str) -> AppResult<()>;
 
     /// Revoke all sessions for a given user (used when refresh reuse is detected).
-    async fn revoke_sessions_for_user(&self, user_id: i64) -> ApplicationResult<()>;
+    async fn revoke_sessions_for_user(&self, user_id: i64) -> AppResult<()>;
 }
 
 #[async_trait]
 pub trait TokenVersionStore: Send + Sync {
     /// Get the minimum allowed token version for a user. Tokens with a version less
     /// than this should be considered invalid.
-    async fn get_min_token_version(&self, user_id: i64) -> ApplicationResult<Option<u32>>;
+    async fn get_min_token_version(&self, user_id: i64) -> AppResult<Option<u32>>;
 
     /// Set the minimum allowed token version for a user.
-    async fn set_min_token_version(&self, user_id: i64, min_version: u32) -> ApplicationResult<()>;
+    async fn set_min_token_version(&self, user_id: i64, min_version: u32) -> AppResult<()>;
 }
 
 #[async_trait]
 pub trait RefreshNonceStore: Send + Sync {
     /// Store the current refresh nonce for a session (used for refresh-token rotation).
-    async fn set_session_refresh_nonce(
-        &self,
-        session_id: &str,
-        nonce: &str,
-    ) -> ApplicationResult<()>;
+    async fn set_session_refresh_nonce(&self, session_id: &str, nonce: &str) -> AppResult<()>;
 
     /// Get the current refresh nonce for a session.
-    async fn get_session_refresh_nonce(
-        &self,
-        session_id: &str,
-    ) -> ApplicationResult<Option<String>>;
+    async fn get_session_refresh_nonce(&self, session_id: &str) -> AppResult<Option<String>>;
 
     /// Atomically compare-and-swap the session's refresh nonce.
     ///
@@ -71,46 +62,33 @@ pub trait RefreshNonceStore: Send + Sync {
         session_id: &str,
         expected: &str,
         new_nonce: &str,
-    ) -> ApplicationResult<bool>;
+    ) -> AppResult<bool>;
 
     /// Mark a specific refresh nonce for a session as used (so that later reuse can be detected).
-    async fn mark_session_refresh_nonce_used(
-        &self,
-        session_id: &str,
-        nonce: &str,
-    ) -> ApplicationResult<()>;
+    async fn mark_session_refresh_nonce_used(&self, session_id: &str, nonce: &str)
+    -> AppResult<()>;
 
     /// Return true if the given nonce for the session has been used before.
-    async fn is_session_refresh_nonce_used(
-        &self,
-        session_id: &str,
-        nonce: &str,
-    ) -> ApplicationResult<bool>;
+    async fn is_session_refresh_nonce_used(&self, session_id: &str, nonce: &str)
+    -> AppResult<bool>;
 }
 
 #[async_trait]
 pub trait SessionMetadataStore: Send + Sync {
     /// Track that a session id belongs to a user (used for per-user session listing and bulk revocation).
-    async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> ApplicationResult<()>;
+    async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> AppResult<()>;
 
     /// Remove the association of a session id from a user.
-    async fn remove_session_for_user(
-        &self,
-        user_id: i64,
-        session_id: &str,
-    ) -> ApplicationResult<()>;
+    async fn remove_session_for_user(&self, user_id: i64, session_id: &str) -> AppResult<()>;
 
     /// List session ids for a given user.
-    async fn list_sessions_for_user(&self, user_id: i64) -> ApplicationResult<Vec<String>>;
+    async fn list_sessions_for_user(&self, user_id: i64) -> AppResult<Vec<String>>;
 
     /// List sessions for a given user including stored metadata.
     ///
     /// The returned entries include user agent, `IP` address, `created_at`,
     /// and revocation state.
-    async fn list_sessions_for_user_with_meta(
-        &self,
-        user_id: i64,
-    ) -> ApplicationResult<Vec<SessionInfo>>;
+    async fn list_sessions_for_user_with_meta(&self, user_id: i64) -> AppResult<Vec<SessionInfo>>;
 
     /// Store or update session metadata. `created_at_unix` is seconds since epoch UTC.
     async fn set_session_metadata(
@@ -120,16 +98,13 @@ pub trait SessionMetadataStore: Send + Sync {
         user_agent: Option<&str>,
         ip_address: Option<&str>,
         created_at_unix: i64,
-    ) -> ApplicationResult<()>;
+    ) -> AppResult<()>;
 
     /// Get session metadata for a given session id.
-    async fn get_session_metadata(
-        &self,
-        session_id: &str,
-    ) -> ApplicationResult<Option<SessionInfo>>;
+    async fn get_session_metadata(&self, session_id: &str) -> AppResult<Option<SessionInfo>>;
 
     /// Delete session metadata (e.g. when a session is removed from the user's list).
-    async fn delete_session_metadata(&self, session_id: &str) -> ApplicationResult<()>;
+    async fn delete_session_metadata(&self, session_id: &str) -> AppResult<()>;
 }
 
 #[async_trait]
@@ -139,23 +114,23 @@ pub trait OpaqueRefreshTokenStore: Send + Sync {
         &self,
         token_id: &str,
         record: &RefreshTokenRecord,
-    ) -> ApplicationResult<()>;
+    ) -> AppResult<()>;
 
     /// Load the stored record for an opaque refresh token handle.
     async fn get_refresh_token_record(
         &self,
         token_id: &str,
-    ) -> ApplicationResult<Option<RefreshTokenRecord>>;
+    ) -> AppResult<Option<RefreshTokenRecord>>;
 
     /// Delete a single opaque refresh token handle.
-    async fn delete_refresh_token_record(&self, token_id: &str) -> ApplicationResult<()>;
+    async fn delete_refresh_token_record(&self, token_id: &str) -> AppResult<()>;
 
     /// Delete every opaque refresh token handle associated with a session.
-    async fn delete_refresh_tokens_for_session(&self, session_id: &str) -> ApplicationResult<()>;
+    async fn delete_refresh_tokens_for_session(&self, session_id: &str) -> AppResult<()>;
 }
 
-pub trait SessionRevocationStore:
-    SessionRevocation
+pub trait Store:
+    Revocation
     + TokenVersionStore
     + RefreshNonceStore
     + SessionMetadataStore
@@ -165,8 +140,8 @@ pub trait SessionRevocationStore:
 {
 }
 
-impl<T> SessionRevocationStore for T where
-    T: SessionRevocation
+impl<T> Store for T where
+    T: Revocation
         + TokenVersionStore
         + RefreshNonceStore
         + SessionMetadataStore
@@ -178,16 +153,16 @@ impl<T> SessionRevocationStore for T where
 
 #[derive(Clone)]
 #[must_use]
-pub struct SessionStorePorts {
-    pub revocation: Arc<dyn SessionRevocation>,
+pub struct Ports {
+    pub revocation: Arc<dyn Revocation>,
     pub token_versions: Arc<dyn TokenVersionStore>,
     pub refresh_nonces: Arc<dyn RefreshNonceStore>,
     pub session_metadata: Arc<dyn SessionMetadataStore>,
     pub opaque_refresh_tokens: Arc<dyn OpaqueRefreshTokenStore>,
 }
 
-impl SessionStorePorts {
-    pub fn from_store(store: Arc<dyn SessionRevocationStore>) -> Self {
+impl Ports {
+    pub fn from_store(store: Arc<dyn Store>) -> Self {
         Self {
             revocation: store.clone(),
             token_versions: store.clone(),

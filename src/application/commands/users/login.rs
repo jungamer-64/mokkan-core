@@ -1,12 +1,12 @@
 use super::UserCommandService;
 use crate::{
     application::{
-        dto::{AuthTokenDto, TokenSubject, UserDto},
-        error::{ApplicationError, ApplicationResult},
+        AuthTokenDto, TokenSubject, UserDto,
+        error::{AppError, AppResult},
+        random_id,
     },
-    domain::user::Username,
+    domain::Username,
 };
-use uuid::Uuid;
 
 pub struct LoginUserCommand {
     pub username: String,
@@ -25,13 +25,13 @@ impl UserCommandService {
     ///
     /// Returns an error if the username is invalid, credentials do not match,
     /// the account is disabled, or token/session persistence fails.
-    pub async fn login(&self, command: LoginUserCommand) -> ApplicationResult<LoginResult> {
+    pub async fn login(&self, command: LoginUserCommand) -> AppResult<LoginResult> {
         let username = Username::new(command.username)?;
         let user = self
             .find_and_authenticate_user(username, &command.password)
             .await?;
 
-        let session_id = Uuid::new_v4().to_string();
+        let session_id = random_id::v4_string()?;
 
         let token = self.issue_session_tokens(&user, &session_id).await?;
         let user_dto: UserDto = user.into();
@@ -44,9 +44,9 @@ impl UserCommandService {
 
     async fn issue_session_tokens(
         &self,
-        user: &crate::domain::user::User,
+        user: &crate::domain::User,
         session_id: &str,
-    ) -> ApplicationResult<AuthTokenDto> {
+    ) -> AppResult<AuthTokenDto> {
         let capabilities = user.role.default_capabilities();
 
         let refresh_nonce = self.create_session_refresh_nonce(session_id).await?;
@@ -85,8 +85,8 @@ impl UserCommandService {
         Ok(token)
     }
 
-    async fn create_session_refresh_nonce(&self, session_id: &str) -> ApplicationResult<String> {
-        let refresh_nonce = Uuid::new_v4().to_string();
+    async fn create_session_refresh_nonce(&self, session_id: &str) -> AppResult<String> {
+        let refresh_nonce = random_id::v4_string()?;
         self.session_stores
             .refresh_nonces
             .set_session_refresh_nonce(session_id, &refresh_nonce)
@@ -98,15 +98,15 @@ impl UserCommandService {
         &self,
         username: Username,
         password: &str,
-    ) -> ApplicationResult<crate::domain::user::User> {
+    ) -> AppResult<crate::domain::User> {
         let user = self
             .user_repo
             .find_by_username(&username)
             .await?
-            .ok_or_else(|| ApplicationError::unauthorized("invalid credentials"))?;
+            .ok_or_else(|| AppError::unauthorized("invalid credentials"))?;
 
         if !user.is_active {
-            return Err(ApplicationError::forbidden("account is disabled"));
+            return Err(AppError::forbidden("account is disabled"));
         }
 
         self.password_hasher

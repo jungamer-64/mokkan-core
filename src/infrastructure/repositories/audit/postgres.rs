@@ -1,6 +1,6 @@
 // src/infrastructure/repositories/audit/postgres.rs
 use super::super::map_sqlx;
-use crate::domain::audit::cursor::AuditLogCursor;
+use crate::domain::audit::cursor::Cursor;
 use crate::domain::audit::entity::{AuditLog, NewAuditLog};
 use crate::domain::errors::DomainResult;
 use async_trait::async_trait;
@@ -51,7 +51,7 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
     async fn list(
         &self,
         limit: u32,
-        cursor: Option<AuditLogCursor>,
+        cursor: Option<Cursor>,
     ) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
         if let Some(c) = cursor {
             let rows = sqlx::query(QUERY_LIST_WITH_CURSOR)
@@ -78,7 +78,7 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
         &self,
         user_id: i64,
         limit: u32,
-        cursor: Option<AuditLogCursor>,
+        cursor: Option<Cursor>,
     ) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
         if let Some(c) = cursor {
             let rows = sqlx::query(QUERY_FIND_BY_USER_WITH_CURSOR)
@@ -107,7 +107,7 @@ impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRe
         resource_type: &str,
         resource_id: i64,
         limit: u32,
-        cursor: Option<AuditLogCursor>,
+        cursor: Option<Cursor>,
     ) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
         if let Some(c) = cursor {
             let rows = sqlx::query(QUERY_FIND_BY_RESOURCE_WITH_CURSOR)
@@ -184,13 +184,13 @@ fn trim_to_page_and_build_cursor(items: &mut Vec<AuditLog>, limit: u32) -> Optio
     items.truncate(limit as usize);
     items
         .last()
-        .map(|last| AuditLogCursor::new(last.created_at, last.id).encode())
+        .map(|last| Cursor::new(last.created_at, last.id).encode())
 }
 
 #[cfg(test)]
 mod tests {
     use super::trim_to_page_and_build_cursor;
-    use crate::domain::audit::cursor::AuditLogCursor;
+    use crate::domain::audit::cursor::Cursor;
     use crate::domain::audit::entity::AuditLog;
     use chrono::{Duration, Utc};
 
@@ -221,7 +221,7 @@ mod tests {
         let next_cursor = trim_to_page_and_build_cursor(&mut items, 2);
 
         assert_eq!(items.len(), 2);
-        let cursor = AuditLogCursor::decode(&next_cursor.expect("next cursor")).unwrap();
+        let cursor = Cursor::decode(&next_cursor.expect("next cursor")).unwrap();
         assert_eq!(cursor.id, 2);
         assert_eq!(cursor.created_at, items[1].created_at);
         assert_ne!(cursor.id, third.id);

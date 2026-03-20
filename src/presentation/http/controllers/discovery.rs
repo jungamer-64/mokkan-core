@@ -52,7 +52,7 @@ pub struct OpenIdConfiguration {
 pub async fn openid_configuration(
     Extension(_state): Extension<HttpContext>,
 ) -> HttpResult<Json<OpenIdConfiguration>> {
-    let issuer = crate::config::AppConfig::oidc_issuer_from_env();
+    let issuer = crate::config::Settings::oidc_issuer_from_env();
     let issuer = issuer.trim_end_matches('/').to_string();
 
     // Map discovery endpoints to our existing (or conventional) routes

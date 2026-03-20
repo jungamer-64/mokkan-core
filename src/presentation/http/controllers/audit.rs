@@ -1,8 +1,9 @@
 // src/presentation/http/controllers/audit.rs
-use crate::application::dto::AuditLogDto;
-use crate::application::dto::CursorPage;
+use crate::application::AuditLogDto;
+use crate::application::CursorPage;
 use crate::application::queries::audit::{
-    AuditQueryService, ListAuditLogsByResourceQuery, ListAuditLogsByUserQuery, ListAuditLogsQuery,
+    list::{ListAuditLogsByResourceQuery, ListAuditLogsByUserQuery, ListAuditLogsQuery},
+    service::AuditQueryService,
 };
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::Authenticated;

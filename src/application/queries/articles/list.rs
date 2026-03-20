@@ -1,10 +1,10 @@
 use super::ArticleQueryService;
 use crate::{
     application::{
-        dto::{ArticleDto, AuthenticatedUser, CursorPage},
-        error::{ApplicationError, ApplicationResult},
+        ArticleDto, AuthenticatedUser, CursorPage,
+        error::{AppError, AppResult},
     },
-    domain::{article::ArticleListCursor, errors::DomainError},
+    domain::{ArticleListCursor, errors::DomainError},
 };
 
 const DEFAULT_LIMIT: u32 = 20;
@@ -27,7 +27,7 @@ impl ArticleQueryService {
         &self,
         actor: Option<&AuthenticatedUser>,
         query: ListArticlesQuery,
-    ) -> ApplicationResult<CursorPage<ArticleDto>> {
+    ) -> AppResult<CursorPage<ArticleDto>> {
         let (include_drafts, limit) =
             Self::normalize_listing(actor, query.include_drafts, query.limit)?;
         let cursor = Self::decode_cursor(query.cursor.as_deref())?;
@@ -48,13 +48,12 @@ impl ArticleQueryService {
         actor: Option<&AuthenticatedUser>,
         include_drafts: bool,
         limit: u32,
-    ) -> ApplicationResult<(bool, u32)> {
+    ) -> AppResult<(bool, u32)> {
         let include_drafts = if include_drafts {
-            let actor = actor.ok_or_else(|| {
-                ApplicationError::forbidden("authentication required for draft access")
-            })?;
+            let actor = actor
+                .ok_or_else(|| AppError::forbidden("authentication required for draft access"))?;
             if !actor.has_capability("articles", "view:drafts") {
-                return Err(ApplicationError::forbidden(
+                return Err(AppError::forbidden(
                     "missing capability articles:view:drafts",
                 ));
             }
@@ -72,15 +71,13 @@ impl ArticleQueryService {
         Ok((include_drafts, limit))
     }
 
-    pub(super) fn decode_cursor(
-        token: Option<&str>,
-    ) -> ApplicationResult<Option<ArticleListCursor>> {
+    pub(super) fn decode_cursor(token: Option<&str>) -> AppResult<Option<ArticleListCursor>> {
         token.map_or_else(
             || Ok(None),
             |value| match ArticleListCursor::decode(value) {
                 Ok(cursor) => Ok(Some(cursor)),
-                Err(DomainError::Validation(msg)) => Err(ApplicationError::validation(msg)),
-                Err(other) => Err(ApplicationError::from(other)),
+                Err(DomainError::Validation(msg)) => Err(AppError::validation(msg)),
+                Err(other) => Err(AppError::from(other)),
             },
         )
     }

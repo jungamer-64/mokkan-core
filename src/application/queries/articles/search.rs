@@ -1,8 +1,5 @@
 use super::{ArticleQueryService, list::ListArticlesQuery};
-use crate::application::{
-    dto::{ArticleDto, AuthenticatedUser, CursorPage},
-    error::ApplicationResult,
-};
+use crate::application::{ArticleDto, AuthenticatedUser, CursorPage, error::AppResult};
 
 pub struct SearchArticlesQuery {
     pub query: String,
@@ -22,7 +19,7 @@ impl ArticleQueryService {
         &self,
         actor: Option<&AuthenticatedUser>,
         query: SearchArticlesQuery,
-    ) -> ApplicationResult<CursorPage<ArticleDto>> {
+    ) -> AppResult<CursorPage<ArticleDto>> {
         let trimmed = query.query.trim();
         if trimmed.is_empty() {
             return self

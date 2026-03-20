@@ -11,11 +11,9 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::fmt::Write as _;
-use uuid::Uuid;
 
-use crate::application::dto::{AuthTokenDto, TokenSubject};
-use crate::application::error::ApplicationError;
-use crate::application::ports::authorization_code::AuthorizationCode;
+use crate::application::ports::authorization_code::Code;
+use crate::application::{AuthTokenDto, TokenSubject, error::AppError, random_id};
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::MaybeAuthenticated;
 use crate::presentation::http::state::HttpContext;
@@ -73,8 +71,8 @@ pub struct AuthorizeRequest {
     path = "/api/v1/auth/token",
     request_body = TokenExchangeRequest,
     responses(
-        (status = 200, description = "Tokens issued", body = crate::application::dto::AuthTokenDto),
-        (status = 400, description = "Bad request", body = crate::presentation::http::error::ErrorResponse),
+        (status = 200, description = "Tokens issued", body = crate::application::AuthTokenDto),
+        (status = 400, description = "Bad request", body = crate::presentation::http::error::ResponsePayload),
     ),
     security([]),
     tag = "Auth"
@@ -98,23 +96,21 @@ pub async fn token(
         Err(_) => {
             // parse as application/x-www-form-urlencoded
             serde_urlencoded::from_bytes(&whole).map_err(|_e| {
-                crate::presentation::http::error::HttpError::from_error(
-                    ApplicationError::validation("invalid token request"),
-                )
+                crate::presentation::http::error::Error::from_error(AppError::validation(
+                    "invalid token request",
+                ))
             })?
         }
     };
 
     if payload.grant_type != "authorization_code" {
-        return Err(crate::presentation::http::error::HttpError::from_error(
-            ApplicationError::validation("unsupported grant_type"),
+        return Err(crate::presentation::http::error::Error::from_error(
+            AppError::validation("unsupported grant_type"),
         ));
     }
 
     let code = payload.code.as_deref().ok_or_else(|| {
-        crate::presentation::http::error::HttpError::from_error(ApplicationError::validation(
-            "code required",
-        ))
+        crate::presentation::http::error::Error::from_error(AppError::validation("code required"))
     })?;
 
     let token = state
@@ -224,7 +220,7 @@ pub async fn revoke(
     responses(
         (status = 302, description = "Redirect back to client with authorization code"),
         (status = 200, description = "Consent required / prompt (JSON)", body = serde_json::Value),
-        (status = 400, description = "Bad request", body = crate::presentation::http::error::ErrorResponse),
+        (status = 400, description = "Bad request", body = crate::presentation::http::error::ResponsePayload),
     ),
     security([]),
     tag = "Auth"
@@ -242,13 +238,13 @@ pub async fn authorize(
 ) -> HttpResult<Response> {
     // Basic validation
     if params.response_type.as_deref() != Some("code") {
-        return Err(crate::presentation::http::error::HttpError::from_error(
-            ApplicationError::validation("unsupported response_type"),
+        return Err(crate::presentation::http::error::Error::from_error(
+            AppError::validation("unsupported response_type"),
         ));
     }
 
     let user = maybe_user.ok_or_else(|| {
-        crate::presentation::http::error::HttpError::from_error(ApplicationError::unauthorized(
+        crate::presentation::http::error::Error::from_error(AppError::unauthorized(
             "login required",
         ))
     })?;
@@ -281,16 +277,16 @@ pub async fn authorize(
 // Helper: create an authorization code and persist it using the configured store.
 async fn create_and_store_code(
     state: &HttpContext,
-    user: &crate::application::dto::AuthenticatedUser,
+    user: &crate::application::AuthenticatedUser,
     params: &AuthorizeRequest,
-) -> crate::application::ApplicationResult<String> {
-    let code = Uuid::new_v4().to_string();
+) -> crate::application::AppResult<String> {
+    let code = random_id::v4_string()?;
     let now = Utc::now();
     let expires = now + chrono::Duration::minutes(5);
 
     let subject = TokenSubject::from_authenticated(user);
 
-    let auth_code = AuthorizationCode {
+    let auth_code = Code {
         code: code.clone(),
         client_id: params.client_id.clone(),
         redirect_uri: params.redirect_uri.clone(),
@@ -314,7 +310,7 @@ async fn create_and_store_code(
 // Return a consent prompt JSON when consent hasn't been granted yet.
 fn maybe_consent_prompt(
     params: &AuthorizeRequest,
-    user: &crate::application::dto::AuthenticatedUser,
+    user: &crate::application::AuthenticatedUser,
 ) -> Option<JsonValue> {
     if params.consent.as_deref() == Some("approve") {
         None
@@ -345,18 +341,16 @@ fn build_redirect_uri(redirect: &str, code: &str, state: Option<&String>) -> Str
 
 // Very small validation to reduce risk of open-redirects. This is intentionally
 // conservative: only allow http(s) schemes and refuse fragment identifiers.
-fn validate_redirect_uri(
-    redirect: &str,
-) -> Result<(), crate::presentation::http::error::HttpError> {
+fn validate_redirect_uri(redirect: &str) -> Result<(), crate::presentation::http::error::Error> {
     if redirect.contains('#') {
-        return Err(crate::presentation::http::error::HttpError::from_error(
-            ApplicationError::validation("redirect_uri must not contain fragment"),
+        return Err(crate::presentation::http::error::Error::from_error(
+            AppError::validation("redirect_uri must not contain fragment"),
         ));
     }
 
     if !(redirect.starts_with("http://") || redirect.starts_with("https://")) {
-        return Err(crate::presentation::http::error::HttpError::from_error(
-            ApplicationError::validation("invalid redirect_uri"),
+        return Err(crate::presentation::http::error::Error::from_error(
+            AppError::validation("invalid redirect_uri"),
         ));
     }
 

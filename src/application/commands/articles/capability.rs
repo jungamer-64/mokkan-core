@@ -1,18 +1,18 @@
 // src/application/commands/articles/capability.rs
 use crate::application::{
-    dto::AuthenticatedUser,
-    error::{ApplicationError, ApplicationResult},
+    AuthenticatedUser,
+    error::{AppError, AppResult},
 };
 
 pub(super) fn ensure_capability(
     actor: &AuthenticatedUser,
     resource: &str,
     action: &str,
-) -> ApplicationResult<()> {
+) -> AppResult<()> {
     if actor.has_capability(resource, action) {
         Ok(())
     } else {
-        Err(ApplicationError::forbidden(format!(
+        Err(AppError::forbidden(format!(
             "missing capability {resource}:{action}"
         )))
     }

@@ -2,12 +2,12 @@
 use super::ArticleCommandService;
 use crate::{
     application::{
-        dto::AuthenticatedUser,
-        error::{ApplicationError, ApplicationResult},
+        AuthenticatedUser,
+        error::{AppError, AppResult},
     },
-    domain::article::{
+    domain::{
         ArticleId,
-        specifications::{ArticleSpecification, CanDeleteArticleSpec},
+        article::specifications::{ArticleSpecification, CanDeleteArticleSpec},
     },
 };
 
@@ -26,18 +26,18 @@ impl ArticleCommandService {
         &self,
         actor: &AuthenticatedUser,
         command: DeleteArticleCommand,
-    ) -> ApplicationResult<()> {
+    ) -> AppResult<()> {
         let id = ArticleId::new(command.id)?;
         let article = self
             .read_repo
             .find_by_id(id)
             .await?
-            .ok_or_else(|| ApplicationError::not_found("article not found"))?;
+            .ok_or_else(|| AppError::not_found("article not found"))?;
 
         let delete_spec = CanDeleteArticleSpec::new(&actor.capabilities, &article, actor.id);
 
         if !delete_spec.is_satisfied() {
-            return Err(ApplicationError::forbidden(
+            return Err(AppError::forbidden(
                 "insufficient privileges to delete article",
             ));
         }

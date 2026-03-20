@@ -1,10 +1,10 @@
 // src/presentation/http/controllers/auth.rs
 use crate::application::{
+    AuthTokenDto, UserDto, UserProfileDto,
     commands::users::{
         ChangePasswordCommand, GrantRoleCommand, LoginUserCommand, RefreshTokenCommand,
         RegisterUserCommand, RevokeRoleCommand, UpdateUserCommand,
     },
-    dto::{AuthTokenDto, UserDto, UserProfileDto},
     queries::users::ListUsersQuery,
 };
 use crate::presentation::http::controllers::user_requests::{
@@ -27,9 +27,9 @@ use serde_json::Value as JsonValue;
     request_body = RegisterRequest,
     responses(
         (status = 200, description = "User registered.", body = UserDto),
-        (status = 400, description = "Validation failed.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 409, description = "Username already exists.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+        (status = 400, description = "Validation failed.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 409, description = "Username already exists.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
     ),
     security([]),
     tag = "Auth"
@@ -66,8 +66,8 @@ pub async fn register(
     request_body = LoginRequest,
     responses(
         (status = 200, description = "Login successful.", body = LoginResponse),
-        (status = 401, description = "Invalid credentials.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+        (status = 401, description = "Invalid credentials.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
     ),
     security([]),
     tag = "Auth"
@@ -105,9 +105,9 @@ pub async fn login(
     request_body = RefreshTokenRequest,
     responses(
         (status = 200, description = "Token refreshed.", body = AuthTokenDto),
-        (status = 400, description = "Token not eligible for refresh.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 401, description = "Invalid token.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+        (status = 400, description = "Token not eligible for refresh.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 401, description = "Invalid token.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
     ),
     security([]),
     tag = "Auth"
@@ -140,9 +140,9 @@ pub async fn refresh_token(
     path = "/api/v1/auth/me",
     responses(
         (status = 200, description = "Current user profile.", body = UserProfileDto),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
     ),
     security(("bearerAuth" = [])),
     tag = "Auth"
@@ -174,9 +174,9 @@ pub async fn profile(
     params(ListUsersParams),
     responses(
         (status = 200, description = "List of users.", body = UserListResponse),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
     ),
     security(("bearerAuth" = [])),
     tag = "Users"
@@ -218,11 +218,11 @@ pub async fn list_users(
     request_body = UpdateUserRequest,
     responses(
         (status = 200, description = "User updated.", body = UserDto),
-        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 404, description = "User not found.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 404, description = "User not found.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
     ),
     security(("bearerAuth" = [])),
     tag = "Users"
@@ -263,11 +263,11 @@ pub async fn update_user(
     request_body = ChangePasswordRequest,
     responses(
         (status = 200, description = "Password changed.", body = StatusResponse),
-        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 404, description = "User not found.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 404, description = "User not found.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
     ),
     security(("bearerAuth" = [])),
     tag = "Users"
@@ -311,11 +311,11 @@ pub async fn change_password(
     request_body = GrantRoleRequest,
     responses(
         (status = 200, description = "Role granted.", body = UserDto),
-        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 404, description = "User not found.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 404, description = "User not found.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
     ),
     security(("bearerAuth" = [])),
     tag = "Users"
@@ -354,11 +354,11 @@ pub async fn grant_role(
     ),
     responses(
         (status = 200, description = "Role revoked.", body = UserDto),
-        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 404, description = "User not found.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 404, description = "User not found.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
     ),
     security(("bearerAuth" = [])),
     tag = "Users"
@@ -407,8 +407,8 @@ pub async fn keys(Extension(state): Extension<HttpContext>) -> HttpResult<Json<J
     path = "/api/v1/auth/logout",
     responses(
         (status = 200, description = "Logged out (session revoked).", body = crate::presentation::http::openapi::StatusResponse),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ErrorResponse),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ErrorResponse)
+        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
+        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
     ),
     security(("bearerAuth" = [])),
     tag = "Auth"
@@ -435,8 +435,8 @@ pub async fn logout(
             status: "logged_out".into(),
         }))
     } else {
-        Err(crate::presentation::http::error::HttpError::from_error(
-            crate::application::error::ApplicationError::validation("token is not session-based"),
+        Err(crate::presentation::http::error::Error::from_error(
+            crate::application::error::AppError::validation("token is not session-based"),
         ))
     }
 }

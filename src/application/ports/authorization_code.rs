@@ -1,12 +1,10 @@
-#![allow(clippy::module_name_repetitions)]
-
 // src/application/ports/authorization_code.rs
-use crate::application::{ApplicationResult, dto::TokenSubject};
+use crate::application::{AppResult, TokenSubject};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone)]
-pub struct AuthorizationCode {
+pub struct Code {
     pub code: String,
     pub client_id: Option<String>,
     pub redirect_uri: Option<String>,
@@ -19,9 +17,9 @@ pub struct AuthorizationCode {
 }
 
 #[async_trait]
-pub trait AuthorizationCodeStore: Send + Sync {
-    async fn create_code(&self, code: AuthorizationCode) -> ApplicationResult<()>;
-    async fn get_code(&self, code: &str) -> ApplicationResult<Option<AuthorizationCode>>;
+pub trait CodeStore: Send + Sync {
+    async fn create_code(&self, code: Code) -> AppResult<()>;
+    async fn get_code(&self, code: &str) -> AppResult<Option<Code>>;
     /// Consume (atomically remove) the code and return the stored value if present.
-    async fn consume_code(&self, code: &str) -> ApplicationResult<Option<AuthorizationCode>>;
+    async fn consume_code(&self, code: &str) -> AppResult<Option<Code>>;
 }

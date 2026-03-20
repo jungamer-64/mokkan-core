@@ -1,13 +1,13 @@
 use super::UserCommandService;
 use crate::{
     application::{
-        dto::{AuthTokenDto, TokenSubject},
-        error::{ApplicationError, ApplicationResult},
+        AuthTokenDto, TokenSubject,
+        error::{AppError, AppResult},
         ports::session_revocation::RefreshTokenRecord,
+        random_id,
     },
-    domain::user::UserId,
+    domain::UserId,
 };
-use uuid::Uuid;
 
 struct ParsedRefreshToken {
     session_id: String,
@@ -26,10 +26,7 @@ impl UserCommandService {
     ///
     /// Returns an error if the refresh token is invalid, reused, revoked, or
     /// if the backing session or user can no longer be loaded.
-    pub async fn refresh_token(
-        &self,
-        command: RefreshTokenCommand,
-    ) -> ApplicationResult<AuthTokenDto> {
+    pub async fn refresh_token(&self, command: RefreshTokenCommand) -> AppResult<AuthTokenDto> {
         let (user, session_id, nonce, _token_ver) = self
             .validate_and_load_user_from_refresh_token(&command.token)
             .await?;
@@ -44,7 +41,7 @@ impl UserCommandService {
     async fn validate_and_load_user_from_refresh_token(
         &self,
         token: &str,
-    ) -> ApplicationResult<(crate::domain::user::User, String, String, u32)> {
+    ) -> AppResult<(crate::domain::User, String, String, u32)> {
         let ParsedRefreshToken {
             session_id,
             nonce,
@@ -60,44 +57,41 @@ impl UserCommandService {
         Ok((user, session_id, nonce, token_version))
     }
 
-    async fn user_id_for_session(&self, session_id: &str) -> ApplicationResult<UserId> {
+    async fn user_id_for_session(&self, session_id: &str) -> AppResult<UserId> {
         let meta = self
             .session_stores
             .session_metadata
             .get_session_metadata(session_id)
             .await?
-            .ok_or_else(|| ApplicationError::validation("invalid refresh token"))?;
+            .ok_or_else(|| AppError::validation("invalid refresh token"))?;
         UserId::new(meta.user_id).map_err(Into::into)
     }
 
-    async fn ensure_session_not_revoked(&self, session_id: &str) -> ApplicationResult<()> {
+    async fn ensure_session_not_revoked(&self, session_id: &str) -> AppResult<()> {
         if self
             .session_stores
             .revocation
             .is_revoked(session_id)
             .await?
         {
-            return Err(ApplicationError::forbidden("session revoked"));
+            return Err(AppError::forbidden("session revoked"));
         }
 
         Ok(())
     }
 
-    async fn load_user_for_refresh(
-        &self,
-        user_id: UserId,
-    ) -> ApplicationResult<crate::domain::user::User> {
+    async fn load_user_for_refresh(&self, user_id: UserId) -> AppResult<crate::domain::User> {
         self.user_repo
             .find_by_id(user_id)
             .await?
-            .ok_or_else(|| ApplicationError::not_found("user not found"))
+            .ok_or_else(|| AppError::not_found("user not found"))
     }
 
     async fn ensure_token_version_not_revoked(
         &self,
-        user: &crate::domain::user::User,
+        user: &crate::domain::User,
         token_ver_in_token: u32,
-    ) -> ApplicationResult<()> {
+    ) -> AppResult<()> {
         if let Some(min_version) = self
             .session_stores
             .token_versions
@@ -105,7 +99,7 @@ impl UserCommandService {
             .await?
             && token_ver_in_token < min_version
         {
-            return Err(ApplicationError::forbidden("token version revoked"));
+            return Err(AppError::forbidden("token version revoked"));
         }
 
         Ok(())
@@ -113,11 +107,11 @@ impl UserCommandService {
 
     async fn perform_refresh_for_user(
         &self,
-        user: &crate::domain::user::User,
+        user: &crate::domain::User,
         session_id: &str,
         expected_nonce: &str,
-    ) -> ApplicationResult<AuthTokenDto> {
-        let new_nonce = Uuid::new_v4().to_string();
+    ) -> AppResult<AuthTokenDto> {
+        let new_nonce = random_id::v4_string()?;
         let swapped = self
             .session_stores
             .refresh_nonces
@@ -136,12 +130,10 @@ impl UserCommandService {
                     .revocation
                     .revoke_sessions_for_user(i64::from(user.id))
                     .await?;
-                return Err(ApplicationError::forbidden("refresh token reused"));
+                return Err(AppError::forbidden("refresh token reused"));
             }
 
-            return Err(ApplicationError::forbidden(
-                "refresh token invalid or rotated",
-            ));
+            return Err(AppError::forbidden("refresh token invalid or rotated"));
         }
 
         let subject = Self::make_token_subject(user, session_id);
@@ -156,7 +148,7 @@ impl UserCommandService {
         Ok(new_access)
     }
 
-    fn make_token_subject(user: &crate::domain::user::User, session_id: &str) -> TokenSubject {
+    fn make_token_subject(user: &crate::domain::User, session_id: &str) -> TokenSubject {
         TokenSubject {
             user_id: user.id,
             username: user.username.to_string(),
@@ -169,10 +161,10 @@ impl UserCommandService {
 
     pub(super) async fn build_refresh_token_for_user(
         &self,
-        user: &crate::domain::user::User,
+        user: &crate::domain::User,
         session_id: &str,
         nonce: &str,
-    ) -> ApplicationResult<String> {
+    ) -> AppResult<String> {
         let current_min = self
             .session_stores
             .token_versions
@@ -180,7 +172,7 @@ impl UserCommandService {
             .await?
             .unwrap_or(0);
 
-        let token_id = Uuid::new_v4().to_string();
+        let token_id = random_id::v4_string()?;
         self.session_stores
             .opaque_refresh_tokens
             .store_refresh_token_record(
@@ -196,16 +188,13 @@ impl UserCommandService {
         self.refresh_token_codec.encode_opaque_handle(&token_id)
     }
 
-    async fn load_opaque_refresh_token(
-        &self,
-        token_id: &str,
-    ) -> ApplicationResult<ParsedRefreshToken> {
+    async fn load_opaque_refresh_token(&self, token_id: &str) -> AppResult<ParsedRefreshToken> {
         let record = self
             .session_stores
             .opaque_refresh_tokens
             .get_refresh_token_record(token_id)
             .await?
-            .ok_or_else(|| ApplicationError::validation("invalid refresh token"))?;
+            .ok_or_else(|| AppError::validation("invalid refresh token"))?;
 
         Ok(ParsedRefreshToken {
             session_id: record.session_id,
@@ -214,12 +203,12 @@ impl UserCommandService {
         })
     }
 
-    async fn parse_refresh_token(&self, token: &str) -> ApplicationResult<ParsedRefreshToken> {
+    async fn parse_refresh_token(&self, token: &str) -> AppResult<ParsedRefreshToken> {
         if self.refresh_token_codec.is_opaque_token(token) {
             let token_id = self.refresh_token_codec.decode_opaque_handle(token)?;
             return self.load_opaque_refresh_token(&token_id).await;
         }
 
-        Err(ApplicationError::validation("invalid refresh token"))
+        Err(AppError::validation("invalid refresh token"))
     }
 }

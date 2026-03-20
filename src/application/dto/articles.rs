@@ -1,4 +1,4 @@
-use crate::domain::article::{Article, ArticleRevision};
+use crate::domain::{Article, ArticleRevision};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;

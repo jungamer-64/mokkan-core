@@ -1,4 +1,4 @@
-use crate::domain::user::{Capability, Role, UserId};
+use crate::domain::{Capability, Role, UserId};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;

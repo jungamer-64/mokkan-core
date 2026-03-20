@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::domain::user::UserRepository;
+use crate::domain::UserRepository;
 
 #[must_use]
 pub struct UserQueryService {

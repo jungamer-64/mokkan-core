@@ -1,3 +1,4 @@
+// False positive from `serde` + `utoipa` derive expansion on the generic page type.
 #![allow(clippy::option_if_let_else)]
 
 use serde::Serialize;

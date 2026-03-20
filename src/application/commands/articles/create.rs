@@ -1,11 +1,8 @@
 // src/application/commands/articles/create.rs
 use super::{ArticleCommandService, capability::ensure_capability};
 use crate::{
-    application::{
-        dto::{ArticleDto, AuthenticatedUser},
-        error::ApplicationResult,
-    },
-    domain::article::{ArticleBody, ArticleTitle, NewArticle},
+    application::{ArticleDto, AuthenticatedUser, error::AppResult},
+    domain::{ArticleBody, ArticleTitle, NewArticle},
 };
 
 pub struct CreateArticleCommand {
@@ -69,7 +66,7 @@ impl ArticleCommandService {
         &self,
         actor: &AuthenticatedUser,
         command: CreateArticleCommand,
-    ) -> ApplicationResult<ArticleDto> {
+    ) -> AppResult<ArticleDto> {
         ensure_capability(actor, "articles", "create")?;
 
         let title = ArticleTitle::new(command.title)?;

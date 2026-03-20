@@ -9,9 +9,9 @@ use axum::{
 };
 use mokkan_core::{
     application::{
-        dto::{AuthTokenDto, AuthenticatedUser, TokenSubject},
+        AuthTokenDto, AuthenticatedUser, TokenSubject,
         ports::security::{PasswordHasher, TokenManager},
-        services::{ApplicationDependencies, ApplicationRuntimeDependencies, ApplicationServices},
+        services::{Dependencies, Registry, RuntimeDependencies},
     },
     presentation::http::{
         extractors::Authenticated, middleware::require_capabilities, state::HttpContext,
@@ -38,14 +38,14 @@ impl TokenManager for CountingTokenManager {
     async fn issue(
         &self,
         _subject: TokenSubject,
-    ) -> mokkan_core::application::ApplicationResult<AuthTokenDto> {
+    ) -> mokkan_core::application::AppResult<AuthTokenDto> {
         unimplemented!("issue is not used in this test")
     }
 
     async fn authenticate(
         &self,
         token: &str,
-    ) -> mokkan_core::application::ApplicationResult<AuthenticatedUser> {
+    ) -> mokkan_core::application::AppResult<AuthenticatedUser> {
         self.authenticate_calls.fetch_add(1, Ordering::SeqCst);
         assert_eq!(token, "counted-token");
 
@@ -64,7 +64,7 @@ impl TokenManager for CountingTokenManager {
         })
     }
 
-    async fn public_jwk(&self) -> mokkan_core::application::ApplicationResult<serde_json::Value> {
+    async fn public_jwk(&self) -> mokkan_core::application::AppResult<serde_json::Value> {
         Ok(serde_json::json!({ "keys": [] }))
     }
 }
@@ -81,7 +81,7 @@ fn lazy_pool() -> sqlx::Pool<sqlx::Postgres> {
 }
 
 fn test_state(token_manager: Arc<dyn TokenManager>) -> HttpContext {
-    let deps = ApplicationDependencies {
+    let deps = Dependencies {
         user_repo: Arc::new(support::mocks::DummyRepo),
         article_write_repo: Arc::new(support::mocks::DummyArticleWrite),
         article_read_repo: Arc::new(support::mocks::DummyArticleRead),
@@ -89,9 +89,9 @@ fn test_state(token_manager: Arc<dyn TokenManager>) -> HttpContext {
         audit_log_repo: Arc::new(support::mocks::MockAuditRepo),
     };
 
-    let services = Arc::new(ApplicationServices::new(
+    let services = Arc::new(Registry::new(
         deps,
-        ApplicationRuntimeDependencies {
+        RuntimeDependencies {
             password_hasher: Arc::new(support::mocks::DummyPasswordHasher)
                 as Arc<dyn PasswordHasher>,
             token_manager,
@@ -106,7 +106,7 @@ fn test_state(token_manager: Arc<dyn TokenManager>) -> HttpContext {
                 ),
             ),
             authorization_code_store: Arc::new(
-                mokkan_core::infrastructure::security::authorization_code_store::InMemoryAuthorizationCodeStore::new(
+                mokkan_core::infrastructure::security::authorization_code_store::InMemoryStore::new(
                 ),
             ),
             clock: Arc::new(support::mocks::DummyClock),

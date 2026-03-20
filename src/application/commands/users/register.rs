@@ -1,10 +1,10 @@
 use super::{UserCommandService, password::validate_password};
 use crate::{
     application::{
-        dto::{AuthenticatedUser, UserDto},
-        error::{ApplicationError, ApplicationResult},
+        AuthenticatedUser, UserDto,
+        error::{AppError, AppResult},
     },
-    domain::user::{NewUser, PasswordHash, Role, Username},
+    domain::{NewUser, PasswordHash, Role, Username},
 };
 
 pub struct RegisterUserCommand {
@@ -25,7 +25,7 @@ impl UserCommandService {
         &self,
         actor: Option<&AuthenticatedUser>,
         command: RegisterUserCommand,
-    ) -> ApplicationResult<UserDto> {
+    ) -> AppResult<UserDto> {
         let username = Username::new(command.username)?;
         validate_password(&command.password)?;
         let existing = self.user_repo.count().await?;
@@ -44,27 +44,23 @@ impl UserCommandService {
         existing: u64,
         actor: Option<&AuthenticatedUser>,
         role: Option<Role>,
-    ) -> ApplicationResult<Role> {
+    ) -> AppResult<Role> {
         if existing == 0 {
             return Ok(Role::Admin);
         }
-        let requester = actor
-            .ok_or_else(|| ApplicationError::forbidden("administrative privileges are required"))?;
+        let requester =
+            actor.ok_or_else(|| AppError::forbidden("administrative privileges are required"))?;
         super::capability::ensure_capability(requester, "users", "create")?;
         Ok(role.unwrap_or(Role::Author))
     }
 
-    async fn ensure_username_available(
-        &self,
-        existing: u64,
-        username: &Username,
-    ) -> ApplicationResult<()> {
+    async fn ensure_username_available(&self, existing: u64, username: &Username) -> AppResult<()> {
         if existing == 0 {
             return Ok(());
         }
 
         if self.user_repo.find_by_username(username).await?.is_some() {
-            return Err(ApplicationError::conflict("username already exists"));
+            return Err(AppError::conflict("username already exists"));
         }
 
         Ok(())
@@ -75,7 +71,7 @@ impl UserCommandService {
         username: Username,
         password: &str,
         role: Role,
-    ) -> ApplicationResult<crate::domain::user::User> {
+    ) -> AppResult<crate::domain::User> {
         let hashed = self.password_hasher.hash(password).await?;
         let password_hash = PasswordHash::new(hashed)?;
 

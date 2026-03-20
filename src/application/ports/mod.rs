@@ -9,7 +9,7 @@ pub mod util;
 // Type aliases to make port injection sites more descriptive and reduce `dyn` noise
 pub type PasswordHasherPort = dyn security::PasswordHasher;
 pub type TokenManagerPort = dyn security::TokenManager;
-pub type RefreshTokenCodecPort = dyn refresh_token::RefreshTokenCodec;
+pub type RefreshTokenCodecPort = dyn refresh_token::Codec;
 pub type ClockPort = dyn time::Clock;
 pub type SlugGeneratorPort = dyn util::SlugGenerator;
-pub type AuthorizationCodeStorePort = dyn authorization_code::AuthorizationCodeStore;
+pub type CodeStorePort = dyn authorization_code::CodeStore;

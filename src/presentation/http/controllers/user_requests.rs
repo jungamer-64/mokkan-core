@@ -9,7 +9,7 @@ const fn default_limit() -> u32 {
 pub struct RegisterRequest {
     pub username: String,
     pub password: String,
-    pub role: Option<crate::domain::user::Role>,
+    pub role: Option<crate::domain::Role>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -25,8 +25,8 @@ pub struct RefreshTokenRequest {
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct LoginResponse {
-    pub token: crate::application::dto::AuthTokenDto,
-    pub user: crate::application::dto::UserDto,
+    pub token: crate::application::AuthTokenDto,
+    pub user: crate::application::UserDto,
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams, ToSchema)]
@@ -42,7 +42,7 @@ pub struct ListUsersParams {
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct UpdateUserRequest {
     pub is_active: Option<bool>,
-    pub role: Option<crate::domain::user::Role>,
+    pub role: Option<crate::domain::Role>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -53,5 +53,5 @@ pub struct ChangePasswordRequest {
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct GrantRoleRequest {
-    pub role: crate::domain::user::Role,
+    pub role: crate::domain::Role,
 }

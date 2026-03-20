@@ -1,6 +1,6 @@
 // src/presentation/http/middleware/require_capabilities.rs
-use crate::application::error::ApplicationError;
-use crate::presentation::http::error::HttpError;
+use crate::application::error::AppError;
+use crate::presentation::http::error::Error as HttpError;
 use crate::presentation::http::state::HttpContext;
 use axum::{
     body::Body,
@@ -35,15 +35,11 @@ pub async fn require_capability(
                 Err(err) => HttpError::from_error(err).into_response(),
             }
         } else {
-            HttpError::from_error(ApplicationError::infrastructure(
-                "application state missing",
-            ))
-            .into_response()
+            HttpError::from_error(AppError::infrastructure("application state missing"))
+                .into_response()
         }
     } else {
-        HttpError::from_error(ApplicationError::unauthorized(
-            "missing Authorization header",
-        ))
-        .into_response()
+        HttpError::from_error(AppError::unauthorized("missing Authorization header"))
+            .into_response()
     }
 }

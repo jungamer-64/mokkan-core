@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::domain::article::{ArticleReadRepository, ArticleRevisionRepository};
+use crate::domain::{ArticleReadRepository, ArticleRevisionRepository};
 
 #[must_use]
 pub struct ArticleQueryService {

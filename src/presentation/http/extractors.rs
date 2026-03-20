@@ -1,12 +1,12 @@
 // src/presentation/http/extractors.rs
 use crate::{
-    application::{dto::AuthenticatedUser, error::ApplicationError},
+    application::{AuthenticatedUser, error::AppError},
     presentation::http::state::HttpContext,
 };
 use axum::{Extension, extract::FromRequestParts, http::request::Parts};
 use headers::{Authorization, HeaderMapExt, authorization::Bearer};
 
-use super::error::HttpError;
+use super::error::Error as HttpError;
 
 #[derive(Debug, Clone)]
 pub struct Authenticated(pub AuthenticatedUser);
@@ -34,7 +34,7 @@ async fn validate_not_revoked(
             .await
             .map_err(HttpError::from_error)?
         {
-            return Err(HttpError::from_error(ApplicationError::unauthorized(
+            return Err(HttpError::from_error(AppError::unauthorized(
                 "session revoked",
             )));
         }
@@ -49,7 +49,7 @@ async fn validate_not_revoked(
             .map_err(HttpError::from_error)?
             && token_ver < min_ver
         {
-            return Err(HttpError::from_error(ApplicationError::unauthorized(
+            return Err(HttpError::from_error(AppError::unauthorized(
                 "token revoked",
             )));
         }
@@ -65,9 +65,7 @@ impl FromRequestParts<()> for Authenticated {
         let Extension(app_state) = Extension::<HttpContext>::from_request_parts(parts, state)
             .await
             .map_err(|_| {
-                HttpError::from_error(ApplicationError::infrastructure(
-                    "application state missing",
-                ))
+                HttpError::from_error(AppError::infrastructure("application state missing"))
             })?;
 
         if let Some(user) = cached_authenticated_user(parts) {
@@ -78,9 +76,7 @@ impl FromRequestParts<()> for Authenticated {
             .headers
             .typed_get::<Authorization<Bearer>>()
             .ok_or_else(|| {
-                HttpError::from_error(ApplicationError::unauthorized(
-                    "missing Authorization header",
-                ))
+                HttpError::from_error(AppError::unauthorized("missing Authorization header"))
             })?;
 
         let token = header.token();
@@ -102,9 +98,7 @@ impl FromRequestParts<()> for MaybeAuthenticated {
         let Extension(app_state) = Extension::<HttpContext>::from_request_parts(parts, state)
             .await
             .map_err(|_| {
-                HttpError::from_error(ApplicationError::infrastructure(
-                    "application state missing",
-                ))
+                HttpError::from_error(AppError::infrastructure("application state missing"))
             })?;
 
         if let Some(user) = cached_authenticated_user(parts) {

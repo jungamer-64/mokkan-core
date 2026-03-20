@@ -1,10 +1,10 @@
 use super::ArticleQueryService;
 use crate::{
     application::{
-        dto::{ArticleDto, AuthenticatedUser},
-        error::{ApplicationError, ApplicationResult},
+        ArticleDto, AuthenticatedUser,
+        error::{AppError, AppResult},
     },
-    domain::article::{Article, ArticleSlug},
+    domain::{Article, ArticleSlug},
 };
 
 pub struct GetArticleBySlugQuery {
@@ -15,14 +15,14 @@ impl ArticleQueryService {
     fn ensure_actor_can_view_unpublished(
         actor: Option<&AuthenticatedUser>,
         article: &Article,
-    ) -> ApplicationResult<()> {
+    ) -> AppResult<()> {
         if article.published {
             return Ok(());
         }
 
-        let actor = actor.ok_or_else(|| ApplicationError::not_found("article not found"))?;
+        let actor = actor.ok_or_else(|| AppError::not_found("article not found"))?;
         if !actor.has_capability("articles", "view:drafts") && actor.id != article.author_id {
-            return Err(ApplicationError::not_found("article not found"));
+            return Err(AppError::not_found("article not found"));
         }
 
         Ok(())
@@ -38,13 +38,13 @@ impl ArticleQueryService {
         &self,
         actor: Option<&AuthenticatedUser>,
         query: GetArticleBySlugQuery,
-    ) -> ApplicationResult<ArticleDto> {
+    ) -> AppResult<ArticleDto> {
         let slug = ArticleSlug::new(query.slug)?;
         let article = self
             .read_repo
             .find_by_slug(&slug)
             .await?
-            .ok_or_else(|| ApplicationError::not_found("article not found"))?;
+            .ok_or_else(|| AppError::not_found("article not found"))?;
 
         Self::ensure_actor_can_view_unpublished(actor, &article)?;
 

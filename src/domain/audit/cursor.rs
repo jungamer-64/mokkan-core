@@ -1,5 +1,3 @@
-#![allow(clippy::module_name_repetitions)]
-
 // src/domain/audit/cursor.rs
 use crate::domain::errors::{DomainError, DomainResult};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -7,12 +5,12 @@ use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone)]
 #[must_use]
-pub struct AuditLogCursor {
+pub struct Cursor {
     pub created_at: DateTime<Utc>,
     pub id: i64,
 }
 
-impl AuditLogCursor {
+impl Cursor {
     pub const fn new(created_at: DateTime<Utc>, id: i64) -> Self {
         Self { created_at, id }
     }

@@ -1,12 +1,12 @@
 use super::{ArticleCommandService, capability::ensure_capability};
 use crate::{
     application::{
-        dto::{ArticleDto, AuthenticatedUser},
-        error::{ApplicationError, ApplicationResult},
+        ArticleDto, AuthenticatedUser,
+        error::{AppError, AppResult},
     },
-    domain::article::{
+    domain::{
         Article, ArticleBody, ArticleId, ArticleTitle, ArticleUpdate,
-        specifications::{ArticleSpecification, CanUpdateArticleSpec},
+        article::specifications::{ArticleSpecification, CanUpdateArticleSpec},
     },
 };
 
@@ -29,18 +29,18 @@ impl ArticleCommandService {
         &self,
         actor: &AuthenticatedUser,
         command: UpdateArticleCommand,
-    ) -> ApplicationResult<ArticleDto> {
+    ) -> AppResult<ArticleDto> {
         let id = ArticleId::new(command.id)?;
         let mut article = self
             .read_repo
             .find_by_id(id)
             .await?
-            .ok_or_else(|| ApplicationError::not_found("article not found"))?;
+            .ok_or_else(|| AppError::not_found("article not found"))?;
 
         let update_spec = CanUpdateArticleSpec::new(&actor.capabilities, &article, actor.id);
 
         if !update_spec.is_satisfied() {
-            return Err(ApplicationError::forbidden(
+            return Err(AppError::forbidden(
                 "insufficient privileges to update article",
             ));
         }
@@ -76,7 +76,7 @@ impl ArticleCommandService {
         title_opt: Option<ArticleTitle>,
         body_opt: Option<ArticleBody>,
         mut update: ArticleUpdate,
-    ) -> ApplicationResult<ArticleUpdate> {
+    ) -> AppResult<ArticleUpdate> {
         if title_opt.is_none() && body_opt.is_none() {
             return Ok(update);
         }
@@ -109,7 +109,7 @@ impl ArticleCommandService {
         article: &mut Article,
         publish_flag: bool,
         mut update: ArticleUpdate,
-    ) -> ApplicationResult<ArticleUpdate> {
+    ) -> AppResult<ArticleUpdate> {
         if publish_flag != article.published {
             ensure_capability(actor, "articles", "publish")?;
             let now = self.clock.now();

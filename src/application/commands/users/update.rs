@@ -1,10 +1,10 @@
 use super::{UserCommandService, capability::ensure_capability};
 use crate::{
     application::{
-        dto::{AuthenticatedUser, UserDto},
-        error::{ApplicationError, ApplicationResult},
+        AuthenticatedUser, UserDto,
+        error::{AppError, AppResult},
     },
-    domain::user::{Role, UserId, UserUpdate},
+    domain::{Role, UserId, UserUpdate},
 };
 
 pub struct UpdateUserCommand {
@@ -24,15 +24,13 @@ impl UserCommandService {
         &self,
         actor: &AuthenticatedUser,
         command: UpdateUserCommand,
-    ) -> ApplicationResult<UserDto> {
+    ) -> AppResult<UserDto> {
         ensure_capability(actor, "users", "update")?;
 
         let user_id = UserId::new(command.user_id)?;
 
         if command.is_active.is_none() && command.role.is_none() {
-            return Err(ApplicationError::validation(
-                "at least one field must be provided",
-            ));
+            return Err(AppError::validation("at least one field must be provided"));
         }
 
         let mut update = UserUpdate::new(user_id);

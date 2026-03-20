@@ -1,10 +1,10 @@
-use super::{AuditQueryService, common};
+use super::{common, service::AuditQueryService};
 use crate::{
     application::{
-        dto::{AuditLogDto, AuthenticatedUser, CursorPage},
-        error::{ApplicationError, ApplicationResult},
+        AuditLogDto, AuthenticatedUser, CursorPage,
+        error::{AppError, AppResult},
     },
-    domain::audit::cursor::AuditLogCursor,
+    domain::audit::cursor::Cursor,
 };
 
 pub struct ListAuditLogsQuery {
@@ -36,7 +36,7 @@ impl AuditQueryService {
         &self,
         actor: &AuthenticatedUser,
         query: ListAuditLogsQuery,
-    ) -> ApplicationResult<CursorPage<AuditLogDto>> {
+    ) -> AppResult<CursorPage<AuditLogDto>> {
         common::ensure_audit_capability(actor)?;
         let limit = common::normalize_limit(query.limit);
         let typed_cursor = Self::decode_cursor(query.cursor.as_deref())?;
@@ -45,7 +45,7 @@ impl AuditQueryService {
             .repo
             .list(limit, typed_cursor)
             .await
-            .map_err(ApplicationError::from)?;
+            .map_err(AppError::from)?;
         let dtos: Vec<_> = items.into_iter().map(Into::<AuditLogDto>::into).collect();
         Ok(CursorPage::new(dtos, next_cursor))
     }
@@ -60,7 +60,7 @@ impl AuditQueryService {
         &self,
         actor: &AuthenticatedUser,
         query: ListAuditLogsByUserQuery,
-    ) -> ApplicationResult<CursorPage<AuditLogDto>> {
+    ) -> AppResult<CursorPage<AuditLogDto>> {
         common::ensure_audit_capability(actor)?;
         let limit = common::normalize_limit(query.limit);
         let typed_cursor = Self::decode_cursor(query.cursor.as_deref())?;
@@ -68,7 +68,7 @@ impl AuditQueryService {
             .repo
             .find_by_user(query.user_id, limit, typed_cursor)
             .await
-            .map_err(ApplicationError::from)?;
+            .map_err(AppError::from)?;
         let dtos: Vec<_> = items.into_iter().map(Into::<AuditLogDto>::into).collect();
         Ok(CursorPage::new(dtos, next_cursor))
     }
@@ -83,7 +83,7 @@ impl AuditQueryService {
         &self,
         actor: &AuthenticatedUser,
         query: ListAuditLogsByResourceQuery,
-    ) -> ApplicationResult<CursorPage<AuditLogDto>> {
+    ) -> AppResult<CursorPage<AuditLogDto>> {
         common::ensure_audit_capability(actor)?;
         let limit = common::normalize_limit(query.limit);
         let typed_cursor = Self::decode_cursor(query.cursor.as_deref())?;
@@ -91,19 +91,15 @@ impl AuditQueryService {
             .repo
             .find_by_resource(&query.resource_type, query.resource_id, limit, typed_cursor)
             .await
-            .map_err(ApplicationError::from)?;
+            .map_err(AppError::from)?;
         let dtos: Vec<_> = items.into_iter().map(Into::<AuditLogDto>::into).collect();
         Ok(CursorPage::new(dtos, next_cursor))
     }
 
-    fn decode_cursor(cursor: Option<&str>) -> ApplicationResult<Option<AuditLogCursor>> {
+    fn decode_cursor(cursor: Option<&str>) -> AppResult<Option<Cursor>> {
         cursor.map_or_else(
             || Ok(None),
-            |token| {
-                Ok(Some(
-                    AuditLogCursor::decode(token).map_err(ApplicationError::from)?,
-                ))
-            },
+            |token| Ok(Some(Cursor::decode(token).map_err(AppError::from)?)),
         )
     }
 }

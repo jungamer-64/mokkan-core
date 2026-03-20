@@ -1,7 +1,7 @@
 // src/infrastructure/security/token.rs
 use crate::application::{
-    dto::{AuthTokenDto, AuthenticatedUser, TokenSubject},
-    error::{ApplicationError, ApplicationResult},
+    AuthTokenDto, AuthenticatedUser, TokenSubject,
+    error::{AppError, AppResult},
     ports::security::TokenManager,
 };
 use async_trait::async_trait;
@@ -33,9 +33,9 @@ impl BiscuitTokenManager {
     /// # Errors
     ///
     /// Returns an error if the private key cannot be parsed.
-    pub fn new(private_key_hex: &str, ttl: Duration) -> ApplicationResult<Self> {
+    pub fn new(private_key_hex: &str, ttl: Duration) -> AppResult<Self> {
         let private = PrivateKey::from_bytes_hex(private_key_hex, Algorithm::Ed25519)
-            .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+            .map_err(|err| AppError::infrastructure(err.to_string()))?;
         let keypair = KeyPair::from(&private);
         let public = keypair.public();
 
@@ -116,13 +116,13 @@ fn build_caveat_code_and_params(token_type: &str) -> (String, HashMap<String, Te
     (code, params)
 }
 
-fn seal_and_serialize(token: &Biscuit) -> Result<String, ApplicationError> {
+fn seal_and_serialize(token: &Biscuit) -> Result<String, AppError> {
     let sealed = token
         .seal()
-        .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        .map_err(|err| AppError::infrastructure(err.to_string()))?;
     sealed
         .to_base64()
-        .map_err(|err| ApplicationError::infrastructure(err.to_string()))
+        .map_err(|err| AppError::infrastructure(err.to_string()))
 }
 
 fn ttl_to_expires_in_seconds(ttl: Duration) -> i64 {
@@ -139,14 +139,14 @@ fn build_and_serialize_biscuit(
     code: &str,
     params: HashMap<String, Term>,
     root: &KeyPair,
-) -> Result<String, ApplicationError> {
+) -> Result<String, AppError> {
     let builder = Biscuit::builder()
         .code_with_params(code, params, HashMap::new())
-        .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
     let token = builder
         .build(root)
-        .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
     seal_and_serialize(&token)
 }
@@ -157,20 +157,20 @@ fn build_and_serialize_biscuit_with_block(
     block_code: &str,
     block_params: HashMap<String, Term>,
     root: &KeyPair,
-) -> Result<String, ApplicationError> {
+) -> Result<String, AppError> {
     let builder = Biscuit::builder()
         .code_with_params(root_code, root_params, HashMap::new())
-        .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
     let block = BlockBuilder::new()
         .code_with_params(block_code, block_params, HashMap::new())
-        .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
     let builder = builder.merge(block);
 
     let token = builder
         .build(root)
-        .map_err(|err| ApplicationError::infrastructure(err.to_string()))?;
+        .map_err(|err| AppError::infrastructure(err.to_string()))?;
 
     seal_and_serialize(&token)
 }
@@ -190,7 +190,7 @@ fn extract_root_token_type_from_facts(facts: &[biscuit_auth::builder::Fact]) -> 
 fn ensure_checks_match_root_tt(
     checks: &[biscuit_auth::builder::Check],
     root_tt: &str,
-) -> Result<(), ApplicationError> {
+) -> Result<(), AppError> {
     for check in checks {
         for rule in &check.queries {
             for pred in &rule.body {
@@ -200,13 +200,13 @@ fn ensure_checks_match_root_tt(
                     match term.clone() {
                         Term::Str(ref s) => {
                             if s != root_tt {
-                                return Err(ApplicationError::unauthorized(
+                                return Err(AppError::unauthorized(
                                     "token caveat does not match authority token_type",
                                 ));
                             }
                         }
                         _ => {
-                            return Err(ApplicationError::unauthorized(
+                            return Err(AppError::unauthorized(
                                 "invalid token_type term in caveat",
                             ));
                         }
@@ -221,11 +221,11 @@ fn ensure_checks_match_root_tt(
 
 #[async_trait]
 impl TokenManager for BiscuitTokenManager {
-    async fn issue(&self, subject: TokenSubject) -> ApplicationResult<AuthTokenDto> {
+    async fn issue(&self, subject: TokenSubject) -> AppResult<AuthTokenDto> {
         let issued_at = SystemTime::now();
         let expires_at = issued_at
             .checked_add(self.ttl)
-            .ok_or_else(|| ApplicationError::infrastructure("token expiration overflow"))?;
+            .ok_or_else(|| AppError::infrastructure("token expiration overflow"))?;
         let (code, params) = build_code_and_params(&subject, issued_at, expires_at);
 
         // Build a separate caveat block for token_type and merge it into the biscuit.
@@ -253,7 +253,7 @@ impl TokenManager for BiscuitTokenManager {
         })
     }
 
-    async fn public_jwk(&self) -> ApplicationResult<serde_json::Value> {
+    async fn public_jwk(&self) -> AppResult<serde_json::Value> {
         // For Ed25519 (OKP) produce a minimal JWK with x parameter (base64url)
         let key_bytes = self.public.to_bytes();
         let x = URL_SAFE_NO_PAD.encode(key_bytes);
@@ -281,15 +281,15 @@ impl TokenManager for BiscuitTokenManager {
         Ok(jwk)
     }
 
-    async fn authenticate(&self, token: &str) -> ApplicationResult<AuthenticatedUser> {
+    async fn authenticate(&self, token: &str) -> AppResult<AuthenticatedUser> {
         let biscuit = Biscuit::from_base64(token, self.public)
-            .map_err(|err| ApplicationError::unauthorized(err.to_string()))?;
+            .map_err(|err| AppError::unauthorized(err.to_string()))?;
 
         // Inspect the biscuit view before authorizing so we can surface meaningful
         // debug information when checks fail.
         let view = biscuit
             .authorizer()
-            .map_err(|err| ApplicationError::unauthorized(err.to_string()))?;
+            .map_err(|err| AppError::unauthorized(err.to_string()))?;
 
         // Dump facts and checks so we can enforce that the caveat block's
         // `check if token_type({tt})` actually matches the root `token_type` fact.
@@ -299,13 +299,11 @@ impl TokenManager for BiscuitTokenManager {
         // block should be considered unauthorized.
         let has_caveat = facts.iter().any(|f| f.predicate.name == "has_caveat");
         if !has_caveat {
-            return Err(ApplicationError::unauthorized(
-                "missing required token caveat",
-            ));
+            return Err(AppError::unauthorized("missing required token caveat"));
         }
 
         let root_tt = extract_root_token_type_from_facts(&facts)
-            .ok_or_else(|| ApplicationError::unauthorized("missing token_type"))?;
+            .ok_or_else(|| AppError::unauthorized("missing token_type"))?;
 
         ensure_checks_match_root_tt(&checks, &root_tt)?;
 
@@ -314,9 +312,7 @@ impl TokenManager for BiscuitTokenManager {
         let user = crate::infrastructure::security::claims::parse(&facts)?;
         let now = chrono::Utc::now();
         if now < user.issued_at || now > user.expires_at {
-            return Err(ApplicationError::unauthorized(
-                "token is expired or not yet valid",
-            ));
+            return Err(AppError::unauthorized("token is expired or not yet valid"));
         }
 
         Ok(user)
@@ -326,7 +322,7 @@ impl TokenManager for BiscuitTokenManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::user::{Capability, Role, UserId};
+    use crate::domain::{Capability, Role, UserId};
     use std::collections::HashSet;
     use std::time::{Duration as StdDuration, SystemTime};
 

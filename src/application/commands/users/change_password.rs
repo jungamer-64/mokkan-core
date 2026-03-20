@@ -1,10 +1,10 @@
 use super::{UserCommandService, capability::ensure_capability, password::validate_password};
 use crate::{
     application::{
-        dto::AuthenticatedUser,
-        error::{ApplicationError, ApplicationResult},
+        AuthenticatedUser,
+        error::{AppError, AppResult},
     },
-    domain::user::{PasswordHash, UserId, UserUpdate},
+    domain::{PasswordHash, UserId, UserUpdate},
 };
 
 pub struct ChangePasswordCommand {
@@ -24,14 +24,14 @@ impl UserCommandService {
         &self,
         actor: &AuthenticatedUser,
         command: ChangePasswordCommand,
-    ) -> ApplicationResult<()> {
+    ) -> AppResult<()> {
         let target_id = UserId::new(command.user_id)?;
 
         let user = self
             .user_repo
             .find_by_id(target_id)
             .await?
-            .ok_or_else(|| ApplicationError::not_found("user not found"))?;
+            .ok_or_else(|| AppError::not_found("user not found"))?;
 
         self.verify_change_password_self(actor, &user, command.current_password.as_deref())
             .await?;
@@ -45,9 +45,9 @@ impl UserCommandService {
     async fn verify_change_password_self(
         &self,
         actor: &AuthenticatedUser,
-        user: &crate::domain::user::User,
+        user: &crate::domain::User,
         current_password: Option<&str>,
-    ) -> ApplicationResult<()> {
+    ) -> AppResult<()> {
         let is_self = actor.id == user.id;
 
         if !is_self {
@@ -55,8 +55,8 @@ impl UserCommandService {
             return Ok(());
         }
 
-        let current = current_password
-            .ok_or_else(|| ApplicationError::validation("current password is required"))?;
+        let current =
+            current_password.ok_or_else(|| AppError::validation("current password is required"))?;
 
         self.password_hasher
             .verify(current, user.password_hash.as_str())
@@ -69,7 +69,7 @@ impl UserCommandService {
         &self,
         target_id: UserId,
         new_password: &str,
-    ) -> ApplicationResult<()> {
+    ) -> AppResult<()> {
         validate_password(new_password)?;
 
         let hashed = self.password_hasher.hash(new_password).await?;

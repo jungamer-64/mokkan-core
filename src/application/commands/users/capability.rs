@@ -1,17 +1,17 @@
 use crate::application::{
-    dto::AuthenticatedUser,
-    error::{ApplicationError, ApplicationResult},
+    AuthenticatedUser,
+    error::{AppError, AppResult},
 };
 
 pub(super) fn ensure_capability(
     user: &AuthenticatedUser,
     resource: &str,
     action: &str,
-) -> ApplicationResult<()> {
+) -> AppResult<()> {
     if user.has_capability(resource, action) {
         Ok(())
     } else {
-        Err(ApplicationError::forbidden(format!(
+        Err(AppError::forbidden(format!(
             "missing capability {resource}:{action}"
         )))
     }

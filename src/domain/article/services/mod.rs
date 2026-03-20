@@ -4,7 +4,7 @@ use std::sync::Arc;
 use chrono::Utc;
 
 use crate::application::ports::util::SlugGenerator;
-use crate::domain::article::repository::ArticleReadRepository;
+use crate::domain::ArticleReadRepository;
 use crate::domain::article::value_objects::{ArticleId, ArticleSlug, ArticleTitle};
 use crate::domain::errors::DomainResult;
 
