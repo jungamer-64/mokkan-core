@@ -1,6 +1,22 @@
-target/
+# Build outputs
+/target/
+
+# Environment and secrets
 .env
+.env.*
+!.env.example
 
+# Editor and IDE settings
+.vscode/
+.idea/
 
-#Ignore vscode AI rules
-.github/instructions/codacy.instructions.md
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.pid
+*.swp
+*.swo
+*~
