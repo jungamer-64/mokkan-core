@@ -54,6 +54,55 @@ impl InMemorySessionRevocationStore {
             session_refresh_tokens: Mutex::new(HashMap::new()),
         }
     }
+
+    fn delete_refresh_tokens_for_session_inner(&self, session_id: &str) {
+        let token_ids = {
+            let mut tokens_guard = self.session_refresh_tokens.lock().unwrap();
+            tokens_guard.remove(session_id)
+        };
+
+        if let Some(token_ids) = token_ids {
+            let mut records_guard = self.refresh_token_records.lock().unwrap();
+            for token_id in token_ids {
+                records_guard.remove(&token_id);
+            }
+        }
+    }
+
+    fn delete_refresh_tokens_for_sessions<I>(&self, session_ids: I)
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let mut tokens_guard = self.session_refresh_tokens.lock().unwrap();
+        let token_ids = session_ids
+            .into_iter()
+            .flat_map(|session_id| tokens_guard.remove(&session_id).into_iter().flatten())
+            .collect::<Vec<_>>();
+        drop(tokens_guard);
+
+        if !token_ids.is_empty() {
+            let mut records_guard = self.refresh_token_records.lock().unwrap();
+            for token_id in token_ids {
+                records_guard.remove(&token_id);
+            }
+        }
+    }
+
+    fn session_info_from_meta(
+        session_id: String,
+        fallback_user_id: i64,
+        meta: Option<&SessionMeta>,
+        revoked: bool,
+    ) -> crate::application::ports::session_revocation::SessionInfo {
+        crate::application::ports::session_revocation::SessionInfo {
+            user_id: meta.map_or(fallback_user_id, |value| value.user_id),
+            session_id,
+            user_agent: meta.and_then(|value| value.user_agent.clone()),
+            ip_address: meta.and_then(|value| value.ip_address.clone()),
+            created_at_unix: meta.map_or(0, |value| value.created_at_unix),
+            revoked,
+        }
+    }
 }
 
 #[async_trait]
@@ -67,17 +116,7 @@ impl Revocation for InMemorySessionRevocationStore {
         let mut guard = self.revoked.lock().unwrap();
         guard.insert(session_id.to_string());
         drop(guard);
-
-        let mut tokens_guard = self.session_refresh_tokens.lock().unwrap();
-        let token_ids = tokens_guard.remove(session_id);
-        drop(tokens_guard);
-
-        if let Some(token_ids) = token_ids {
-            let mut records_guard = self.refresh_token_records.lock().unwrap();
-            for token_id in token_ids {
-                records_guard.remove(&token_id);
-            }
-        }
+        self.delete_refresh_tokens_for_session_inner(session_id);
         Ok(())
     }
 
@@ -93,18 +132,7 @@ impl Revocation for InMemorySessionRevocationStore {
             let mut revoked_guard = self.revoked.lock().unwrap();
             revoked_guard.extend(sessions.iter().cloned());
             drop(revoked_guard);
-
-            let mut tokens_guard = self.session_refresh_tokens.lock().unwrap();
-            let mut token_ids = Vec::new();
-            for session_id in sessions {
-                token_ids.extend(tokens_guard.remove(&session_id).into_iter().flatten());
-            }
-            drop(tokens_guard);
-
-            let mut records_guard = self.refresh_token_records.lock().unwrap();
-            for token_id in token_ids {
-                records_guard.remove(&token_id);
-            }
+            self.delete_refresh_tokens_for_sessions(sessions);
         }
 
         Ok(())
@@ -280,25 +308,12 @@ impl SessionMetadataStore for InMemorySessionRevocationStore {
         let revoked_guard = self.revoked.lock().unwrap();
 
         for sid in sessions {
-            if let Some(m) = meta_guard.get(&sid) {
-                out.push(crate::application::ports::session_revocation::SessionInfo {
-                    user_id: m.user_id,
-                    session_id: sid.clone(),
-                    user_agent: m.user_agent.clone(),
-                    ip_address: m.ip_address.clone(),
-                    created_at_unix: m.created_at_unix,
-                    revoked: revoked_guard.contains(&sid),
-                });
-            } else {
-                out.push(crate::application::ports::session_revocation::SessionInfo {
-                    user_id,
-                    session_id: sid.clone(),
-                    user_agent: None,
-                    ip_address: None,
-                    created_at_unix: 0,
-                    revoked: revoked_guard.contains(&sid),
-                });
-            }
+            out.push(Self::session_info_from_meta(
+                sid.clone(),
+                user_id,
+                meta_guard.get(&sid),
+                revoked_guard.contains(&sid),
+            ));
         }
 
         drop(revoked_guard);
@@ -319,14 +334,12 @@ impl SessionMetadataStore for InMemorySessionRevocationStore {
         };
 
         let revoked_guard = self.revoked.lock().unwrap();
-        let session = crate::application::ports::session_revocation::SessionInfo {
-            user_id: m.user_id,
-            session_id: session_id.to_string(),
-            user_agent: m.user_agent.clone(),
-            ip_address: m.ip_address.clone(),
-            created_at_unix: m.created_at_unix,
-            revoked: revoked_guard.contains(session_id),
-        };
+        let session = Self::session_info_from_meta(
+            session_id.to_string(),
+            m.user_id,
+            Some(&m),
+            revoked_guard.contains(session_id),
+        );
         drop(revoked_guard);
         Ok(Some(session))
     }

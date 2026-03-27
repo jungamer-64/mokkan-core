@@ -25,6 +25,7 @@ pub async fn require_capability(
         if let Some(state) = req.extensions().get::<HttpContext>() {
             match state
                 .services
+                .auth
                 .authenticate_and_authorize(token, resource, action)
                 .await
             {

@@ -78,3 +78,33 @@ async fn e2e_list_and_revoke_sessions() {
         "sid-2 should have been removed from user's sessions"
     );
 }
+
+#[tokio::test]
+async fn e2e_revoke_other_users_session_requires_permission() {
+    let state = support::build_test_state().await;
+    let store = state.services.session_revocation_store();
+    let now = Utc::now().timestamp();
+
+    store
+        .set_session_metadata(4, "sid-1", Some("ua-1"), Some("10.0.0.1"), now)
+        .await
+        .expect("set meta");
+
+    let app = mokkan_core::presentation::http::routes::build_router_with_rate_limiter(
+        state.clone(),
+        false,
+    );
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri("/api/v1/auth/sessions/sid-1")
+        .header(
+            AUTHORIZATION,
+            format!("Bearer {}", support::mocks::NO_AUDIT_TOKEN),
+        )
+        .body(Body::empty())
+        .unwrap();
+
+    let resp = app.oneshot(req).await.unwrap();
+    assert_error_response_async!(resp, StatusCode::FORBIDDEN, "Forbidden").await;
+}

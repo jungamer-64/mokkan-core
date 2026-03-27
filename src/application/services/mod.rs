@@ -1,13 +1,11 @@
-// src/application/services/mod.rs
 use std::sync::Arc;
 
 use crate::{
     application::{
-        AuthTokenDto,
+        AuthTokenDto, AuthenticatedUser,
         commands::{articles::ArticleCommandService, users::UserCommandService},
-        error::AppError,
-        ports::authorization_code::{Code, CodeStore},
         ports::{
+            authorization_code::CodeStore,
             refresh_token::Codec,
             security::{PasswordHasher, TokenManager},
             session_revocation::{
@@ -23,8 +21,15 @@ use crate::{
         article::services::ArticleSlugService,
     },
 };
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use sha2::{Digest, Sha256};
+
+mod auth;
+mod session;
+
+pub use auth::{
+    AuthService, ExchangeAuthorizationCodeRequest, IssueAuthorizationCodeRequest,
+    IssueAuthorizationCodeResult, TokenIntrospection,
+};
+pub use session::{ListSessionsRequest, RevokeSessionRequest, SessionService};
 
 #[must_use]
 pub struct Registry {
@@ -32,6 +37,8 @@ pub struct Registry {
     pub article_commands: Arc<ArticleCommandService>,
     pub article_queries: Arc<ArticleQueryService>,
     pub user_queries: Arc<UserQueryService>,
+    pub auth: Arc<AuthService>,
+    pub sessions: Arc<SessionService>,
     token_manager: Arc<dyn TokenManager>,
     session_stores: Ports,
     session_revocation_store: Arc<dyn Store>,
@@ -93,7 +100,7 @@ impl Registry {
             Arc::clone(&deps.article_read_repo),
             Arc::clone(&deps.article_revision_repo),
             Arc::clone(&slug_service),
-            clock,
+            Arc::clone(&clock),
         ));
 
         let article_queries = Arc::new(ArticleQueryService::new(
@@ -101,12 +108,24 @@ impl Registry {
             Arc::clone(&deps.article_revision_repo),
         ));
         let user_queries = Arc::new(UserQueryService::new(Arc::clone(&deps.user_repo)));
+        let auth = Arc::new(AuthService::new(
+            Arc::clone(&token_manager),
+            Arc::clone(&session_revocation_store),
+            Arc::clone(&authorization_code_store),
+            Arc::clone(&clock),
+        ));
+        let sessions = Arc::new(SessionService::new(
+            Arc::clone(&session_revocation_store),
+            clock,
+        ));
 
         Self {
             user_commands,
             article_commands,
             article_queries,
             user_queries,
+            auth,
+            sessions,
             token_manager,
             session_stores,
             session_revocation_store,
@@ -145,76 +164,25 @@ impl Registry {
         Arc::clone(&self.authorization_code_store)
     }
 
-    /// Exchange an authorization code for tokens.
+    /// Backwards-compatible wrapper that delegates authorization code exchange
+    /// to the dedicated auth service.
     ///
     /// # Errors
     ///
-    /// Returns an error if the code is missing, expired, already consumed,
-    /// the redirect URI or PKCE verifier is invalid, or token issuance fails.
+    /// Returns an error if the code cannot be exchanged.
     pub async fn exchange_authorization_code(
         &self,
         code: &str,
         code_verifier: Option<&str>,
         redirect_uri: Option<&str>,
     ) -> crate::application::AppResult<AuthTokenDto> {
-        // consume the code (single-use)
-        let stored_opt = self.authorization_code_store.consume_code(code).await?;
-        let stored = stored_opt.ok_or_else(|| AppError::validation("invalid or expired code"))?;
-
-        // validate redirect_uri and PKCE using helpers to keep complexity low
-        Self::validate_redirect_uri(&stored, redirect_uri)?;
-        Self::verify_pkce(&stored, code_verifier)?;
-
-        // Issue tokens for the stored subject
-        let token = self.token_manager.issue(stored.subject).await?;
-        Ok(token)
-    }
-
-    fn validate_redirect_uri(
-        stored: &Code,
-        redirect_uri: Option<&str>,
-    ) -> crate::application::AppResult<()> {
-        if let Some(provided) = redirect_uri
-            && let Some(expected) = stored.redirect_uri.as_deref()
-            && provided != expected
-        {
-            return Err(AppError::validation("redirect_uri mismatch"));
-        }
-
-        Ok(())
-    }
-
-    fn verify_pkce(
-        stored: &Code,
-        code_verifier: Option<&str>,
-    ) -> crate::application::AppResult<()> {
-        if let Some(challenge) = stored.code_challenge.as_ref() {
-            let verifier =
-                code_verifier.ok_or_else(|| AppError::validation("code_verifier required"))?;
-            match stored.code_challenge_method.as_deref().unwrap_or("plain") {
-                "S256" | "s256" => {
-                    let mut hasher = Sha256::new();
-                    hasher.update(verifier.as_bytes());
-                    let digest = hasher.finalize();
-                    let encoded = URL_SAFE_NO_PAD.encode(&digest[..]);
-                    if &encoded != challenge {
-                        return Err(AppError::validation("invalid code_verifier"));
-                    }
-                }
-                "plain" => {
-                    if verifier != challenge {
-                        return Err(AppError::validation("invalid code_verifier"));
-                    }
-                }
-                other => {
-                    return Err(AppError::validation(format!(
-                        "unsupported code_challenge_method {other}"
-                    )));
-                }
-            }
-        }
-
-        Ok(())
+        self.auth
+            .exchange_authorization_code(ExchangeAuthorizationCodeRequest {
+                code: code.to_string(),
+                code_verifier: code_verifier.map(std::string::ToString::to_string),
+                redirect_uri: redirect_uri.map(std::string::ToString::to_string),
+            })
+            .await
     }
 
     #[must_use]
@@ -222,86 +190,20 @@ impl Registry {
         Arc::clone(&self.audit_log_repo)
     }
 
-    /// Authenticate a raw bearer token, perform session/token-version revocation checks
-    /// and ensure the authenticated subject has the specified capability.
-    ///
-    /// This consolidates common logic so presentation-layer middleware can simply
-    /// delegate authorization checks to the application services instead of
-    /// reimplementing the details.
+    /// Backwards-compatible wrapper that delegates token authentication and
+    /// capability checks to the dedicated auth service.
     ///
     /// # Errors
     ///
-    /// Returns an error if the token is invalid, revoked, expired, or the
-    /// authenticated user lacks the requested capability.
+    /// Returns an error if authentication or authorization fails.
     pub async fn authenticate_and_authorize(
         &self,
         token: &str,
         resource: &str,
         action: &str,
-    ) -> crate::application::AppResult<crate::application::AuthenticatedUser> {
-        let user = self.token_manager.authenticate(token).await?;
-
-        // Use helper methods to keep cyclomatic complexity low for the
-        // public method while keeping the individual checks explicit.
-        self.ensure_session_not_revoked(&user).await?;
-        self.ensure_token_version_not_revoked(&user).await?;
-
-        Self::ensure_has_capability(&user, resource, action)?;
-        Ok(user)
-    }
-
-    async fn ensure_session_not_revoked(
-        &self,
-        user: &crate::application::AuthenticatedUser,
-    ) -> crate::application::AppResult<()> {
-        use crate::application::error::AppError;
-
-        if let Some(session_id) = &user.session_id
-            && self
-                .session_stores
-                .revocation
-                .is_revoked(session_id)
-                .await?
-        {
-            return Err(AppError::unauthorized("session revoked"));
-        }
-
-        Ok(())
-    }
-
-    async fn ensure_token_version_not_revoked(
-        &self,
-        user: &crate::application::AuthenticatedUser,
-    ) -> crate::application::AppResult<()> {
-        use crate::application::error::AppError;
-
-        if let Some(token_ver) = user.token_version
-            && let Some(min_ver) = self
-                .session_stores
-                .token_versions
-                .get_min_token_version(i64::from(user.id))
-                .await?
-            && token_ver < min_ver
-        {
-            return Err(AppError::unauthorized("token revoked"));
-        }
-
-        Ok(())
-    }
-
-    fn ensure_has_capability(
-        user: &crate::application::AuthenticatedUser,
-        resource: &str,
-        action: &str,
-    ) -> crate::application::AppResult<()> {
-        use crate::application::error::AppError;
-
-        if user.has_capability(resource, action) {
-            Ok(())
-        } else {
-            Err(AppError::forbidden(format!(
-                "missing capability {resource}:{action}"
-            )))
-        }
+    ) -> crate::application::AppResult<AuthenticatedUser> {
+        self.auth
+            .authenticate_and_authorize(token, resource, action)
+            .await
     }
 }

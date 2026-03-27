@@ -2,7 +2,7 @@
 use crate::presentation::http::controllers::audit;
 use crate::presentation::http::state::HttpContext;
 use crate::presentation::http::{
-    controllers::{articles, auth, auth_oidc, auth_sessions, discovery},
+    controllers::{articles, auth, auth_oidc, auth_sessions, discovery, users},
     middleware::{rate_limit, require_capabilities},
     openapi::{self, StatusResponse},
 };
@@ -114,21 +114,21 @@ fn auth_routes() -> Router {
 
 fn user_routes() -> Router {
     Router::new()
-        .route("/api/v1/users", get(auth::list_users))
-        .route("/api/v1/users/{id}", patch(auth::update_user))
+        .route("/api/v1/users", get(users::list_users))
+        .route("/api/v1/users/{id}", patch(users::update_user))
         .route(
             "/api/v1/users/{id}/change-password",
-            post(auth::change_password),
+            post(users::change_password),
         )
         .route(
             "/api/v1/users/{id}/grant-role",
-            post(auth::grant_role).layer(axum::middleware::from_fn(move |req, next| {
+            post(users::grant_role).layer(axum::middleware::from_fn(move |req, next| {
                 require_capabilities::require_capability(req, next, "users", "update")
             })),
         )
         .route(
             "/api/v1/users/{id}/revoke-role",
-            post(auth::revoke_role).layer(axum::middleware::from_fn(move |req, next| {
+            post(users::revoke_role).layer(axum::middleware::from_fn(move |req, next| {
                 require_capabilities::require_capability(req, next, "users", "update")
             })),
         )

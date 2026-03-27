@@ -18,46 +18,6 @@ fn cached_authenticated_user(parts: &Parts) -> Option<AuthenticatedUser> {
     parts.extensions.get::<AuthenticatedUser>().cloned()
 }
 
-// Validate that the authenticated user/session is not revoked and that the
-// token version in the token is greater-or-equal to the user's minimum
-// allowed token version. This centralizes the logic used by both the
-// `Authenticated` and `MaybeAuthenticated` extractors.
-async fn validate_not_revoked(
-    app_state: &HttpContext,
-    user: &AuthenticatedUser,
-) -> Result<(), HttpError> {
-    // Session-level revocation check
-    if let Some(session_id) = &user.session_id {
-        let session_store = app_state.services.session_revocation();
-        if session_store
-            .is_revoked(session_id)
-            .await
-            .map_err(HttpError::from_error)?
-        {
-            return Err(HttpError::from_error(AppError::unauthorized(
-                "session revoked",
-            )));
-        }
-    }
-
-    // Global token-version check
-    if let Some(token_ver) = user.token_version {
-        let session_store = app_state.services.token_version_store();
-        if let Some(min_ver) = session_store
-            .get_min_token_version(user.id.into())
-            .await
-            .map_err(HttpError::from_error)?
-            && token_ver < min_ver
-        {
-            return Err(HttpError::from_error(AppError::unauthorized(
-                "token revoked",
-            )));
-        }
-    }
-
-    Ok(())
-}
-
 impl FromRequestParts<()> for Authenticated {
     type Rejection = HttpError;
 
@@ -80,13 +40,14 @@ impl FromRequestParts<()> for Authenticated {
             })?;
 
         let token = header.token();
-        let manager = app_state.services.token_manager();
-        let user = manager
+        let user = app_state
+            .services
+            .auth
             .authenticate(token)
             .await
             .map_err(HttpError::from_error)?;
 
-        validate_not_revoked(&app_state, &user).await?;
+        parts.extensions.insert(user.clone());
         Ok(Self(user))
     }
 }
@@ -107,12 +68,13 @@ impl FromRequestParts<()> for MaybeAuthenticated {
 
         if let Some(header) = parts.headers.typed_get::<Authorization<Bearer>>() {
             let token = header.token();
-            let manager = app_state.services.token_manager();
-            let user = manager
+            let user = app_state
+                .services
+                .auth
                 .authenticate(token)
                 .await
                 .map_err(HttpError::from_error)?;
-            validate_not_revoked(&app_state, &user).await?;
+            parts.extensions.insert(user.clone());
             Ok(Self(Some(user)))
         } else {
             Ok(Self(None))

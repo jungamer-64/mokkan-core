@@ -1,24 +1,15 @@
 // src/presentation/http/controllers/auth.rs
 use crate::application::{
     AuthTokenDto, UserDto, UserProfileDto,
-    commands::users::{
-        ChangePasswordCommand, GrantRoleCommand, LoginUserCommand, RefreshTokenCommand,
-        RegisterUserCommand, RevokeRoleCommand, UpdateUserCommand,
-    },
-    queries::users::ListUsersQuery,
+    commands::users::{LoginUserCommand, RefreshTokenCommand, RegisterUserCommand},
 };
 use crate::presentation::http::controllers::user_requests::{
-    ChangePasswordRequest, GrantRoleRequest, ListUsersParams, LoginRequest, LoginResponse,
-    RefreshTokenRequest, RegisterRequest, UpdateUserRequest,
+    LoginRequest, LoginResponse, RefreshTokenRequest, RegisterRequest,
 };
 use crate::presentation::http::error::{HttpResult, IntoHttpResult};
 use crate::presentation::http::extractors::{Authenticated, MaybeAuthenticated};
-use crate::presentation::http::openapi::{StatusResponse, UserListResponse};
 use crate::presentation::http::state::HttpContext;
-use axum::{
-    Extension, Json,
-    extract::{Path, Query},
-};
+use axum::{Extension, Json};
 use serde_json::Value as JsonValue;
 
 #[utoipa::path(
@@ -168,239 +159,14 @@ pub async fn profile(
 
 // Session endpoints are implemented in `auth_sessions.rs` (OpenAPI paths defined there)
 
-#[utoipa::path(
-    get,
-    path = "/api/v1/users",
-    params(ListUsersParams),
-    responses(
-        (status = 200, description = "List of users.", body = UserListResponse),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
-    ),
-    security(("bearerAuth" = [])),
-    tag = "Users"
-)]
-/// List users for an authorized caller.
-///
-/// # Errors
-///
-/// Returns an error if authentication fails, the caller lacks permission, the
-/// cursor is invalid, or the user query fails.
-pub async fn list_users(
-    Extension(state): Extension<HttpContext>,
-    Authenticated(user): Authenticated,
-    Query(params): Query<ListUsersParams>,
-) -> HttpResult<Json<UserListResponse>> {
-    let page = state
-        .services
-        .user_queries
-        .list_users(
-            &user,
-            ListUsersQuery {
-                limit: params.limit,
-                cursor: params.cursor,
-                q: params.q,
-            },
-        )
-        .await
-        .into_http()?;
-
-    Ok(Json(UserListResponse::from(page)))
-}
-
-#[utoipa::path(
-    patch,
-    path = "/api/v1/users/{id}",
-    params(
-        ("id" = i64, Path, description = "User identifier")
-    ),
-    request_body = UpdateUserRequest,
-    responses(
-        (status = 200, description = "User updated.", body = UserDto),
-        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 404, description = "User not found.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
-    ),
-    security(("bearerAuth" = [])),
-    tag = "Users"
-)]
-/// Update a user's role or active state.
-///
-/// # Errors
-///
-/// Returns an error if authentication fails, the caller lacks permission, the
-/// payload is invalid, or the update command fails.
-pub async fn update_user(
-    Extension(state): Extension<HttpContext>,
-    Authenticated(user): Authenticated,
-    Path(id): Path<i64>,
-    Json(payload): Json<UpdateUserRequest>,
-) -> HttpResult<Json<UserDto>> {
-    let command = UpdateUserCommand {
-        user_id: id,
-        is_active: payload.is_active,
-        role: payload.role,
-    };
-
-    state
-        .services
-        .user_commands
-        .update_user(&user, command)
-        .await
-        .into_http()
-        .map(Json)
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/v1/users/{id}/change-password",
-    params(
-        ("id" = i64, Path, description = "User identifier")
-    ),
-    request_body = ChangePasswordRequest,
-    responses(
-        (status = 200, description = "Password changed.", body = StatusResponse),
-        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 404, description = "User not found.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
-    ),
-    security(("bearerAuth" = [])),
-    tag = "Users"
-)]
-/// Change a user's password.
-///
-/// # Errors
-///
-/// Returns an error if authentication fails, the caller lacks permission, the
-/// payload is invalid, or the password update fails.
-pub async fn change_password(
-    Extension(state): Extension<HttpContext>,
-    Authenticated(user): Authenticated,
-    Path(id): Path<i64>,
-    Json(payload): Json<ChangePasswordRequest>,
-) -> HttpResult<Json<StatusResponse>> {
-    let command = ChangePasswordCommand {
-        user_id: id,
-        current_password: payload.current_password,
-        new_password: payload.new_password,
-    };
-
-    state
-        .services
-        .user_commands
-        .change_password(&user, command)
-        .await
-        .into_http()?;
-
-    Ok(Json(StatusResponse {
-        status: "password_changed".into(),
-    }))
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/v1/users/{id}/grant-role",
-    params(
-        ("id" = i64, Path, description = "User identifier")
-    ),
-    request_body = GrantRoleRequest,
-    responses(
-        (status = 200, description = "Role granted.", body = UserDto),
-        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 404, description = "User not found.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
-    ),
-    security(("bearerAuth" = [])),
-    tag = "Users"
-)]
-/// Grant a role to a user.
-///
-/// # Errors
-///
-/// Returns an error if authentication fails, the caller lacks permission, the
-/// payload is invalid, or the command fails.
-pub async fn grant_role(
-    Extension(state): Extension<HttpContext>,
-    Authenticated(user): Authenticated,
-    Path(id): Path<i64>,
-    Json(payload): Json<GrantRoleRequest>,
-) -> HttpResult<Json<UserDto>> {
-    let command = GrantRoleCommand {
-        user_id: id,
-        role: payload.role,
-    };
-
-    state
-        .services
-        .user_commands
-        .grant_role(&user, command)
-        .await
-        .into_http()
-        .map(Json)
-}
-
-#[utoipa::path(
-    post,
-    path = "/api/v1/users/{id}/revoke-role",
-    params(
-        ("id" = i64, Path, description = "User identifier")
-    ),
-    responses(
-        (status = 200, description = "Role revoked.", body = UserDto),
-        (status = 400, description = "Invalid input.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 401, description = "Unauthorized.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 403, description = "Forbidden.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 404, description = "User not found.", body = crate::presentation::http::error::ResponsePayload),
-        (status = 500, description = "Unexpected server error.", body = crate::presentation::http::error::ResponsePayload)
-    ),
-    security(("bearerAuth" = [])),
-    tag = "Users"
-)]
-/// Revoke an elevated role from a user.
-///
-/// # Errors
-///
-/// Returns an error if authentication fails, the caller lacks permission, or
-/// the command fails.
-pub async fn revoke_role(
-    Extension(state): Extension<HttpContext>,
-    Authenticated(user): Authenticated,
-    Path(id): Path<i64>,
-) -> HttpResult<Json<UserDto>> {
-    let command = RevokeRoleCommand { user_id: id };
-
-    state
-        .services
-        .user_commands
-        .revoke_role(&user, command)
-        .await
-        .into_http()
-        .map(Json)
-}
-
 // JWKS-like public keys endpoint. Returns the public key material used to verify tokens.
 ///
 /// # Errors
 ///
 /// Returns an error if the public key material cannot be rendered.
 pub async fn keys(Extension(state): Extension<HttpContext>) -> HttpResult<Json<JsonValue>> {
-    state
-        .services
-        .token_manager()
-        .public_jwk()
-        .await
-        .into_http()
-        .map(Json)
+    state.services.auth.public_jwk().await.into_http().map(Json)
 }
-// OIDC-related handlers (introspect/revoke/authorize) have been moved to
-// `auth_oidc.rs` to keep this module focused and avoid large file warnings.
 
 #[utoipa::path(
     post,
@@ -423,20 +189,9 @@ pub async fn logout(
     Extension(state): Extension<HttpContext>,
     Authenticated(user): Authenticated,
 ) -> HttpResult<Json<crate::presentation::http::openapi::StatusResponse>> {
-    if let Some(session_id) = &user.session_id {
-        state
-            .services
-            .session_revocation()
-            .revoke(session_id)
-            .await
-            .into_http()?;
+    state.services.auth.logout(&user).await.into_http()?;
 
-        Ok(Json(crate::presentation::http::openapi::StatusResponse {
-            status: "logged_out".into(),
-        }))
-    } else {
-        Err(crate::presentation::http::error::Error::from_error(
-            crate::application::error::AppError::validation("token is not session-based"),
-        ))
-    }
+    Ok(Json(crate::presentation::http::openapi::StatusResponse {
+        status: "logged_out".into(),
+    }))
 }
