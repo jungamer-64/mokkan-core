@@ -1,12 +1,12 @@
 // src/infrastructure/repositories/articles/postgres.rs
 use super::super::map_sqlx;
+use crate::async_support::{BoxFuture, boxed};
 use crate::domain::UserId;
 use crate::domain::errors::{DomainError, DomainResult};
 use crate::domain::{
     Article, ArticleBody, ArticleId, ArticleListCursor, ArticleReadRepository, ArticleSlug,
     ArticleTitle, ArticleUpdate, ArticleWriteRepository, NewArticle,
 };
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
 
@@ -65,110 +65,116 @@ impl TryFrom<ArticleRow> for Article {
     }
 }
 
-#[async_trait]
 impl ArticleWriteRepository for PostgresArticleWriteRepository {
-    async fn insert(&self, article: NewArticle) -> DomainResult<Article> {
-        let NewArticle {
-            title,
-            slug,
-            body,
-            published,
-            published_at,
-            author_id,
-            created_at,
-            updated_at,
-        } = article;
+    fn insert(&self, article: NewArticle) -> BoxFuture<'_, DomainResult<Article>> {
+        boxed(async move {
+            let NewArticle {
+                title,
+                slug,
+                body,
+                published,
+                published_at,
+                author_id,
+                created_at,
+                updated_at,
+            } = article;
 
-        let row = sqlx::query_as::<_, ArticleRow>(
-            "INSERT INTO articles (title, slug, body, published, published_at, author_id, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-             RETURNING id, title, slug, body, published, published_at, author_id, created_at, updated_at",
-        )
-        .bind(title.as_str())
-        .bind(slug.as_str())
-        .bind(body.as_str())
-        .bind(published)
-        .bind(published_at)
-        .bind(i64::from(author_id))
-        .bind(created_at)
-        .bind(updated_at)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(map_sqlx)?;
-
-        Article::try_from(row)
-    }
-
-    async fn update(&self, update: ArticleUpdate) -> DomainResult<Article> {
-        let ArticleUpdate {
-            id,
-            title,
-            slug,
-            body,
-            publish_state,
-            original_updated_at,
-            updated_at,
-        } = update;
-
-        let mut builder: QueryBuilder<Postgres> =
-            QueryBuilder::new("UPDATE articles SET updated_at = ");
-        builder.push_bind(updated_at);
-
-        if let Some(title) = title {
-            let title_str: String = title.into();
-            builder.push(", title = ");
-            builder.push_bind(title_str);
-        }
-
-        if let Some(slug) = slug {
-            let slug_str: String = slug.into();
-            builder.push(", slug = ");
-            builder.push_bind(slug_str);
-        }
-
-        if let Some(body) = body {
-            let body_str: String = body.into();
-            builder.push(", body = ");
-            builder.push_bind(body_str);
-        }
-
-        if let Some(state) = publish_state {
-            builder.push(", published = ");
-            builder.push_bind(state.published);
-            builder.push(", published_at = ");
-            builder.push_bind(state.published_at);
-        }
-
-        builder.push(" WHERE id = ");
-        builder.push_bind(i64::from(id));
-        builder.push(" AND updated_at = ");
-        builder.push_bind(original_updated_at);
-        builder.push(
-            " RETURNING id, title, slug, body, published, published_at, author_id, created_at, updated_at",
-        );
-
-        let maybe_row = builder
-            .build_query_as::<ArticleRow>()
-            .fetch_optional(&self.pool)
+            let row = sqlx::query_as::<_, ArticleRow>(
+                "INSERT INTO articles (title, slug, body, published, published_at, author_id, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 RETURNING id, title, slug, body, published, published_at, author_id, created_at, updated_at",
+            )
+            .bind(title.as_str())
+            .bind(slug.as_str())
+            .bind(body.as_str())
+            .bind(published)
+            .bind(published_at)
+            .bind(i64::from(author_id))
+            .bind(created_at)
+            .bind(updated_at)
+            .fetch_one(&self.pool)
             .await
             .map_err(map_sqlx)?;
 
-        let row = maybe_row
-            .ok_or_else(|| DomainError::Conflict("article update conflict, please retry".into()))?;
-
-        Article::try_from(row)
+            Article::try_from(row)
+        })
     }
 
-    async fn delete(&self, id: ArticleId) -> DomainResult<()> {
-        let result = sqlx::query("DELETE FROM articles WHERE id = $1")
-            .bind(i64::from(id))
-            .execute(&self.pool)
-            .await
-            .map_err(map_sqlx)?;
-        if result.rows_affected() == 0 {
-            return Err(DomainError::NotFound("article not found".into()));
-        }
-        Ok(())
+    fn update(&self, update: ArticleUpdate) -> BoxFuture<'_, DomainResult<Article>> {
+        boxed(async move {
+            let ArticleUpdate {
+                id,
+                title,
+                slug,
+                body,
+                publish_state,
+                original_updated_at,
+                updated_at,
+            } = update;
+
+            let mut builder: QueryBuilder<Postgres> =
+                QueryBuilder::new("UPDATE articles SET updated_at = ");
+            builder.push_bind(updated_at);
+
+            if let Some(title) = title {
+                let title_str: String = title.into();
+                builder.push(", title = ");
+                builder.push_bind(title_str);
+            }
+
+            if let Some(slug) = slug {
+                let slug_str: String = slug.into();
+                builder.push(", slug = ");
+                builder.push_bind(slug_str);
+            }
+
+            if let Some(body) = body {
+                let body_str: String = body.into();
+                builder.push(", body = ");
+                builder.push_bind(body_str);
+            }
+
+            if let Some(state) = publish_state {
+                builder.push(", published = ");
+                builder.push_bind(state.published);
+                builder.push(", published_at = ");
+                builder.push_bind(state.published_at);
+            }
+
+            builder.push(" WHERE id = ");
+            builder.push_bind(i64::from(id));
+            builder.push(" AND updated_at = ");
+            builder.push_bind(original_updated_at);
+            builder.push(
+                " RETURNING id, title, slug, body, published, published_at, author_id, created_at, updated_at",
+            );
+
+            let maybe_row = builder
+                .build_query_as::<ArticleRow>()
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(map_sqlx)?;
+
+            let row = maybe_row.ok_or_else(|| {
+                DomainError::Conflict("article update conflict, please retry".into())
+            })?;
+
+            Article::try_from(row)
+        })
+    }
+
+    fn delete(&self, id: ArticleId) -> BoxFuture<'_, DomainResult<()>> {
+        boxed(async move {
+            let result = sqlx::query("DELETE FROM articles WHERE id = $1")
+                .bind(i64::from(id))
+                .execute(&self.pool)
+                .await
+                .map_err(map_sqlx)?;
+            if result.rows_affected() == 0 {
+                return Err(DomainError::NotFound("article not found".into()));
+            }
+            Ok(())
+        })
     }
 }
 
@@ -288,69 +294,77 @@ impl PostgresArticleReadRepository {
     }
 }
 
-#[async_trait]
 impl ArticleReadRepository for PostgresArticleReadRepository {
-    async fn find_by_id(&self, id: ArticleId) -> DomainResult<Option<Article>> {
-        let row = sqlx::query_as::<_, ArticleRow>(
-            "SELECT id, title, slug, body, published, published_at, author_id, created_at, updated_at
-             FROM articles WHERE id = $1",
-        )
-        .bind(i64::from(id))
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(map_sqlx)?;
+    fn find_by_id(&self, id: ArticleId) -> BoxFuture<'_, DomainResult<Option<Article>>> {
+        boxed(async move {
+            let row = sqlx::query_as::<_, ArticleRow>(
+                "SELECT id, title, slug, body, published, published_at, author_id, created_at, updated_at
+                 FROM articles WHERE id = $1",
+            )
+            .bind(i64::from(id))
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_sqlx)?;
 
-        row.map(Article::try_from).transpose()
+            row.map(Article::try_from).transpose()
+        })
     }
 
-    async fn find_by_slug(&self, slug: &ArticleSlug) -> DomainResult<Option<Article>> {
-        let row = sqlx::query_as::<_, ArticleRow>(
-            "SELECT id, title, slug, body, published, published_at, author_id, created_at, updated_at
-             FROM articles WHERE slug = $1",
-        )
-        .bind(slug.as_str())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(map_sqlx)?;
+    fn find_by_slug<'a>(
+        &'a self,
+        slug: &'a ArticleSlug,
+    ) -> BoxFuture<'a, DomainResult<Option<Article>>> {
+        boxed(async move {
+            let row = sqlx::query_as::<_, ArticleRow>(
+                "SELECT id, title, slug, body, published, published_at, author_id, created_at, updated_at
+                 FROM articles WHERE slug = $1",
+            )
+            .bind(slug.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(map_sqlx)?;
 
-        row.map(Article::try_from).transpose()
+            row.map(Article::try_from).transpose()
+        })
     }
 
-    async fn list_page(
-        &self,
+    fn list_page<'a>(
+        &'a self,
         include_drafts: bool,
         limit: u32,
         cursor: Option<ArticleListCursor>,
-        search: Option<&str>,
-    ) -> DomainResult<(Vec<Article>, Option<ArticleListCursor>)> {
-        let cursor_ref = cursor.as_ref();
+        search: Option<&'a str>,
+    ) -> BoxFuture<'a, DomainResult<(Vec<Article>, Option<ArticleListCursor>)>> {
+        boxed(async move {
+            let cursor_ref = cursor.as_ref();
 
-        if let Some(query) = search.map(str::trim).filter(|s| !s.is_empty()) {
-            let (articles, next_cursor) = self
-                .fetch_page(
-                    include_drafts,
-                    limit,
-                    cursor_ref,
-                    SearchMode::FullText(query),
-                )
-                .await?;
+            if let Some(query) = search.map(str::trim).filter(|value| !value.is_empty()) {
+                let (articles, next_cursor) = self
+                    .fetch_page(
+                        include_drafts,
+                        limit,
+                        cursor_ref,
+                        SearchMode::FullText(query),
+                    )
+                    .await?;
 
-            if !articles.is_empty() {
-                return Ok((articles, next_cursor));
+                if !articles.is_empty() {
+                    return Ok((articles, next_cursor));
+                }
+
+                let pattern = format!("%{query}%");
+                return self
+                    .fetch_page(
+                        include_drafts,
+                        limit,
+                        cursor_ref,
+                        SearchMode::Trigram(&pattern),
+                    )
+                    .await;
             }
 
-            let pattern = format!("%{query}%");
-            return self
-                .fetch_page(
-                    include_drafts,
-                    limit,
-                    cursor_ref,
-                    SearchMode::Trigram(&pattern),
-                )
-                .await;
-        }
-
-        self.fetch_page(include_drafts, limit, cursor_ref, SearchMode::None)
-            .await
+            self.fetch_page(include_drafts, limit, cursor_ref, SearchMode::None)
+                .await
+        })
     }
 }

@@ -1,9 +1,9 @@
 // src/infrastructure/repositories/audit/postgres.rs
 use super::super::map_sqlx;
+use crate::async_support::{BoxFuture, boxed};
 use crate::domain::audit::cursor::Cursor;
 use crate::domain::audit::entity::{AuditLog, NewAuditLog};
 use crate::domain::errors::DomainResult;
-use async_trait::async_trait;
 use chrono::Utc;
 use sqlx::PgPool;
 const QUERY_LIST_WITH_CURSOR: &str = "SELECT id, user_id, action, resource_type, resource_id, details, ip_address, user_agent, created_at FROM audit_logs WHERE (created_at, id) < ($1, $2) ORDER BY created_at DESC, id DESC LIMIT $3";
@@ -25,112 +25,119 @@ impl PostgresAuditLogRepository {
     }
 }
 
-#[async_trait]
 impl crate::domain::audit::repository::AuditLogRepository for PostgresAuditLogRepository {
-    async fn insert(&self, log: NewAuditLog) -> DomainResult<()> {
-        sqlx::query(
-            r"
-            INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details, ip_address, user_agent)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ",
-        )
-        .bind(log.user_id.map(i64::from))
-        .bind(log.action)
-        .bind(log.resource_type)
-        .bind(log.resource_id)
-        .bind(log.details)
-        .bind(log.ip_address)
-        .bind(log.user_agent)
-        .execute(&self.pool)
-        .await
-        .map_err(map_sqlx)?;
+    fn insert(&self, log: NewAuditLog) -> BoxFuture<'_, DomainResult<()>> {
+        boxed(async move {
+            sqlx::query(
+                r"
+                INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details, ip_address, user_agent)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ",
+            )
+            .bind(log.user_id.map(i64::from))
+            .bind(log.action)
+            .bind(log.resource_type)
+            .bind(log.resource_id)
+            .bind(log.details)
+            .bind(log.ip_address)
+            .bind(log.user_agent)
+            .execute(&self.pool)
+            .await
+            .map_err(map_sqlx)?;
 
-        Ok(())
+            Ok(())
+        })
     }
 
-    async fn list(
+    fn list(
         &self,
         limit: u32,
         cursor: Option<Cursor>,
-    ) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
-        if let Some(c) = cursor {
-            let rows = sqlx::query(QUERY_LIST_WITH_CURSOR)
-                .bind(c.created_at)
-                .bind(c.id)
+    ) -> BoxFuture<'_, DomainResult<(Vec<AuditLog>, Option<String>)>> {
+        boxed(async move {
+            if let Some(c) = cursor {
+                let rows = sqlx::query(QUERY_LIST_WITH_CURSOR)
+                    .bind(c.created_at)
+                    .bind(c.id)
+                    .bind(i64::from(limit) + 1)
+                    .fetch_all(&self.pool)
+                    .await
+                    .map_err(map_sqlx)?;
+                return Ok(map_rows_to_logs(rows, limit));
+            }
+
+            // no cursor
+            let rows = sqlx::query(QUERY_LIST_NO_CURSOR)
                 .bind(i64::from(limit) + 1)
                 .fetch_all(&self.pool)
                 .await
                 .map_err(map_sqlx)?;
-            return Ok(map_rows_to_logs(rows, limit));
-        }
 
-        // no cursor
-        let rows = sqlx::query(QUERY_LIST_NO_CURSOR)
-            .bind(i64::from(limit) + 1)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(map_sqlx)?;
-
-        Ok(map_rows_to_logs(rows, limit))
+            Ok(map_rows_to_logs(rows, limit))
+        })
     }
 
-    async fn find_by_user(
+    fn find_by_user(
         &self,
         user_id: i64,
         limit: u32,
         cursor: Option<Cursor>,
-    ) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
-        if let Some(c) = cursor {
-            let rows = sqlx::query(QUERY_FIND_BY_USER_WITH_CURSOR)
+    ) -> BoxFuture<'_, DomainResult<(Vec<AuditLog>, Option<String>)>> {
+        boxed(async move {
+            if let Some(c) = cursor {
+                let rows = sqlx::query(QUERY_FIND_BY_USER_WITH_CURSOR)
+                    .bind(user_id)
+                    .bind(c.created_at)
+                    .bind(c.id)
+                    .bind(i64::from(limit) + 1)
+                    .fetch_all(&self.pool)
+                    .await
+                    .map_err(map_sqlx)?;
+                return Ok(map_rows_to_logs(rows, limit));
+            }
+
+            let rows = sqlx::query(QUERY_FIND_BY_USER_NO_CURSOR)
                 .bind(user_id)
-                .bind(c.created_at)
-                .bind(c.id)
                 .bind(i64::from(limit) + 1)
                 .fetch_all(&self.pool)
                 .await
                 .map_err(map_sqlx)?;
-            return Ok(map_rows_to_logs(rows, limit));
-        }
 
-        let rows = sqlx::query(QUERY_FIND_BY_USER_NO_CURSOR)
-            .bind(user_id)
-            .bind(i64::from(limit) + 1)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(map_sqlx)?;
-
-        Ok(map_rows_to_logs(rows, limit))
+            Ok(map_rows_to_logs(rows, limit))
+        })
     }
 
-    async fn find_by_resource(
-        &self,
-        resource_type: &str,
+    fn find_by_resource<'a>(
+        &'a self,
+        resource_type: &'a str,
         resource_id: i64,
         limit: u32,
         cursor: Option<Cursor>,
-    ) -> DomainResult<(Vec<AuditLog>, Option<String>)> {
-        if let Some(c) = cursor {
-            let rows = sqlx::query(QUERY_FIND_BY_RESOURCE_WITH_CURSOR)
+    ) -> BoxFuture<'a, DomainResult<(Vec<AuditLog>, Option<String>)>> {
+        boxed(async move {
+            if let Some(c) = cursor {
+                let rows = sqlx::query(QUERY_FIND_BY_RESOURCE_WITH_CURSOR)
+                    .bind(resource_type)
+                    .bind(resource_id)
+                    .bind(c.created_at)
+                    .bind(c.id)
+                    .bind(i64::from(limit) + 1)
+                    .fetch_all(&self.pool)
+                    .await
+                    .map_err(map_sqlx)?;
+                return Ok(map_rows_to_logs(rows, limit));
+            }
+
+            let rows = sqlx::query(QUERY_FIND_BY_RESOURCE_NO_CURSOR)
                 .bind(resource_type)
                 .bind(resource_id)
-                .bind(c.created_at)
-                .bind(c.id)
                 .bind(i64::from(limit) + 1)
                 .fetch_all(&self.pool)
                 .await
                 .map_err(map_sqlx)?;
-            return Ok(map_rows_to_logs(rows, limit));
-        }
 
-        let rows = sqlx::query(QUERY_FIND_BY_RESOURCE_NO_CURSOR)
-            .bind(resource_type)
-            .bind(resource_id)
-            .bind(i64::from(limit) + 1)
-            .fetch_all(&self.pool)
-            .await
-            .map_err(map_sqlx)?;
-
-        Ok(map_rows_to_logs(rows, limit))
+            Ok(map_rows_to_logs(rows, limit))
+        })
     }
 }
 

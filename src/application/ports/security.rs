@@ -1,20 +1,22 @@
 // src/application/ports/security.rs
 use crate::application::{AppResult, AuthTokenDto, AuthenticatedUser, TokenSubject};
-use async_trait::async_trait;
+use crate::async_support::BoxFuture;
 
-#[async_trait]
 pub trait PasswordHasher: Send + Sync {
-    async fn hash(&self, password: &str) -> AppResult<String>;
-    async fn verify(&self, password: &str, expected_hash: &str) -> AppResult<()>;
+    fn hash<'a>(&'a self, password: &'a str) -> BoxFuture<'a, AppResult<String>>;
+    fn verify<'a>(
+        &'a self,
+        password: &'a str,
+        expected_hash: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>>;
 }
 
-#[async_trait]
 pub trait TokenManager: Send + Sync {
-    async fn issue(&self, subject: TokenSubject) -> AppResult<AuthTokenDto>;
-    async fn authenticate(&self, token: &str) -> AppResult<AuthenticatedUser>;
+    fn issue(&self, subject: TokenSubject) -> BoxFuture<'_, AppResult<AuthTokenDto>>;
+    fn authenticate<'a>(&'a self, token: &'a str) -> BoxFuture<'a, AppResult<AuthenticatedUser>>;
     /// Return a JSON Web Key Set (`JWKS`) or equivalent public-key representation.
     ///
     /// This is used to verify tokens issued by this `TokenManager` and powers
     /// the public keys endpoint.
-    async fn public_jwk(&self) -> AppResult<serde_json::Value>;
+    fn public_jwk(&self) -> BoxFuture<'_, AppResult<serde_json::Value>>;
 }

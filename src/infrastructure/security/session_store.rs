@@ -4,7 +4,7 @@ use crate::application::ports::session_revocation::{
     OpaqueRefreshTokenStore, RefreshNonceStore, RefreshTokenRecord, Revocation,
     SessionMetadataStore, Store, TokenVersionStore,
 };
-use async_trait::async_trait;
+use crate::async_support::{BoxFuture, boxed};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -105,301 +105,365 @@ impl InMemorySessionRevocationStore {
     }
 }
 
-#[async_trait]
 impl Revocation for InMemorySessionRevocationStore {
-    async fn is_revoked(&self, session_id: &str) -> AppResult<bool> {
-        let guard = self.revoked.lock().unwrap();
-        Ok(guard.contains(session_id))
+    fn is_revoked<'a>(&'a self, session_id: &'a str) -> BoxFuture<'a, AppResult<bool>> {
+        boxed(async move {
+            let guard = self.revoked.lock().unwrap();
+            Ok(guard.contains(session_id))
+        })
     }
 
-    async fn revoke(&self, session_id: &str) -> AppResult<()> {
-        let mut guard = self.revoked.lock().unwrap();
-        guard.insert(session_id.to_string());
-        drop(guard);
-        self.delete_refresh_tokens_for_session_inner(session_id);
-        Ok(())
+    fn revoke<'a>(&'a self, session_id: &'a str) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut guard = self.revoked.lock().unwrap();
+            guard.insert(session_id.to_string());
+            drop(guard);
+            self.delete_refresh_tokens_for_session_inner(session_id);
+            Ok(())
+        })
     }
 
-    async fn revoke_sessions_for_user(&self, user_id: i64) -> AppResult<()> {
-        let sessions = {
-            let mut guard = self.user_sessions.lock().unwrap();
-            guard
-                .remove(&user_id)
-                .map_or_else(Vec::new, |s| s.into_iter().collect::<Vec<_>>())
-        };
+    fn revoke_sessions_for_user(&self, user_id: i64) -> BoxFuture<'_, AppResult<()>> {
+        boxed(async move {
+            let sessions = {
+                let mut guard = self.user_sessions.lock().unwrap();
+                guard
+                    .remove(&user_id)
+                    .map_or_else(Vec::new, |s| s.into_iter().collect::<Vec<_>>())
+            };
 
-        if !sessions.is_empty() {
-            let mut revoked_guard = self.revoked.lock().unwrap();
-            revoked_guard.extend(sessions.iter().cloned());
-            drop(revoked_guard);
-            self.delete_refresh_tokens_for_sessions(sessions);
-        }
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl TokenVersionStore for InMemorySessionRevocationStore {
-    async fn get_min_token_version(&self, user_id: i64) -> AppResult<Option<u32>> {
-        let guard = self.min_versions.lock().unwrap();
-        Ok(guard.get(&user_id).copied())
-    }
-
-    async fn set_min_token_version(&self, user_id: i64, min_version: u32) -> AppResult<()> {
-        let mut guard = self.min_versions.lock().unwrap();
-        guard.insert(user_id, min_version);
-        drop(guard);
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl RefreshNonceStore for InMemorySessionRevocationStore {
-    async fn set_session_refresh_nonce(&self, session_id: &str, nonce: &str) -> AppResult<()> {
-        let mut guard = self.session_nonces.lock().unwrap();
-        guard.insert(session_id.to_string(), nonce.to_string());
-        drop(guard);
-        Ok(())
-    }
-
-    async fn get_session_refresh_nonce(&self, session_id: &str) -> AppResult<Option<String>> {
-        let guard = self.session_nonces.lock().unwrap();
-        Ok(guard.get(session_id).cloned())
-    }
-
-    async fn compare_and_swap_session_refresh_nonce(
-        &self,
-        session_id: &str,
-        expected: &str,
-        new_nonce: &str,
-    ) -> AppResult<bool> {
-        let swapped = {
-            let mut guard = self.session_nonces.lock().unwrap();
-            match guard.get(session_id) {
-                Some(cur) if cur == expected => {
-                    guard.insert(session_id.to_string(), new_nonce.to_string());
-                    true
-                }
-                _ => false,
+            if !sessions.is_empty() {
+                let mut revoked_guard = self.revoked.lock().unwrap();
+                revoked_guard.extend(sessions.iter().cloned());
+                drop(revoked_guard);
+                self.delete_refresh_tokens_for_sessions(sessions);
             }
-        };
 
-        if swapped {
+            Ok(())
+        })
+    }
+}
+
+impl TokenVersionStore for InMemorySessionRevocationStore {
+    fn get_min_token_version(&self, user_id: i64) -> BoxFuture<'_, AppResult<Option<u32>>> {
+        boxed(async move {
+            let guard = self.min_versions.lock().unwrap();
+            Ok(guard.get(&user_id).copied())
+        })
+    }
+
+    fn set_min_token_version(
+        &self,
+        user_id: i64,
+        min_version: u32,
+    ) -> BoxFuture<'_, AppResult<()>> {
+        boxed(async move {
+            let mut guard = self.min_versions.lock().unwrap();
+            guard.insert(user_id, min_version);
+            drop(guard);
+            Ok(())
+        })
+    }
+}
+
+impl RefreshNonceStore for InMemorySessionRevocationStore {
+    fn set_session_refresh_nonce<'a>(
+        &'a self,
+        session_id: &'a str,
+        nonce: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut guard = self.session_nonces.lock().unwrap();
+            guard.insert(session_id.to_string(), nonce.to_string());
+            drop(guard);
+            Ok(())
+        })
+    }
+
+    fn get_session_refresh_nonce<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<Option<String>>> {
+        boxed(async move {
+            let guard = self.session_nonces.lock().unwrap();
+            Ok(guard.get(session_id).cloned())
+        })
+    }
+
+    fn compare_and_swap_session_refresh_nonce<'a>(
+        &'a self,
+        session_id: &'a str,
+        expected: &'a str,
+        new_nonce: &'a str,
+    ) -> BoxFuture<'a, AppResult<bool>> {
+        boxed(async move {
+            let swapped = {
+                let mut guard = self.session_nonces.lock().unwrap();
+                match guard.get(session_id) {
+                    Some(cur) if cur == expected => {
+                        guard.insert(session_id.to_string(), new_nonce.to_string());
+                        true
+                    }
+                    _ => false,
+                }
+            };
+
+            if swapped {
+                let mut used_guard = self.used_nonces.lock().unwrap();
+                used_guard
+                    .entry(session_id.to_string())
+                    .or_default()
+                    .insert(expected.to_string());
+                drop(used_guard);
+            }
+
+            Ok(swapped)
+        })
+    }
+
+    fn mark_session_refresh_nonce_used<'a>(
+        &'a self,
+        session_id: &'a str,
+        nonce: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
             let mut used_guard = self.used_nonces.lock().unwrap();
             used_guard
                 .entry(session_id.to_string())
                 .or_default()
-                .insert(expected.to_string());
+                .insert(nonce.to_string());
             drop(used_guard);
-        }
-
-        Ok(swapped)
+            Ok(())
+        })
     }
 
-    async fn mark_session_refresh_nonce_used(
-        &self,
-        session_id: &str,
-        nonce: &str,
-    ) -> AppResult<()> {
-        let mut used_guard = self.used_nonces.lock().unwrap();
-        used_guard
-            .entry(session_id.to_string())
-            .or_default()
-            .insert(nonce.to_string());
-        drop(used_guard);
-        Ok(())
-    }
-
-    async fn is_session_refresh_nonce_used(
-        &self,
-        session_id: &str,
-        nonce: &str,
-    ) -> AppResult<bool> {
-        let used_guard = self.used_nonces.lock().unwrap();
-        Ok(used_guard
-            .get(session_id)
-            .is_some_and(|s| s.contains(nonce)))
+    fn is_session_refresh_nonce_used<'a>(
+        &'a self,
+        session_id: &'a str,
+        nonce: &'a str,
+    ) -> BoxFuture<'a, AppResult<bool>> {
+        boxed(async move {
+            let used_guard = self.used_nonces.lock().unwrap();
+            Ok(used_guard
+                .get(session_id)
+                .is_some_and(|set| set.contains(nonce)))
+        })
     }
 }
 
-#[async_trait]
 impl SessionMetadataStore for InMemorySessionRevocationStore {
-    async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> AppResult<()> {
-        let mut guard = self.user_sessions.lock().unwrap();
-        guard
-            .entry(user_id)
-            .or_default()
-            .insert(session_id.to_string());
-        drop(guard);
-        Ok(())
-    }
-
-    async fn set_session_metadata(
-        &self,
+    fn add_session_for_user<'a>(
+        &'a self,
         user_id: i64,
-        session_id: &str,
-        user_agent: Option<&str>,
-        ip_address: Option<&str>,
-        created_at_unix: i64,
-    ) -> AppResult<()> {
-        // ensure session is tracked for the user
-        {
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
             let mut guard = self.user_sessions.lock().unwrap();
             guard
                 .entry(user_id)
                 .or_default()
                 .insert(session_id.to_string());
-        }
-
-        let mut meta_guard = self.session_meta.lock().unwrap();
-        meta_guard.insert(
-            session_id.to_string(),
-            SessionMeta {
-                user_id,
-                user_agent: user_agent.map(std::string::ToString::to_string),
-                ip_address: ip_address.map(std::string::ToString::to_string),
-                created_at_unix,
-            },
-        );
-        drop(meta_guard);
-
-        Ok(())
+            drop(guard);
+            Ok(())
+        })
     }
 
-    async fn remove_session_for_user(&self, user_id: i64, session_id: &str) -> AppResult<()> {
-        let mut guard = self.user_sessions.lock().unwrap();
-        if let Some(set) = guard.get_mut(&user_id) {
-            set.remove(session_id);
-        }
-        drop(guard);
-        Ok(())
+    fn set_session_metadata<'a>(
+        &'a self,
+        user_id: i64,
+        session_id: &'a str,
+        user_agent: Option<&'a str>,
+        ip_address: Option<&'a str>,
+        created_at_unix: i64,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            // ensure session is tracked for the user
+            {
+                let mut guard = self.user_sessions.lock().unwrap();
+                guard
+                    .entry(user_id)
+                    .or_default()
+                    .insert(session_id.to_string());
+            }
+
+            let mut meta_guard = self.session_meta.lock().unwrap();
+            meta_guard.insert(
+                session_id.to_string(),
+                SessionMeta {
+                    user_id,
+                    user_agent: user_agent.map(std::string::ToString::to_string),
+                    ip_address: ip_address.map(std::string::ToString::to_string),
+                    created_at_unix,
+                },
+            );
+            drop(meta_guard);
+
+            Ok(())
+        })
     }
 
-    async fn delete_session_metadata(&self, session_id: &str) -> AppResult<()> {
-        let mut meta_guard = self.session_meta.lock().unwrap();
-        meta_guard.remove(session_id);
-        drop(meta_guard);
-        Ok(())
+    fn remove_session_for_user<'a>(
+        &'a self,
+        user_id: i64,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut guard = self.user_sessions.lock().unwrap();
+            if let Some(set) = guard.get_mut(&user_id) {
+                set.remove(session_id);
+            }
+            drop(guard);
+            Ok(())
+        })
     }
 
-    async fn list_sessions_for_user(&self, user_id: i64) -> AppResult<Vec<String>> {
-        let guard = self.user_sessions.lock().unwrap();
-        let sessions = guard
-            .get(&user_id)
-            .map_or_else(Vec::new, |set| set.iter().cloned().collect());
-        drop(guard);
-        Ok(sessions)
+    fn delete_session_metadata<'a>(&'a self, session_id: &'a str) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut meta_guard = self.session_meta.lock().unwrap();
+            meta_guard.remove(session_id);
+            drop(meta_guard);
+            Ok(())
+        })
     }
 
-    async fn list_sessions_for_user_with_meta(
+    fn list_sessions_for_user(&self, user_id: i64) -> BoxFuture<'_, AppResult<Vec<String>>> {
+        boxed(async move {
+            let guard = self.user_sessions.lock().unwrap();
+            let sessions = guard
+                .get(&user_id)
+                .map_or_else(Vec::new, |set| set.iter().cloned().collect());
+            drop(guard);
+            Ok(sessions)
+        })
+    }
+
+    fn list_sessions_for_user_with_meta(
         &self,
         user_id: i64,
-    ) -> AppResult<Vec<crate::application::ports::session_revocation::SessionInfo>> {
-        let sessions = {
-            let guard = self.user_sessions.lock().unwrap();
-            guard
-                .get(&user_id)
-                .map_or_else(Vec::new, |set| set.iter().cloned().collect::<Vec<_>>())
-        };
+    ) -> BoxFuture<'_, AppResult<Vec<crate::application::ports::session_revocation::SessionInfo>>>
+    {
+        boxed(async move {
+            let sessions = {
+                let guard = self.user_sessions.lock().unwrap();
+                guard
+                    .get(&user_id)
+                    .map_or_else(Vec::new, |set| set.iter().cloned().collect::<Vec<_>>())
+            };
 
-        let mut out = Vec::with_capacity(sessions.len());
-        let meta_guard = self.session_meta.lock().unwrap();
-        let revoked_guard = self.revoked.lock().unwrap();
+            let mut out = Vec::with_capacity(sessions.len());
+            let meta_guard = self.session_meta.lock().unwrap();
+            let revoked_guard = self.revoked.lock().unwrap();
 
-        for sid in sessions {
-            out.push(Self::session_info_from_meta(
-                sid.clone(),
-                user_id,
-                meta_guard.get(&sid),
-                revoked_guard.contains(&sid),
-            ));
-        }
+            for sid in sessions {
+                out.push(Self::session_info_from_meta(
+                    sid.clone(),
+                    user_id,
+                    meta_guard.get(&sid),
+                    revoked_guard.contains(&sid),
+                ));
+            }
 
-        drop(revoked_guard);
-        drop(meta_guard);
-        Ok(out)
+            drop(revoked_guard);
+            drop(meta_guard);
+            Ok(out)
+        })
     }
 
-    async fn get_session_metadata(
-        &self,
-        session_id: &str,
-    ) -> AppResult<Option<crate::application::ports::session_revocation::SessionInfo>> {
-        let meta_guard = self.session_meta.lock().unwrap();
-        let meta = meta_guard.get(session_id).cloned();
-        drop(meta_guard);
+    fn get_session_metadata<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<Option<crate::application::ports::session_revocation::SessionInfo>>>
+    {
+        boxed(async move {
+            let meta_guard = self.session_meta.lock().unwrap();
+            let meta = meta_guard.get(session_id).cloned();
+            drop(meta_guard);
 
-        let Some(m) = meta else {
-            return Ok(None);
-        };
+            let Some(meta) = meta else {
+                return Ok(None);
+            };
 
-        let revoked_guard = self.revoked.lock().unwrap();
-        let session = Self::session_info_from_meta(
-            session_id.to_string(),
-            m.user_id,
-            Some(&m),
-            revoked_guard.contains(session_id),
-        );
-        drop(revoked_guard);
-        Ok(Some(session))
+            let revoked_guard = self.revoked.lock().unwrap();
+            let session = Self::session_info_from_meta(
+                session_id.to_string(),
+                meta.user_id,
+                Some(&meta),
+                revoked_guard.contains(session_id),
+            );
+            drop(revoked_guard);
+            Ok(Some(session))
+        })
     }
 }
 
-#[async_trait]
 impl OpaqueRefreshTokenStore for InMemorySessionRevocationStore {
-    async fn store_refresh_token_record(
-        &self,
-        token_id: &str,
-        record: &RefreshTokenRecord,
-    ) -> AppResult<()> {
-        let mut records_guard = self.refresh_token_records.lock().unwrap();
-        records_guard.insert(token_id.to_string(), record.clone());
-        drop(records_guard);
-
-        let mut session_tokens_guard = self.session_refresh_tokens.lock().unwrap();
-        session_tokens_guard
-            .entry(record.session_id.clone())
-            .or_default()
-            .insert(token_id.to_string());
-        drop(session_tokens_guard);
-        Ok(())
-    }
-
-    async fn get_refresh_token_record(
-        &self,
-        token_id: &str,
-    ) -> AppResult<Option<RefreshTokenRecord>> {
-        let guard = self.refresh_token_records.lock().unwrap();
-        Ok(guard.get(token_id).cloned())
-    }
-
-    async fn delete_refresh_token_record(&self, token_id: &str) -> AppResult<()> {
-        let mut records_guard = self.refresh_token_records.lock().unwrap();
-        if let Some(record) = records_guard.remove(token_id) {
+    fn store_refresh_token_record<'a>(
+        &'a self,
+        token_id: &'a str,
+        record: &'a RefreshTokenRecord,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut records_guard = self.refresh_token_records.lock().unwrap();
+            records_guard.insert(token_id.to_string(), record.clone());
             drop(records_guard);
+
             let mut session_tokens_guard = self.session_refresh_tokens.lock().unwrap();
-            if let Some(token_ids) = session_tokens_guard.get_mut(&record.session_id) {
-                token_ids.remove(token_id);
-                if token_ids.is_empty() {
-                    session_tokens_guard.remove(&record.session_id);
+            session_tokens_guard
+                .entry(record.session_id.clone())
+                .or_default()
+                .insert(token_id.to_string());
+            drop(session_tokens_guard);
+            Ok(())
+        })
+    }
+
+    fn get_refresh_token_record<'a>(
+        &'a self,
+        token_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<Option<RefreshTokenRecord>>> {
+        boxed(async move {
+            let guard = self.refresh_token_records.lock().unwrap();
+            Ok(guard.get(token_id).cloned())
+        })
+    }
+
+    fn delete_refresh_token_record<'a>(
+        &'a self,
+        token_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut records_guard = self.refresh_token_records.lock().unwrap();
+            if let Some(record) = records_guard.remove(token_id) {
+                drop(records_guard);
+                let mut session_tokens_guard = self.session_refresh_tokens.lock().unwrap();
+                if let Some(token_ids) = session_tokens_guard.get_mut(&record.session_id) {
+                    token_ids.remove(token_id);
+                    if token_ids.is_empty() {
+                        session_tokens_guard.remove(&record.session_id);
+                    }
                 }
             }
-        }
 
-        Ok(())
+            Ok(())
+        })
     }
 
-    async fn delete_refresh_tokens_for_session(&self, session_id: &str) -> AppResult<()> {
-        let mut session_tokens_guard = self.session_refresh_tokens.lock().unwrap();
-        if let Some(token_ids) = session_tokens_guard.remove(session_id) {
-            drop(session_tokens_guard);
-            let mut records_guard = self.refresh_token_records.lock().unwrap();
-            for token_id in token_ids {
-                records_guard.remove(&token_id);
+    fn delete_refresh_tokens_for_session<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut session_tokens_guard = self.session_refresh_tokens.lock().unwrap();
+            if let Some(token_ids) = session_tokens_guard.remove(session_id) {
+                drop(session_tokens_guard);
+                let mut records_guard = self.refresh_token_records.lock().unwrap();
+                for token_id in token_ids {
+                    records_guard.remove(&token_id);
+                }
             }
-        }
 
-        Ok(())
+            Ok(())
+        })
     }
 }
 

@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
+use mokkan_core::async_support::{BoxFuture, boxed};
 use std::env;
 use tokio::time::{Duration, sleep};
 
@@ -19,41 +19,48 @@ use mokkan_core::domain::user::value_objects::{PasswordHash, Role, UserId, Usern
 #[derive(Clone, Debug, Default)]
 struct FakeTokenManager;
 
-#[async_trait]
 impl mokkan_core::application::ports::security::TokenManager for FakeTokenManager {
-    async fn issue(
+    fn issue(
         &self,
         subject: mokkan_core::application::TokenSubject,
-    ) -> mokkan_core::application::AppResult<mokkan_core::application::AuthTokenDto> {
-        let issued_at = chrono::Utc::now();
-        let expires_at = issued_at + chrono::Duration::hours(1);
-        let expires_in = (expires_at.signed_duration_since(issued_at)).num_seconds();
-        let sid = subject.session_id.clone();
-        Ok(mokkan_core::application::AuthTokenDto {
-            token: format!(
-                "access-{}-{}",
-                i64::from(subject.user_id),
-                sid.clone().unwrap_or_default()
-            ),
-            issued_at,
-            expires_at,
-            expires_in,
-            session_id: sid,
-            refresh_token: None,
+    ) -> BoxFuture<'_, mokkan_core::application::AppResult<mokkan_core::application::AuthTokenDto>>
+    {
+        boxed(async move {
+            let issued_at = chrono::Utc::now();
+            let expires_at = issued_at + chrono::Duration::hours(1);
+            let expires_in = expires_at.signed_duration_since(issued_at).num_seconds();
+            let sid = subject.session_id.clone();
+            Ok(mokkan_core::application::AuthTokenDto {
+                token: format!(
+                    "access-{}-{}",
+                    i64::from(subject.user_id),
+                    sid.clone().unwrap_or_default()
+                ),
+                issued_at,
+                expires_at,
+                expires_in,
+                session_id: sid,
+                refresh_token: None,
+            })
         })
     }
 
-    async fn authenticate(
-        &self,
-        _token: &str,
-    ) -> mokkan_core::application::AppResult<mokkan_core::application::AuthenticatedUser> {
-        Err(mokkan_core::application::error::AppError::unauthorized(
-            "not implemented for test",
-        ))
+    fn authenticate<'a>(
+        &'a self,
+        _token: &'a str,
+    ) -> BoxFuture<
+        'a,
+        mokkan_core::application::AppResult<mokkan_core::application::AuthenticatedUser>,
+    > {
+        boxed(async move {
+            Err(mokkan_core::application::error::AppError::unauthorized(
+                "not implemented for test",
+            ))
+        })
     }
 
-    async fn public_jwk(&self) -> mokkan_core::application::AppResult<serde_json::Value> {
-        Ok(serde_json::json!({"keys":[]}))
+    fn public_jwk(&self) -> BoxFuture<'_, mokkan_core::application::AppResult<serde_json::Value>> {
+        boxed(async move { Ok(serde_json::json!({"keys":[]})) })
     }
 }
 
@@ -72,83 +79,105 @@ impl InMemoryUserRepo {
     }
 }
 
-#[async_trait]
 impl mokkan_core::domain::UserRepository for InMemoryUserRepo {
-    async fn count(&self) -> mokkan_core::domain::errors::DomainResult<u64> {
-        let map = self.inner.lock().unwrap();
-        Ok(map.len() as u64)
+    fn count(&self) -> BoxFuture<'_, mokkan_core::domain::errors::DomainResult<u64>> {
+        boxed(async move {
+            let map = self.inner.lock().unwrap();
+            Ok(map.len() as u64)
+        })
     }
 
-    async fn insert(
+    fn insert(
         &self,
         _new_user: mokkan_core::domain::user::entity::NewUser,
-    ) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User> {
-        Err(mokkan_core::domain::errors::DomainError::NotFound(
-            "not implemented".into(),
-        ))
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User>,
+    > {
+        boxed(async move {
+            Err(mokkan_core::domain::errors::DomainError::NotFound(
+                "not implemented".into(),
+            ))
+        })
     }
 
-    async fn find_by_username(
-        &self,
-        username: &mokkan_core::domain::user::value_objects::Username,
-    ) -> mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>>
-    {
-        let found = {
-            let map = self.inner.lock().unwrap();
-            map.values()
-                .find(|u| u.username.as_str() == username.as_str())
-                .cloned()
-        };
-        Ok(found)
+    fn find_by_username<'a>(
+        &'a self,
+        username: &'a mokkan_core::domain::user::value_objects::Username,
+    ) -> BoxFuture<
+        'a,
+        mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>>,
+    > {
+        boxed(async move {
+            let found = {
+                let map = self.inner.lock().unwrap();
+                map.values()
+                    .find(|u| u.username.as_str() == username.as_str())
+                    .cloned()
+            };
+            Ok(found)
+        })
     }
 
-    async fn find_by_id(
+    fn find_by_id(
         &self,
         id: mokkan_core::domain::user::value_objects::UserId,
-    ) -> mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>>
-    {
-        let map = self.inner.lock().unwrap();
-        Ok(map.get(&i64::from(id)).cloned())
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>>,
+    > {
+        boxed(async move {
+            let map = self.inner.lock().unwrap();
+            Ok(map.get(&i64::from(id)).cloned())
+        })
     }
 
-    async fn update(
+    fn update(
         &self,
         update: mokkan_core::domain::user::entity::UserUpdate,
-    ) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User> {
-        {
-            let mut map = self.inner.lock().unwrap();
-            let id = i64::from(update.id);
-            match map.get_mut(&id) {
-                Some(user) => {
-                    if let Some(is_active) = update.is_active {
-                        user.is_active = is_active;
-                    }
-                    if let Some(role) = update.role {
-                        user.role = role;
-                    }
-                    if let Some(password_hash) = update.password_hash {
-                        user.password_hash = password_hash;
-                    }
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User>,
+    > {
+        boxed(async move {
+            {
+                let mut map = self.inner.lock().unwrap();
+                let id = i64::from(update.id);
+                match map.get_mut(&id) {
+                    Some(user) => {
+                        if let Some(is_active) = update.is_active {
+                            user.is_active = is_active;
+                        }
+                        if let Some(role) = update.role {
+                            user.role = role;
+                        }
+                        if let Some(password_hash) = update.password_hash {
+                            user.password_hash = password_hash;
+                        }
 
-                    Ok(user.clone())
+                        Ok(user.clone())
+                    }
+                    None => Err(mokkan_core::domain::errors::DomainError::NotFound(
+                        "user not found".into(),
+                    )),
                 }
-                None => Err(mokkan_core::domain::errors::DomainError::NotFound(
-                    "user not found".into(),
-                )),
             }
-        }
+        })
     }
 
-    async fn list_page(
-        &self,
+    fn list_page<'a>(
+        &'a self,
         _limit: u32,
         _cursor: Option<mokkan_core::domain::user::value_objects::UserListCursor>,
-        _search: Option<&str>,
-    ) -> mokkan_core::domain::errors::DomainResult<(
-        Vec<mokkan_core::domain::user::entity::User>,
-        Option<mokkan_core::domain::user::value_objects::UserListCursor>,
-    )> {
-        Ok((vec![], None))
+        _search: Option<&'a str>,
+    ) -> BoxFuture<
+        'a,
+        mokkan_core::domain::errors::DomainResult<(
+            Vec<mokkan_core::domain::user::entity::User>,
+            Option<mokkan_core::domain::user::value_objects::UserListCursor>,
+        )>,
+    > {
+        boxed(async move { Ok((vec![], None)) })
     }
 }
 

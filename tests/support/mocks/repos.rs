@@ -1,5 +1,5 @@
 // tests/support/mocks/repos.rs
-use async_trait::async_trait;
+use mokkan_core::async_support::{BoxFuture, boxed};
 
 /* -------------------------------- MockRepo -------------------------------- */
 
@@ -32,49 +32,57 @@ impl MockRepo {
     }
 }
 
-#[async_trait]
 impl mokkan_core::domain::audit::repository::AuditLogRepository for MockRepo {
-    async fn insert(
+    fn insert(
         &self,
         _log: mokkan_core::domain::audit::entity::NewAuditLog,
-    ) -> mokkan_core::domain::errors::DomainResult<()> {
-        Ok(())
+    ) -> BoxFuture<'_, mokkan_core::domain::errors::DomainResult<()>> {
+        boxed(async move { Ok(()) })
     }
 
-    async fn list(
+    fn list(
         &self,
         _limit: u32,
         _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
-    ) -> mokkan_core::domain::errors::DomainResult<(
-        Vec<mokkan_core::domain::audit::entity::AuditLog>,
-        Option<String>,
-    )> {
-        Ok((self.items.clone(), self.next_cursor.clone()))
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<(
+            Vec<mokkan_core::domain::audit::entity::AuditLog>,
+            Option<String>,
+        )>,
+    > {
+        boxed(async move { Ok((self.items.clone(), self.next_cursor.clone())) })
     }
 
-    async fn find_by_user(
+    fn find_by_user(
         &self,
         _user_id: i64,
         _limit: u32,
         _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
-    ) -> mokkan_core::domain::errors::DomainResult<(
-        Vec<mokkan_core::domain::audit::entity::AuditLog>,
-        Option<String>,
-    )> {
-        Ok((self.items.clone(), self.next_cursor.clone()))
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<(
+            Vec<mokkan_core::domain::audit::entity::AuditLog>,
+            Option<String>,
+        )>,
+    > {
+        boxed(async move { Ok((self.items.clone(), self.next_cursor.clone())) })
     }
 
-    async fn find_by_resource(
-        &self,
+    fn find_by_resource<'a>(
+        &'a self,
         _resource_type: &str,
         _resource_id: i64,
         _limit: u32,
         _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
-    ) -> mokkan_core::domain::errors::DomainResult<(
-        Vec<mokkan_core::domain::audit::entity::AuditLog>,
-        Option<String>,
-    )> {
-        Ok((self.items.clone(), self.next_cursor.clone()))
+    ) -> BoxFuture<
+        'a,
+        mokkan_core::domain::errors::DomainResult<(
+            Vec<mokkan_core::domain::audit::entity::AuditLog>,
+            Option<String>,
+        )>,
+    > {
+        boxed(async move { Ok((self.items.clone(), self.next_cursor.clone())) })
     }
 }
 
@@ -84,50 +92,60 @@ impl mokkan_core::domain::audit::repository::AuditLogRepository for MockRepo {
 /// 常に1件のサンプル行を返す
 pub struct MockAuditRepo;
 
-#[async_trait]
 impl mokkan_core::domain::audit::repository::AuditLogRepository for MockAuditRepo {
-    async fn insert(
+    fn insert(
         &self,
         _log: mokkan_core::domain::audit::entity::NewAuditLog,
-    ) -> mokkan_core::domain::errors::DomainResult<()> {
-        Ok(())
+    ) -> BoxFuture<'_, mokkan_core::domain::errors::DomainResult<()>> {
+        boxed(async move { Ok(()) })
     }
 
-    async fn list(
+    fn list(
         &self,
         _limit: u32,
         _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
-    ) -> mokkan_core::domain::errors::DomainResult<(
-        Vec<mokkan_core::domain::audit::entity::AuditLog>,
-        Option<String>,
-    )> {
-        let created_at = super::time::fixed_now();
-        Ok((vec![super::audit::sample(created_at)], None))
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<(
+            Vec<mokkan_core::domain::audit::entity::AuditLog>,
+            Option<String>,
+        )>,
+    > {
+        boxed(async move {
+            let created_at = super::time::fixed_now();
+            Ok((vec![super::audit::sample(created_at)], None))
+        })
     }
 
-    async fn find_by_user(
+    fn find_by_user(
         &self,
         _user_id: i64,
         _limit: u32,
         _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
-    ) -> mokkan_core::domain::errors::DomainResult<(
-        Vec<mokkan_core::domain::audit::entity::AuditLog>,
-        Option<String>,
-    )> {
-        self.list(_limit, _cursor).await
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<(
+            Vec<mokkan_core::domain::audit::entity::AuditLog>,
+            Option<String>,
+        )>,
+    > {
+        boxed(async move { self.list(_limit, _cursor).await })
     }
 
-    async fn find_by_resource(
-        &self,
+    fn find_by_resource<'a>(
+        &'a self,
         _resource_type: &str,
         _resource_id: i64,
         _limit: u32,
         _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
-    ) -> mokkan_core::domain::errors::DomainResult<(
-        Vec<mokkan_core::domain::audit::entity::AuditLog>,
-        Option<String>,
-    )> {
-        self.list(_limit, _cursor).await
+    ) -> BoxFuture<
+        'a,
+        mokkan_core::domain::errors::DomainResult<(
+            Vec<mokkan_core::domain::audit::entity::AuditLog>,
+            Option<String>,
+        )>,
+    > {
+        boxed(async move { self.list(_limit, _cursor).await })
     }
 }
 
@@ -159,51 +177,61 @@ impl CapturingAuditRepo {
     }
 }
 
-#[async_trait]
 impl mokkan_core::domain::audit::repository::AuditLogRepository for CapturingAuditRepo {
-    async fn insert(
+    fn insert(
         &self,
         log: mokkan_core::domain::audit::entity::NewAuditLog,
-    ) -> mokkan_core::domain::errors::DomainResult<()> {
-        let mut guard = self.inserted.lock().expect("mutex poisoned");
-        guard.push(log);
-        drop(guard);
-        Ok(())
+    ) -> BoxFuture<'_, mokkan_core::domain::errors::DomainResult<()>> {
+        boxed(async move {
+            let mut guard = self.inserted.lock().expect("mutex poisoned");
+            guard.push(log);
+            drop(guard);
+            Ok(())
+        })
     }
 
-    async fn list(
+    fn list(
         &self,
         _limit: u32,
         _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
-    ) -> mokkan_core::domain::errors::DomainResult<(
-        Vec<mokkan_core::domain::audit::entity::AuditLog>,
-        Option<String>,
-    )> {
-        Ok((self.items.clone(), self.next_cursor.clone()))
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<(
+            Vec<mokkan_core::domain::audit::entity::AuditLog>,
+            Option<String>,
+        )>,
+    > {
+        boxed(async move { Ok((self.items.clone(), self.next_cursor.clone())) })
     }
 
-    async fn find_by_user(
+    fn find_by_user(
         &self,
         _user_id: i64,
         _limit: u32,
         _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
-    ) -> mokkan_core::domain::errors::DomainResult<(
-        Vec<mokkan_core::domain::audit::entity::AuditLog>,
-        Option<String>,
-    )> {
-        Ok((self.items.clone(), self.next_cursor.clone()))
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<(
+            Vec<mokkan_core::domain::audit::entity::AuditLog>,
+            Option<String>,
+        )>,
+    > {
+        boxed(async move { Ok((self.items.clone(), self.next_cursor.clone())) })
     }
 
-    async fn find_by_resource(
-        &self,
+    fn find_by_resource<'a>(
+        &'a self,
         _resource_type: &str,
         _resource_id: i64,
         _limit: u32,
         _cursor: Option<mokkan_core::domain::audit::cursor::Cursor>,
-    ) -> mokkan_core::domain::errors::DomainResult<(
-        Vec<mokkan_core::domain::audit::entity::AuditLog>,
-        Option<String>,
-    )> {
-        Ok((self.items.clone(), self.next_cursor.clone()))
+    ) -> BoxFuture<
+        'a,
+        mokkan_core::domain::errors::DomainResult<(
+            Vec<mokkan_core::domain::audit::entity::AuditLog>,
+            Option<String>,
+        )>,
+    > {
+        boxed(async move { Ok((self.items.clone(), self.next_cursor.clone())) })
     }
 }

@@ -1,6 +1,5 @@
 #![allow(clippy::multiple_crate_versions)]
 
-use async_trait::async_trait;
 use axum::{
     Extension, Router,
     body::Body,
@@ -13,6 +12,7 @@ use mokkan_core::{
         ports::security::{PasswordHasher, TokenManager},
         services::{Dependencies, Registry, RuntimeDependencies},
     },
+    async_support::{BoxFuture, boxed},
     presentation::http::{
         extractors::Authenticated, middleware::require_capabilities, state::HttpContext,
     },
@@ -33,39 +33,40 @@ struct CountingTokenManager {
     authenticate_calls: Arc<AtomicUsize>,
 }
 
-#[async_trait]
 impl TokenManager for CountingTokenManager {
-    async fn issue(
+    fn issue(
         &self,
         _subject: TokenSubject,
-    ) -> mokkan_core::application::AppResult<AuthTokenDto> {
-        unimplemented!("issue is not used in this test")
+    ) -> BoxFuture<'_, mokkan_core::application::AppResult<AuthTokenDto>> {
+        boxed(async move { unimplemented!("issue is not used in this test") })
     }
 
-    async fn authenticate(
-        &self,
-        token: &str,
-    ) -> mokkan_core::application::AppResult<AuthenticatedUser> {
-        self.authenticate_calls.fetch_add(1, Ordering::SeqCst);
-        assert_eq!(token, "counted-token");
+    fn authenticate<'a>(
+        &'a self,
+        token: &'a str,
+    ) -> BoxFuture<'a, mokkan_core::application::AppResult<AuthenticatedUser>> {
+        boxed(async move {
+            self.authenticate_calls.fetch_add(1, Ordering::SeqCst);
+            assert_eq!(token, "counted-token");
 
-        let now = chrono::Utc::now();
-        Ok(AuthenticatedUser {
-            id: mokkan_core::domain::user::value_objects::UserId::new(1).unwrap(),
-            username: "counter".into(),
-            role: mokkan_core::domain::user::value_objects::Role::Author,
-            capabilities: HashSet::from([
-                mokkan_core::domain::user::value_objects::Capability::new("articles", "create"),
-            ]),
-            issued_at: now,
-            expires_at: now + chrono::Duration::hours(1),
-            session_id: None,
-            token_version: None,
+            let now = chrono::Utc::now();
+            Ok(AuthenticatedUser {
+                id: mokkan_core::domain::user::value_objects::UserId::new(1).unwrap(),
+                username: "counter".into(),
+                role: mokkan_core::domain::user::value_objects::Role::Author,
+                capabilities: HashSet::from([
+                    mokkan_core::domain::user::value_objects::Capability::new("articles", "create"),
+                ]),
+                issued_at: now,
+                expires_at: now + chrono::Duration::hours(1),
+                session_id: None,
+                token_version: None,
+            })
         })
     }
 
-    async fn public_jwk(&self) -> mokkan_core::application::AppResult<serde_json::Value> {
-        Ok(serde_json::json!({ "keys": [] }))
+    fn public_jwk(&self) -> BoxFuture<'_, mokkan_core::application::AppResult<serde_json::Value>> {
+        boxed(async move { Ok(serde_json::json!({ "keys": [] })) })
     }
 }
 

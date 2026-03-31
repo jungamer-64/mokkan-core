@@ -11,7 +11,6 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 argon2 = { version = "0.5", features = ["password-hash"] }
-async-trait = "0.1"
 axum = { version = "0.8.6", features = ["macros", "json"] }
 anyhow = "1.0"
 biscuit-auth = "6.0.0"
@@ -36,14 +35,14 @@ utoipa = { version = "5.4", features = ["chrono", "preserve_order", "preserve_pa
 tower_governor = { version = "0.8", default-features = false, features = ["axum"] }
 governor = "0.10"
 
-getrandom = "0.2"
+getrandom = "0.4"
 httpdate = "1"
 
 # Redis-backed session store
 redis = { version = "1.0", features = ["aio", "tokio-comp"] }
 deadpool-redis = "0.23"
-sha2 = "0.10"
-hmac = "0.12"
+sha2 = "0.11"
+hmac = "0.13"
 
 [package.metadata.commands]
 openapi = "run --bin mokkan_core -- openapi-snapshot"

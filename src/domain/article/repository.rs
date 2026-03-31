@@ -1,46 +1,49 @@
 // src/domain/article/repository.rs
+use crate::async_support::{BoxFuture, boxed};
 use crate::domain::UserId;
 use crate::domain::article::entity::{Article, ArticleUpdate, NewArticle};
 use crate::domain::article::revision::Revision;
 use crate::domain::article::value_objects::{ArticleId, ArticleListCursor, ArticleSlug};
 use crate::domain::errors::DomainResult;
-use async_trait::async_trait;
 
-#[async_trait]
 pub trait WriteRepo: Send + Sync {
-    async fn insert(&self, article: NewArticle) -> DomainResult<Article>;
-    async fn update(&self, update: ArticleUpdate) -> DomainResult<Article>;
-    async fn delete(&self, id: ArticleId) -> DomainResult<()>;
+    fn insert(&self, article: NewArticle) -> BoxFuture<'_, DomainResult<Article>>;
+    fn update(&self, update: ArticleUpdate) -> BoxFuture<'_, DomainResult<Article>>;
+    fn delete(&self, id: ArticleId) -> BoxFuture<'_, DomainResult<()>>;
 }
 
-#[async_trait]
 pub trait ReadRepo: Send + Sync {
-    async fn find_by_id(&self, id: ArticleId) -> DomainResult<Option<Article>>;
-    async fn find_by_slug(&self, slug: &ArticleSlug) -> DomainResult<Option<Article>>;
+    fn find_by_id(&self, id: ArticleId) -> BoxFuture<'_, DomainResult<Option<Article>>>;
+    fn find_by_slug<'a>(
+        &'a self,
+        slug: &'a ArticleSlug,
+    ) -> BoxFuture<'a, DomainResult<Option<Article>>>;
     /// Existing page-oriented listing API. Keep for backward compatibility.
-    async fn list_page(
-        &self,
+    fn list_page<'a>(
+        &'a self,
         include_drafts: bool,
         limit: u32,
         cursor: Option<ArticleListCursor>,
-        search: Option<&str>,
-    ) -> DomainResult<(Vec<Article>, Option<ArticleListCursor>)>;
+        search: Option<&'a str>,
+    ) -> BoxFuture<'a, DomainResult<(Vec<Article>, Option<ArticleListCursor>)>>;
 
     /// New builder-style query API. Default implementation delegates to
     /// `list_page` so existing implementations remain compatible.
-    async fn list(
+    fn list(
         &self,
         query: ArticleQuery,
-    ) -> DomainResult<(Vec<Article>, Option<ArticleListCursor>)> {
-        // Convert Option<String> -> Option<&str> for the old API
-        let search = query.search.as_deref();
-        self.list_page(
-            query.include_drafts,
-            query.limit,
-            query.cursor.clone(),
-            search,
-        )
-        .await
+    ) -> BoxFuture<'_, DomainResult<(Vec<Article>, Option<ArticleListCursor>)>> {
+        boxed(async move {
+            // Convert Option<String> -> Option<&str> for the old API
+            let search = query.search.as_deref();
+            self.list_page(
+                query.include_drafts,
+                query.limit,
+                query.cursor.clone(),
+                search,
+            )
+            .await
+        })
     }
 }
 
@@ -91,9 +94,12 @@ impl Default for ArticleQuery {
     }
 }
 
-#[async_trait]
 pub trait RevisionRepo: Send + Sync {
-    async fn append(&self, article: &Article, edited_by: Option<UserId>) -> DomainResult<()>;
+    fn append<'a>(
+        &'a self,
+        article: &'a Article,
+        edited_by: Option<UserId>,
+    ) -> BoxFuture<'a, DomainResult<()>>;
 
-    async fn list_by_article(&self, article_id: ArticleId) -> DomainResult<Vec<Revision>>;
+    fn list_by_article(&self, article_id: ArticleId) -> BoxFuture<'_, DomainResult<Vec<Revision>>>;
 }

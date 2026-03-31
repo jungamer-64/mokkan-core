@@ -338,7 +338,6 @@ impl AuthService {
 
 #[cfg(test)]
 mod tests {
-    use async_trait::async_trait;
     use chrono::{DateTime, Utc};
     use std::{collections::HashSet, sync::Arc};
 
@@ -355,6 +354,7 @@ mod tests {
                 time::Clock,
             },
         },
+        async_support::{BoxFuture, boxed},
         domain::{Capability, Role, UserId, user::value_objects::Capability as UserCapability},
         infrastructure::security::{
             authorization_code_store::InMemoryStore as InMemoryAuthorizationCodeStore,
@@ -376,37 +376,40 @@ mod tests {
         authenticated_user: AuthenticatedUser,
     }
 
-    #[async_trait]
     impl TokenManager for StaticTokenManager {
-        async fn issue(
+        fn issue(
             &self,
             subject: TokenSubject,
-        ) -> crate::application::AppResult<AuthTokenDto> {
-            let now = self.authenticated_user.issued_at;
-            let expires_at = self.authenticated_user.expires_at;
-            Ok(AuthTokenDto {
-                token: format!("issued-{}", i64::from(subject.user_id)),
-                issued_at: now,
-                expires_at,
-                expires_in: expires_at.signed_duration_since(now).num_seconds(),
-                session_id: subject.session_id,
-                refresh_token: None,
+        ) -> BoxFuture<'_, crate::application::AppResult<AuthTokenDto>> {
+            boxed(async move {
+                let now = self.authenticated_user.issued_at;
+                let expires_at = self.authenticated_user.expires_at;
+                Ok(AuthTokenDto {
+                    token: format!("issued-{}", i64::from(subject.user_id)),
+                    issued_at: now,
+                    expires_at,
+                    expires_in: expires_at.signed_duration_since(now).num_seconds(),
+                    session_id: subject.session_id,
+                    refresh_token: None,
+                })
             })
         }
 
-        async fn authenticate(
-            &self,
-            token: &str,
-        ) -> crate::application::AppResult<AuthenticatedUser> {
-            if token == "valid-token" {
-                Ok(self.authenticated_user.clone())
-            } else {
-                Err(AppError::unauthorized("invalid token"))
-            }
+        fn authenticate<'a>(
+            &'a self,
+            token: &'a str,
+        ) -> BoxFuture<'a, crate::application::AppResult<AuthenticatedUser>> {
+            boxed(async move {
+                if token == "valid-token" {
+                    Ok(self.authenticated_user.clone())
+                } else {
+                    Err(AppError::unauthorized("invalid token"))
+                }
+            })
         }
 
-        async fn public_jwk(&self) -> crate::application::AppResult<serde_json::Value> {
-            Ok(serde_json::json!({ "keys": [] }))
+        fn public_jwk(&self) -> BoxFuture<'_, crate::application::AppResult<serde_json::Value>> {
+            boxed(async move { Ok(serde_json::json!({ "keys": [] })) })
         }
     }
 

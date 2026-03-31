@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
 use chrono::{Duration, Utc};
+use mokkan_core::async_support::{BoxFuture, boxed};
 
 mod support;
 
@@ -32,66 +32,78 @@ impl InMemoryUserRepo {
     }
 }
 
-#[async_trait]
 impl UserRepository for InMemoryUserRepo {
-    async fn count(&self) -> DomainResult<u64> {
-        let map = self.inner.lock().unwrap();
-        Ok(map.len() as u64)
-    }
-
-    async fn insert(&self, _new_user: NewUser) -> DomainResult<User> {
-        Err(mokkan_core::domain::errors::DomainError::NotFound(
-            "not implemented".into(),
-        ))
-    }
-
-    async fn find_by_username(&self, username: &Username) -> DomainResult<Option<User>> {
-        let found = {
+    fn count(&self) -> BoxFuture<'_, DomainResult<u64>> {
+        boxed(async move {
             let map = self.inner.lock().unwrap();
-            map.values()
-                .find(|u| u.username.as_str() == username.as_str())
-                .cloned()
-        };
-        Ok(found)
+            Ok(map.len() as u64)
+        })
     }
 
-    async fn find_by_id(&self, id: UserId) -> DomainResult<Option<User>> {
-        let map = self.inner.lock().unwrap();
-        Ok(map.get(&i64::from(id)).cloned())
+    fn insert(&self, _new_user: NewUser) -> BoxFuture<'_, DomainResult<User>> {
+        boxed(async move {
+            Err(mokkan_core::domain::errors::DomainError::NotFound(
+                "not implemented".into(),
+            ))
+        })
     }
 
-    async fn update(&self, update: UserUpdate) -> DomainResult<User> {
-        {
-            let mut map = self.inner.lock().unwrap();
-            let id = i64::from(update.id);
-            match map.get_mut(&id) {
-                Some(user) => {
-                    if let Some(is_active) = update.is_active {
-                        user.is_active = is_active;
-                    }
-                    if let Some(role) = update.role {
-                        user.role = role;
-                    }
-                    if let Some(password_hash) = update.password_hash {
-                        user.password_hash = password_hash;
-                    }
+    fn find_by_username<'a>(
+        &'a self,
+        username: &'a Username,
+    ) -> BoxFuture<'a, DomainResult<Option<User>>> {
+        boxed(async move {
+            let found = {
+                let map = self.inner.lock().unwrap();
+                map.values()
+                    .find(|u| u.username.as_str() == username.as_str())
+                    .cloned()
+            };
+            Ok(found)
+        })
+    }
 
-                    Ok(user.clone())
+    fn find_by_id(&self, id: UserId) -> BoxFuture<'_, DomainResult<Option<User>>> {
+        boxed(async move {
+            let map = self.inner.lock().unwrap();
+            Ok(map.get(&i64::from(id)).cloned())
+        })
+    }
+
+    fn update(&self, update: UserUpdate) -> BoxFuture<'_, DomainResult<User>> {
+        boxed(async move {
+            {
+                let mut map = self.inner.lock().unwrap();
+                let id = i64::from(update.id);
+                match map.get_mut(&id) {
+                    Some(user) => {
+                        if let Some(is_active) = update.is_active {
+                            user.is_active = is_active;
+                        }
+                        if let Some(role) = update.role {
+                            user.role = role;
+                        }
+                        if let Some(password_hash) = update.password_hash {
+                            user.password_hash = password_hash;
+                        }
+
+                        Ok(user.clone())
+                    }
+                    None => Err(mokkan_core::domain::errors::DomainError::NotFound(
+                        "user not found".into(),
+                    )),
                 }
-                None => Err(mokkan_core::domain::errors::DomainError::NotFound(
-                    "user not found".into(),
-                )),
             }
-        }
+        })
     }
 
-    async fn list_page(
-        &self,
+    fn list_page<'a>(
+        &'a self,
         _limit: u32,
         _cursor: Option<UserListCursor>,
-        _search: Option<&str>,
-    ) -> DomainResult<(Vec<User>, Option<UserListCursor>)> {
-        Ok((vec![], None))
+        _search: Option<&'a str>,
+    ) -> BoxFuture<'a, DomainResult<(Vec<User>, Option<UserListCursor>)>> {
+        boxed(async move { Ok((vec![], None)) })
     }
 }
 

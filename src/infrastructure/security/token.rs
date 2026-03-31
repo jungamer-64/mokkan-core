@@ -4,7 +4,7 @@ use crate::application::{
     error::{AppError, AppResult},
     ports::security::TokenManager,
 };
-use async_trait::async_trait;
+use crate::async_support::{BoxFuture, boxed};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use biscuit_auth::{
     Biscuit, KeyPair, PrivateKey, PublicKey,
@@ -219,103 +219,108 @@ fn ensure_checks_match_root_tt(
     Ok(())
 }
 
-#[async_trait]
 impl TokenManager for BiscuitTokenManager {
-    async fn issue(&self, subject: TokenSubject) -> AppResult<AuthTokenDto> {
-        let issued_at = SystemTime::now();
-        let expires_at = issued_at
-            .checked_add(self.ttl)
-            .ok_or_else(|| AppError::infrastructure("token expiration overflow"))?;
-        let (code, params) = build_code_and_params(&subject, issued_at, expires_at);
+    fn issue(&self, subject: TokenSubject) -> BoxFuture<'_, AppResult<AuthTokenDto>> {
+        boxed(async move {
+            let issued_at = SystemTime::now();
+            let expires_at = issued_at
+                .checked_add(self.ttl)
+                .ok_or_else(|| AppError::infrastructure("token expiration overflow"))?;
+            let (code, params) = build_code_and_params(&subject, issued_at, expires_at);
 
-        // Build a separate caveat block for token_type and merge it into the biscuit.
-        let (caveat_code, caveat_params) = build_caveat_code_and_params("access");
-        let serialized = build_and_serialize_biscuit_with_block(
-            &code,
-            params,
-            &caveat_code,
-            caveat_params,
-            self.root.as_ref(),
-        )?;
+            // Build a separate caveat block for token_type and merge it into the biscuit.
+            let (caveat_code, caveat_params) = build_caveat_code_and_params("access");
+            let serialized = build_and_serialize_biscuit_with_block(
+                &code,
+                params,
+                &caveat_code,
+                caveat_params,
+                self.root.as_ref(),
+            )?;
 
-        let issued_at_dt = DateTime::<Utc>::from(issued_at);
-        let expires_at_dt = DateTime::<Utc>::from(expires_at);
-        let expires_in = ttl_to_expires_in_seconds(self.ttl);
-        let session_id = subject.session_id;
+            let issued_at_dt = DateTime::<Utc>::from(issued_at);
+            let expires_at_dt = DateTime::<Utc>::from(expires_at);
+            let expires_in = ttl_to_expires_in_seconds(self.ttl);
+            let session_id = subject.session_id;
 
-        Ok(AuthTokenDto {
-            token: serialized,
-            issued_at: issued_at_dt,
-            expires_at: expires_at_dt,
-            expires_in,
-            session_id,
-            refresh_token: None,
+            Ok(AuthTokenDto {
+                token: serialized,
+                issued_at: issued_at_dt,
+                expires_at: expires_at_dt,
+                expires_in,
+                session_id,
+                refresh_token: None,
+            })
         })
     }
 
-    async fn public_jwk(&self) -> AppResult<serde_json::Value> {
-        // For Ed25519 (OKP) produce a minimal JWK with x parameter (base64url)
-        let key_bytes = self.public.to_bytes();
-        let x = URL_SAFE_NO_PAD.encode(key_bytes);
+    fn public_jwk(&self) -> BoxFuture<'_, AppResult<serde_json::Value>> {
+        boxed(async move {
+            // For Ed25519 (OKP) produce a minimal JWK with x parameter (base64url)
+            let key_bytes = self.public.to_bytes();
+            let x = URL_SAFE_NO_PAD.encode(key_bytes);
 
-        // Compute JWK thumbprint (RFC 7638) for a stable `kid` value.
-        // For OKP/Ed25519, the canonical members are {"crv":"Ed25519","kty":"OKP","x":"<x>"}
-        let thumbprint_input = format!(r#"{{"crv":"Ed25519","kty":"OKP","x":"{x}"}}"#);
-        let mut hasher = Sha256::new();
-        hasher.update(thumbprint_input.as_bytes());
-        let kid = URL_SAFE_NO_PAD.encode(hasher.finalize());
+            // Compute JWK thumbprint (RFC 7638) for a stable `kid` value.
+            // For OKP/Ed25519, the canonical members are {"crv":"Ed25519","kty":"OKP","x":"<x>"}
+            let thumbprint_input = format!(r#"{{"crv":"Ed25519","kty":"OKP","x":"{x}"}}"#);
+            let mut hasher = Sha256::new();
+            hasher.update(thumbprint_input.as_bytes());
+            let kid = URL_SAFE_NO_PAD.encode(hasher.finalize());
 
-        let jwk = json!({
-            "keys": [
-                {
-                    "kty": "OKP",
-                    "crv": "Ed25519",
-                    "alg": "EdDSA",
-                    "use": "sig",
-                    "x": x,
-                    "kid": kid,
-                }
-            ]
-        });
+            let jwk = json!({
+                "keys": [
+                    {
+                        "kty": "OKP",
+                        "crv": "Ed25519",
+                        "alg": "EdDSA",
+                        "use": "sig",
+                        "x": x,
+                        "kid": kid,
+                    }
+                ]
+            });
 
-        Ok(jwk)
+            Ok(jwk)
+        })
     }
 
-    async fn authenticate(&self, token: &str) -> AppResult<AuthenticatedUser> {
-        let biscuit = Biscuit::from_base64(token, self.public)
-            .map_err(|err| AppError::unauthorized(err.to_string()))?;
+    fn authenticate<'a>(&'a self, token: &'a str) -> BoxFuture<'a, AppResult<AuthenticatedUser>> {
+        boxed(async move {
+            let biscuit = Biscuit::from_base64(token, self.public)
+                .map_err(|err| AppError::unauthorized(err.to_string()))?;
 
-        // Inspect the biscuit view before authorizing so we can surface meaningful
-        // debug information when checks fail.
-        let view = biscuit
-            .authorizer()
-            .map_err(|err| AppError::unauthorized(err.to_string()))?;
+            // Inspect the biscuit view before authorizing so we can surface meaningful
+            // debug information when checks fail.
+            let view = biscuit
+                .authorizer()
+                .map_err(|err| AppError::unauthorized(err.to_string()))?;
 
-        // Dump facts and checks so we can enforce that the caveat block's
-        // `check if token_type({tt})` actually matches the root `token_type` fact.
-        let (facts, _rules, checks, _policies) = view.dump();
+            // Dump facts and checks so we can enforce that the caveat block's
+            // `check if token_type({tt})` actually matches the root `token_type` fact.
+            let (facts, _rules, checks, _policies) = view.dump();
 
-        // Enforce presence of our caveat marker; tokens without the caveat
-        // block should be considered unauthorized.
-        let has_caveat = facts.iter().any(|f| f.predicate.name == "has_caveat");
-        if !has_caveat {
-            return Err(AppError::unauthorized("missing required token caveat"));
-        }
+            // Enforce presence of our caveat marker; tokens without the caveat
+            // block should be considered unauthorized.
+            let has_caveat = facts.iter().any(|f| f.predicate.name == "has_caveat");
+            if !has_caveat {
+                return Err(AppError::unauthorized("missing required token caveat"));
+            }
 
-        let root_tt = extract_root_token_type_from_facts(&facts)
-            .ok_or_else(|| AppError::unauthorized("missing token_type"))?;
+            let root_tt = extract_root_token_type_from_facts(&facts)
+                .ok_or_else(|| AppError::unauthorized("missing token_type"))?;
 
-        ensure_checks_match_root_tt(&checks, &root_tt)?;
+            ensure_checks_match_root_tt(&checks, &root_tt)?;
 
-        // Parse claims into an AuthenticatedUser and perform simple time checks
-        // (issued_at <= now <= expires_at).
-        let user = crate::infrastructure::security::claims::parse(&facts)?;
-        let now = chrono::Utc::now();
-        if now < user.issued_at || now > user.expires_at {
-            return Err(AppError::unauthorized("token is expired or not yet valid"));
-        }
+            // Parse claims into an AuthenticatedUser and perform simple time checks
+            // (issued_at <= now <= expires_at).
+            let user = crate::infrastructure::security::claims::parse(&facts)?;
+            let now = chrono::Utc::now();
+            if now < user.issued_at || now > user.expires_at {
+                return Err(AppError::unauthorized("token is expired or not yet valid"));
+            }
 
-        Ok(user)
+            Ok(user)
+        })
     }
 }
 

@@ -5,7 +5,7 @@ use crate::application::ports::session_revocation::{
     OpaqueRefreshTokenStore, RefreshNonceStore, RefreshTokenRecord, Revocation,
     SessionMetadataStore, Store, TokenVersionStore,
 };
-use async_trait::async_trait;
+use crate::async_support::{BoxFuture, boxed};
 use deadpool_redis::{Config as DeadpoolConfig, Connection, Pool, Runtime};
 use redis::AsyncCommands;
 use std::sync::Arc;
@@ -378,355 +378,419 @@ impl RedisSessionRevocationStore {
     }
 }
 
-#[async_trait]
 impl Revocation for RedisSessionRevocationStore {
-    async fn is_revoked(&self, session_id: &str) -> AppResult<bool> {
-        let mut conn = self.connection().await?;
-        Self::session_is_revoked(&mut conn, session_id).await
+    fn is_revoked<'a>(&'a self, session_id: &'a str) -> BoxFuture<'a, AppResult<bool>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            Self::session_is_revoked(&mut conn, session_id).await
+        })
     }
 
-    async fn revoke(&self, session_id: &str) -> AppResult<()> {
-        let mut conn = self.connection().await?;
-        conn.set::<_, _, ()>(Self::revoked_session_key(session_id), 1)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        self.delete_refresh_tokens_for_session_inner(&mut conn, session_id)
-            .await?;
-        Ok(())
-    }
-
-    async fn revoke_sessions_for_user(&self, user_id: i64) -> AppResult<()> {
-        let mut conn = self.connection().await?;
-        let key = Self::user_sessions_key(user_id);
-        let sessions: Vec<String> = conn
-            .smembers(&key)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-
-        if sessions.is_empty() {
-            return Ok(());
-        }
-
-        let script = r"
-            if #ARGV == 0 then
-                return 0
-            end
-            for i=1,#ARGV do
-                local sid = ARGV[i]
-                redis.call('SET', 'revoked:session:' .. sid, 1)
-            end
-            redis.call('DEL', KEYS[1])
-            return #ARGV
-        ";
-
-        let mut cmd = redis::cmd("EVAL");
-        cmd.arg(script).arg(1).arg(&key);
-        for sid in &sessions {
-            cmd.arg(sid);
-        }
-
-        let _processed: i32 = cmd
-            .query_async(&mut conn)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-
-        for session_id in sessions {
-            self.delete_refresh_tokens_for_session_inner(&mut conn, &session_id)
-                .await?;
-        }
-
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl TokenVersionStore for RedisSessionRevocationStore {
-    async fn get_min_token_version(&self, user_id: i64) -> AppResult<Option<u32>> {
-        let mut conn = self.connection().await?;
-        let key = Self::min_token_version_key(user_id);
-        let val: Option<u32> = conn
-            .get(key)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        Ok(val)
-    }
-
-    async fn set_min_token_version(&self, user_id: i64, min_version: u32) -> AppResult<()> {
-        let mut conn = self.connection().await?;
-        let key = Self::min_token_version_key(user_id);
-        conn.set::<_, _, ()>(key, min_version)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl RefreshNonceStore for RedisSessionRevocationStore {
-    async fn set_session_refresh_nonce(&self, session_id: &str, nonce: &str) -> AppResult<()> {
-        let mut conn = self.connection().await?;
-        let key = Self::session_refresh_nonce_key(session_id);
-        conn.set::<_, _, ()>(key, nonce)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        Ok(())
-    }
-
-    async fn get_session_refresh_nonce(&self, session_id: &str) -> AppResult<Option<String>> {
-        let mut conn = self.connection().await?;
-        let key = Self::session_refresh_nonce_key(session_id);
-        let val: Option<String> = conn
-            .get(key)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        Ok(val)
-    }
-
-    async fn compare_and_swap_session_refresh_nonce(
-        &self,
-        session_id: &str,
-        expected: &str,
-        new_nonce: &str,
-    ) -> AppResult<bool> {
-        let key = Self::session_refresh_nonce_key(session_id);
-        let used_key = Self::used_refresh_nonce_key(session_id, expected);
-
-        let replaced = self
-            .run_cas_script(&key, &used_key, expected, new_nonce)
-            .await?;
-
-        Ok(replaced == 1)
-    }
-
-    async fn mark_session_refresh_nonce_used(
-        &self,
-        session_id: &str,
-        nonce: &str,
-    ) -> AppResult<()> {
-        let mut conn = self.connection().await?;
-        let used_key = Self::used_refresh_nonce_key(session_id, nonce);
-        // default TTL
-        conn.set::<_, _, ()>(&used_key, 1)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        // Use explicit EXPIRE command to avoid type inference issues with the
-        // high-level helper and to use the shared TTL constant.
-        let _: i32 = redis::cmd("EXPIRE")
-            .arg(&used_key)
-            .arg(self.used_nonce_ttl_secs)
-            .query_async(&mut conn)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        Ok(())
-    }
-
-    async fn is_session_refresh_nonce_used(
-        &self,
-        session_id: &str,
-        nonce: &str,
-    ) -> AppResult<bool> {
-        let mut conn = self.connection().await?;
-        let used_key = Self::used_refresh_nonce_key(session_id, nonce);
-        let exists: bool = conn
-            .exists(used_key)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        Ok(exists)
-    }
-}
-
-#[async_trait]
-impl SessionMetadataStore for RedisSessionRevocationStore {
-    async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> AppResult<()> {
-        let mut conn = self.connection().await?;
-        let key = Self::user_sessions_key(user_id);
-        conn.sadd::<_, _, ()>(key, session_id)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        Ok(())
-    }
-
-    async fn remove_session_for_user(&self, user_id: i64, session_id: &str) -> AppResult<()> {
-        let mut conn = self.connection().await?;
-        let key = Self::user_sessions_key(user_id);
-        conn.srem::<_, _, ()>(key, session_id)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        Ok(())
-    }
-
-    async fn list_sessions_for_user(&self, user_id: i64) -> AppResult<Vec<String>> {
-        let mut conn = self.connection().await?;
-        let key = Self::user_sessions_key(user_id);
-        let members: Vec<String> = conn
-            .smembers(key)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        Ok(members)
-    }
-
-    async fn list_sessions_for_user_with_meta(
-        &self,
-        user_id: i64,
-    ) -> AppResult<Vec<crate::application::ports::session_revocation::SessionInfo>> {
-        let mut conn = self.connection().await?;
-        let key = Self::user_sessions_key(user_id);
-        let sessions: Vec<String> = conn
-            .smembers(&key)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-
-        let mut out = Vec::with_capacity(sessions.len());
-        for sid in sessions {
-            let meta = Self::read_session_meta_fields(&mut conn, &sid).await?;
-            let revoked = Self::session_is_revoked(&mut conn, &sid).await?;
-            out.push(Self::build_session_info(&sid, user_id, meta, revoked));
-        }
-
-        Ok(out)
-    }
-
-    async fn set_session_metadata(
-        &self,
-        user_id: i64,
-        session_id: &str,
-        user_agent: Option<&str>,
-        ip_address: Option<&str>,
-        created_at_unix: i64,
-    ) -> AppResult<()> {
-        let mut conn = self.connection().await?;
-        let user_sessions_key = Self::user_sessions_key(user_id);
-        conn.sadd::<_, _, ()>(user_sessions_key, session_id)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-
-        let meta_key = Self::session_meta_key(session_id);
-        // Use a single HSET invocation to reduce branching and RTTs. Store empty string
-        // for optional fields when absent.
-        let ua_val = user_agent.unwrap_or("");
-        let ip_val = ip_address.unwrap_or("");
-
-        let mut cmd = redis::cmd("HSET");
-        cmd.arg(&meta_key)
-            .arg("user_agent")
-            .arg(ua_val)
-            .arg("ip")
-            .arg(ip_val)
-            .arg("created_at")
-            .arg(created_at_unix)
-            .arg("user_id")
-            .arg(user_id);
-
-        let _: i32 = cmd
-            .query_async(&mut conn)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-
-        Ok(())
-    }
-
-    async fn get_session_metadata(
-        &self,
-        session_id: &str,
-    ) -> AppResult<Option<crate::application::ports::session_revocation::SessionInfo>> {
-        // If the meta hash does not exist, return None
-        let mut conn = self.connection().await?;
-        let exists = Self::session_meta_exists(&mut conn, session_id).await?;
-
-        if !exists {
-            return Ok(None);
-        }
-
-        let meta = Self::read_session_meta_fields(&mut conn, session_id).await?;
-        let revoked = Self::session_is_revoked(&mut conn, session_id).await?;
-        Ok(Some(Self::build_session_info(session_id, 0, meta, revoked)))
-    }
-
-    async fn delete_session_metadata(&self, session_id: &str) -> AppResult<()> {
-        let mut conn = self.connection().await?;
-        let meta_key = Self::session_meta_key(session_id);
-        let _: () = conn
-            .del(&meta_key)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl OpaqueRefreshTokenStore for RedisSessionRevocationStore {
-    async fn store_refresh_token_record(
-        &self,
-        token_id: &str,
-        record: &RefreshTokenRecord,
-    ) -> AppResult<()> {
-        let mut conn = self.connection().await?;
-
-        let record_key = Self::refresh_token_record_key(token_id);
-        let session_tokens_key = Self::session_refresh_tokens_key(&record.session_id);
-        let encoded = serde_json::to_string(record)
-            .map_err(|_| AppError::infrastructure("invalid refresh token record"))?;
-
-        conn.set::<_, _, ()>(&record_key, encoded)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        conn.sadd::<_, _, ()>(&session_tokens_key, token_id)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-
-        Ok(())
-    }
-
-    async fn get_refresh_token_record(
-        &self,
-        token_id: &str,
-    ) -> AppResult<Option<RefreshTokenRecord>> {
-        let mut conn = self.connection().await?;
-
-        let record_key = Self::refresh_token_record_key(token_id);
-        let encoded: Option<String> = conn
-            .get(record_key)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-
-        encoded
-            .map(|value| {
-                serde_json::from_str(&value)
-                    .map_err(|_| AppError::infrastructure("invalid refresh token record"))
-            })
-            .transpose()
-    }
-
-    async fn delete_refresh_token_record(&self, token_id: &str) -> AppResult<()> {
-        let mut conn = self.connection().await?;
-
-        let record_key = Self::refresh_token_record_key(token_id);
-        let encoded: Option<String> = conn
-            .get(&record_key)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-
-        if let Some(value) = encoded {
-            let record: RefreshTokenRecord = serde_json::from_str(&value)
-                .map_err(|_| AppError::infrastructure("invalid refresh token record"))?;
-            let session_tokens_key = Self::session_refresh_tokens_key(&record.session_id);
-            conn.srem::<_, _, ()>(&session_tokens_key, token_id)
+    fn revoke<'a>(&'a self, session_id: &'a str) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            conn.set::<_, _, ()>(Self::revoked_session_key(session_id), 1)
                 .await
                 .map_err(|err| AppError::infrastructure(err.to_string()))?;
-        }
-
-        let _: () = conn
-            .del(record_key)
-            .await
-            .map_err(|err| AppError::infrastructure(err.to_string()))?;
-
-        Ok(())
+            self.delete_refresh_tokens_for_session_inner(&mut conn, session_id)
+                .await?;
+            Ok(())
+        })
     }
 
-    async fn delete_refresh_tokens_for_session(&self, session_id: &str) -> AppResult<()> {
-        let mut conn = self.connection().await?;
-        self.delete_refresh_tokens_for_session_inner(&mut conn, session_id)
-            .await
+    fn revoke_sessions_for_user(&self, user_id: i64) -> BoxFuture<'_, AppResult<()>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            let key = Self::user_sessions_key(user_id);
+            let sessions: Vec<String> = conn
+                .smembers(&key)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+
+            if sessions.is_empty() {
+                return Ok(());
+            }
+
+            let script = r"
+                if #ARGV == 0 then
+                    return 0
+                end
+                for i=1,#ARGV do
+                    local sid = ARGV[i]
+                    redis.call('SET', 'revoked:session:' .. sid, 1)
+                end
+                redis.call('DEL', KEYS[1])
+                return #ARGV
+            ";
+
+            let mut cmd = redis::cmd("EVAL");
+            cmd.arg(script).arg(1).arg(&key);
+            for sid in &sessions {
+                cmd.arg(sid);
+            }
+
+            let _processed: i32 = cmd
+                .query_async(&mut conn)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+
+            for session_id in sessions {
+                self.delete_refresh_tokens_for_session_inner(&mut conn, &session_id)
+                    .await?;
+            }
+
+            Ok(())
+        })
+    }
+}
+
+impl TokenVersionStore for RedisSessionRevocationStore {
+    fn get_min_token_version(&self, user_id: i64) -> BoxFuture<'_, AppResult<Option<u32>>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            let key = Self::min_token_version_key(user_id);
+            let val: Option<u32> = conn
+                .get(key)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+            Ok(val)
+        })
+    }
+
+    fn set_min_token_version(
+        &self,
+        user_id: i64,
+        min_version: u32,
+    ) -> BoxFuture<'_, AppResult<()>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            let key = Self::min_token_version_key(user_id);
+            conn.set::<_, _, ()>(key, min_version)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+            Ok(())
+        })
+    }
+}
+
+impl RefreshNonceStore for RedisSessionRevocationStore {
+    fn set_session_refresh_nonce<'a>(
+        &'a self,
+        session_id: &'a str,
+        nonce: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            let key = Self::session_refresh_nonce_key(session_id);
+            conn.set::<_, _, ()>(key, nonce)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+            Ok(())
+        })
+    }
+
+    fn get_session_refresh_nonce<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<Option<String>>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            let key = Self::session_refresh_nonce_key(session_id);
+            let val: Option<String> = conn
+                .get(key)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+            Ok(val)
+        })
+    }
+
+    fn compare_and_swap_session_refresh_nonce<'a>(
+        &'a self,
+        session_id: &'a str,
+        expected: &'a str,
+        new_nonce: &'a str,
+    ) -> BoxFuture<'a, AppResult<bool>> {
+        boxed(async move {
+            let key = Self::session_refresh_nonce_key(session_id);
+            let used_key = Self::used_refresh_nonce_key(session_id, expected);
+
+            let replaced = self
+                .run_cas_script(&key, &used_key, expected, new_nonce)
+                .await?;
+
+            Ok(replaced == 1)
+        })
+    }
+
+    fn mark_session_refresh_nonce_used<'a>(
+        &'a self,
+        session_id: &'a str,
+        nonce: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            let used_key = Self::used_refresh_nonce_key(session_id, nonce);
+            // default TTL
+            conn.set::<_, _, ()>(&used_key, 1)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+            // Use explicit EXPIRE command to avoid type inference issues with the
+            // high-level helper and to use the shared TTL constant.
+            let _: i32 = redis::cmd("EXPIRE")
+                .arg(&used_key)
+                .arg(self.used_nonce_ttl_secs)
+                .query_async(&mut conn)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+            Ok(())
+        })
+    }
+
+    fn is_session_refresh_nonce_used<'a>(
+        &'a self,
+        session_id: &'a str,
+        nonce: &'a str,
+    ) -> BoxFuture<'a, AppResult<bool>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            let used_key = Self::used_refresh_nonce_key(session_id, nonce);
+            let exists: bool = conn
+                .exists(used_key)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+            Ok(exists)
+        })
+    }
+}
+
+impl SessionMetadataStore for RedisSessionRevocationStore {
+    fn add_session_for_user<'a>(
+        &'a self,
+        user_id: i64,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            let key = Self::user_sessions_key(user_id);
+            conn.sadd::<_, _, ()>(key, session_id)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+            Ok(())
+        })
+    }
+
+    fn remove_session_for_user<'a>(
+        &'a self,
+        user_id: i64,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            let key = Self::user_sessions_key(user_id);
+            conn.srem::<_, _, ()>(key, session_id)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+            Ok(())
+        })
+    }
+
+    fn list_sessions_for_user(&self, user_id: i64) -> BoxFuture<'_, AppResult<Vec<String>>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            let key = Self::user_sessions_key(user_id);
+            let members: Vec<String> = conn
+                .smembers(key)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+            Ok(members)
+        })
+    }
+
+    fn list_sessions_for_user_with_meta(
+        &self,
+        user_id: i64,
+    ) -> BoxFuture<'_, AppResult<Vec<crate::application::ports::session_revocation::SessionInfo>>>
+    {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            let key = Self::user_sessions_key(user_id);
+            let sessions: Vec<String> = conn
+                .smembers(&key)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+
+            let mut out = Vec::with_capacity(sessions.len());
+            for sid in sessions {
+                let meta = Self::read_session_meta_fields(&mut conn, &sid).await?;
+                let revoked = Self::session_is_revoked(&mut conn, &sid).await?;
+                out.push(Self::build_session_info(&sid, user_id, meta, revoked));
+            }
+
+            Ok(out)
+        })
+    }
+
+    fn set_session_metadata<'a>(
+        &'a self,
+        user_id: i64,
+        session_id: &'a str,
+        user_agent: Option<&'a str>,
+        ip_address: Option<&'a str>,
+        created_at_unix: i64,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            let user_sessions_key = Self::user_sessions_key(user_id);
+            conn.sadd::<_, _, ()>(user_sessions_key, session_id)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+
+            let meta_key = Self::session_meta_key(session_id);
+            // Use a single HSET invocation to reduce branching and RTTs. Store empty string
+            // for optional fields when absent.
+            let ua_val = user_agent.unwrap_or("");
+            let ip_val = ip_address.unwrap_or("");
+
+            let mut cmd = redis::cmd("HSET");
+            cmd.arg(&meta_key)
+                .arg("user_agent")
+                .arg(ua_val)
+                .arg("ip")
+                .arg(ip_val)
+                .arg("created_at")
+                .arg(created_at_unix)
+                .arg("user_id")
+                .arg(user_id);
+
+            let _: i32 = cmd
+                .query_async(&mut conn)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+
+            Ok(())
+        })
+    }
+
+    fn get_session_metadata<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<Option<crate::application::ports::session_revocation::SessionInfo>>>
+    {
+        boxed(async move {
+            // If the meta hash does not exist, return None
+            let mut conn = self.connection().await?;
+            let exists = Self::session_meta_exists(&mut conn, session_id).await?;
+
+            if !exists {
+                return Ok(None);
+            }
+
+            let meta = Self::read_session_meta_fields(&mut conn, session_id).await?;
+            let revoked = Self::session_is_revoked(&mut conn, session_id).await?;
+            Ok(Some(Self::build_session_info(session_id, 0, meta, revoked)))
+        })
+    }
+
+    fn delete_session_metadata<'a>(&'a self, session_id: &'a str) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            let meta_key = Self::session_meta_key(session_id);
+            let _: () = conn
+                .del(&meta_key)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+            Ok(())
+        })
+    }
+}
+
+impl OpaqueRefreshTokenStore for RedisSessionRevocationStore {
+    fn store_refresh_token_record<'a>(
+        &'a self,
+        token_id: &'a str,
+        record: &'a RefreshTokenRecord,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+
+            let record_key = Self::refresh_token_record_key(token_id);
+            let session_tokens_key = Self::session_refresh_tokens_key(&record.session_id);
+            let encoded = serde_json::to_string(record)
+                .map_err(|_| AppError::infrastructure("invalid refresh token record"))?;
+
+            conn.set::<_, _, ()>(&record_key, encoded)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+            conn.sadd::<_, _, ()>(&session_tokens_key, token_id)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+
+            Ok(())
+        })
+    }
+
+    fn get_refresh_token_record<'a>(
+        &'a self,
+        token_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<Option<RefreshTokenRecord>>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+
+            let record_key = Self::refresh_token_record_key(token_id);
+            let encoded: Option<String> = conn
+                .get(record_key)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+
+            encoded
+                .map(|value| {
+                    serde_json::from_str(&value)
+                        .map_err(|_| AppError::infrastructure("invalid refresh token record"))
+                })
+                .transpose()
+        })
+    }
+
+    fn delete_refresh_token_record<'a>(
+        &'a self,
+        token_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+
+            let record_key = Self::refresh_token_record_key(token_id);
+            let encoded: Option<String> = conn
+                .get(&record_key)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+
+            if let Some(value) = encoded {
+                let record: RefreshTokenRecord = serde_json::from_str(&value)
+                    .map_err(|_| AppError::infrastructure("invalid refresh token record"))?;
+                let session_tokens_key = Self::session_refresh_tokens_key(&record.session_id);
+                conn.srem::<_, _, ()>(&session_tokens_key, token_id)
+                    .await
+                    .map_err(|err| AppError::infrastructure(err.to_string()))?;
+            }
+
+            let _: () = conn
+                .del(record_key)
+                .await
+                .map_err(|err| AppError::infrastructure(err.to_string()))?;
+
+            Ok(())
+        })
+    }
+
+    fn delete_refresh_tokens_for_session<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        boxed(async move {
+            let mut conn = self.connection().await?;
+            self.delete_refresh_tokens_for_session_inner(&mut conn, session_id)
+                .await
+        })
     }
 }
 

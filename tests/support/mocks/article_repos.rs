@@ -1,38 +1,45 @@
 // tests/support/mocks/article_repos.rs
-use async_trait::async_trait;
+use mokkan_core::async_support::{BoxFuture, boxed};
 
 /* -------------------------------- ArticleWriteRepository -------------------------------- */
 
 /// ダミーの記事書き込みリポジトリ
 pub struct DummyArticleWrite;
 
-#[async_trait]
 impl mokkan_core::domain::ArticleWriteRepository for DummyArticleWrite {
-    async fn insert(
+    fn insert(
         &self,
         _new: mokkan_core::domain::article::entity::NewArticle,
-    ) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::article::entity::Article>
-    {
-        Err(mokkan_core::domain::errors::DomainError::NotFound(
-            "not implemented".into(),
-        ))
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<mokkan_core::domain::article::entity::Article>,
+    > {
+        boxed(async move {
+            Err(mokkan_core::domain::errors::DomainError::NotFound(
+                "not implemented".into(),
+            ))
+        })
     }
 
-    async fn update(
+    fn update(
         &self,
         _article: mokkan_core::domain::article::entity::ArticleUpdate,
-    ) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::article::entity::Article>
-    {
-        Err(mokkan_core::domain::errors::DomainError::NotFound(
-            "not implemented".into(),
-        ))
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<mokkan_core::domain::article::entity::Article>,
+    > {
+        boxed(async move {
+            Err(mokkan_core::domain::errors::DomainError::NotFound(
+                "not implemented".into(),
+            ))
+        })
     }
 
-    async fn delete(
+    fn delete(
         &self,
         _id: mokkan_core::domain::article::value_objects::ArticleId,
-    ) -> mokkan_core::domain::errors::DomainResult<()> {
-        Ok(())
+    ) -> BoxFuture<'_, mokkan_core::domain::errors::DomainResult<()>> {
+        boxed(async move { Ok(()) })
     }
 }
 
@@ -41,37 +48,45 @@ impl mokkan_core::domain::ArticleWriteRepository for DummyArticleWrite {
 /// ダミーの記事読み取りリポジトリ
 pub struct DummyArticleRead;
 
-#[async_trait]
 impl mokkan_core::domain::ArticleReadRepository for DummyArticleRead {
-    async fn find_by_id(
+    fn find_by_id(
         &self,
         _id: mokkan_core::domain::article::value_objects::ArticleId,
-    ) -> mokkan_core::domain::errors::DomainResult<
-        Option<mokkan_core::domain::article::entity::Article>,
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<
+            Option<mokkan_core::domain::article::entity::Article>,
+        >,
     > {
-        Ok(None)
+        boxed(async move { Ok(None) })
     }
 
-    async fn find_by_slug(
-        &self,
+    fn find_by_slug<'a>(
+        &'a self,
         _slug: &mokkan_core::domain::article::value_objects::ArticleSlug,
-    ) -> mokkan_core::domain::errors::DomainResult<
-        Option<mokkan_core::domain::article::entity::Article>,
+    ) -> BoxFuture<
+        'a,
+        mokkan_core::domain::errors::DomainResult<
+            Option<mokkan_core::domain::article::entity::Article>,
+        >,
     > {
-        Ok(None)
+        boxed(async move { Ok(None) })
     }
 
-    async fn list_page(
-        &self,
+    fn list_page<'a>(
+        &'a self,
         _include_drafts: bool,
         _limit: u32,
         _cursor: Option<mokkan_core::domain::article::value_objects::ArticleListCursor>,
-        _search: Option<&str>,
-    ) -> mokkan_core::domain::errors::DomainResult<(
-        Vec<mokkan_core::domain::article::entity::Article>,
-        Option<mokkan_core::domain::article::value_objects::ArticleListCursor>,
-    )> {
-        Ok((vec![], None))
+        _search: Option<&'a str>,
+    ) -> BoxFuture<
+        'a,
+        mokkan_core::domain::errors::DomainResult<(
+            Vec<mokkan_core::domain::article::entity::Article>,
+            Option<mokkan_core::domain::article::value_objects::ArticleListCursor>,
+        )>,
+    > {
+        boxed(async move { Ok((vec![], None)) })
     }
 }
 
@@ -80,20 +95,22 @@ impl mokkan_core::domain::ArticleReadRepository for DummyArticleRead {
 /// ダミーの記事リビジョンリポジトリ
 pub struct DummyArticleRevision;
 
-#[async_trait]
 impl mokkan_core::domain::ArticleRevisionRepository for DummyArticleRevision {
-    async fn append(
-        &self,
+    fn append<'a>(
+        &'a self,
         _article: &mokkan_core::domain::article::entity::Article,
         _edited_by: Option<mokkan_core::domain::user::value_objects::UserId>,
-    ) -> mokkan_core::domain::errors::DomainResult<()> {
-        Ok(())
+    ) -> BoxFuture<'a, mokkan_core::domain::errors::DomainResult<()>> {
+        boxed(async move { Ok(()) })
     }
 
-    async fn list_by_article(
+    fn list_by_article(
         &self,
         _article_id: mokkan_core::domain::article::value_objects::ArticleId,
-    ) -> mokkan_core::domain::errors::DomainResult<Vec<mokkan_core::domain::ArticleRevision>> {
-        Ok(vec![])
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<Vec<mokkan_core::domain::ArticleRevision>>,
+    > {
+        boxed(async move { Ok(vec![]) })
     }
 }

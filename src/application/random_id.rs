@@ -8,7 +8,7 @@ use crate::application::{AppResult, error::AppError};
 /// enough entropy for ID generation.
 pub fn v4_string() -> AppResult<String> {
     let mut bytes = [0_u8; 16];
-    getrandom::getrandom(&mut bytes)
+    getrandom::fill(&mut bytes)
         .map_err(|err| AppError::infrastructure(format!("failed to generate random id: {err}")))?;
 
     bytes[6] = (bytes[6] & 0x0f) | 0x40;

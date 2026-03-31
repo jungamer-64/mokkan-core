@@ -1,31 +1,30 @@
 // src/domain/audit/repository.rs
+use crate::async_support::BoxFuture;
 use crate::domain::audit::cursor::Cursor;
 use crate::domain::audit::entity::{AuditLog, NewAuditLog};
 use crate::domain::errors::DomainResult;
-use async_trait::async_trait;
 
-#[async_trait]
 pub trait AuditLogRepository: Send + Sync {
-    async fn insert(&self, log: NewAuditLog) -> DomainResult<()>;
+    fn insert(&self, log: NewAuditLog) -> BoxFuture<'_, DomainResult<()>>;
 
-    async fn list(
+    fn list(
         &self,
         limit: u32,
         cursor: Option<Cursor>,
-    ) -> DomainResult<(Vec<AuditLog>, Option<String>)>;
+    ) -> BoxFuture<'_, DomainResult<(Vec<AuditLog>, Option<String>)>>;
 
-    async fn find_by_user(
+    fn find_by_user(
         &self,
         user_id: i64,
         limit: u32,
         cursor: Option<Cursor>,
-    ) -> DomainResult<(Vec<AuditLog>, Option<String>)>;
+    ) -> BoxFuture<'_, DomainResult<(Vec<AuditLog>, Option<String>)>>;
 
-    async fn find_by_resource(
-        &self,
-        resource_type: &str,
+    fn find_by_resource<'a>(
+        &'a self,
+        resource_type: &'a str,
         resource_id: i64,
         limit: u32,
         cursor: Option<Cursor>,
-    ) -> DomainResult<(Vec<AuditLog>, Option<String>)>;
+    ) -> BoxFuture<'a, DomainResult<(Vec<AuditLog>, Option<String>)>>;
 }

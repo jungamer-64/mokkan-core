@@ -1,6 +1,6 @@
 use crate::application::{AppResult, error::AppError, ports::refresh_token::Codec};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;

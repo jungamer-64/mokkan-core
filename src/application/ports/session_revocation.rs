@@ -1,5 +1,5 @@
 use crate::application::AppResult;
-use async_trait::async_trait;
+use crate::async_support::BoxFuture;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -22,111 +22,138 @@ pub struct RefreshTokenRecord {
     pub token_version: u32,
 }
 
-#[async_trait]
 pub trait Revocation: Send + Sync {
     /// Return true if the given session id has been revoked.
-    async fn is_revoked(&self, session_id: &str) -> AppResult<bool>;
+    fn is_revoked<'a>(&'a self, session_id: &'a str) -> BoxFuture<'a, AppResult<bool>>;
 
     /// Revoke the given session id (e.g. on logout).
-    async fn revoke(&self, session_id: &str) -> AppResult<()>;
+    fn revoke<'a>(&'a self, session_id: &'a str) -> BoxFuture<'a, AppResult<()>>;
 
     /// Revoke all sessions for a given user (used when refresh reuse is detected).
-    async fn revoke_sessions_for_user(&self, user_id: i64) -> AppResult<()>;
+    fn revoke_sessions_for_user(&self, user_id: i64) -> BoxFuture<'_, AppResult<()>>;
 }
 
-#[async_trait]
 pub trait TokenVersionStore: Send + Sync {
     /// Get the minimum allowed token version for a user. Tokens with a version less
     /// than this should be considered invalid.
-    async fn get_min_token_version(&self, user_id: i64) -> AppResult<Option<u32>>;
+    fn get_min_token_version(&self, user_id: i64) -> BoxFuture<'_, AppResult<Option<u32>>>;
 
     /// Set the minimum allowed token version for a user.
-    async fn set_min_token_version(&self, user_id: i64, min_version: u32) -> AppResult<()>;
+    fn set_min_token_version(&self, user_id: i64, min_version: u32)
+    -> BoxFuture<'_, AppResult<()>>;
 }
 
-#[async_trait]
 pub trait RefreshNonceStore: Send + Sync {
     /// Store the current refresh nonce for a session (used for refresh-token rotation).
-    async fn set_session_refresh_nonce(&self, session_id: &str, nonce: &str) -> AppResult<()>;
+    fn set_session_refresh_nonce<'a>(
+        &'a self,
+        session_id: &'a str,
+        nonce: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>>;
 
     /// Get the current refresh nonce for a session.
-    async fn get_session_refresh_nonce(&self, session_id: &str) -> AppResult<Option<String>>;
+    fn get_session_refresh_nonce<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<Option<String>>>;
 
     /// Atomically compare-and-swap the session's refresh nonce.
     ///
     /// If the currently stored nonce for `session_id` equals `expected`, it will be
     /// replaced with `new_nonce` and the method returns Ok(true). If the current value
     /// does not match `expected`, the store is left unchanged and Ok(false) is returned.
-    async fn compare_and_swap_session_refresh_nonce(
-        &self,
-        session_id: &str,
-        expected: &str,
-        new_nonce: &str,
-    ) -> AppResult<bool>;
+    fn compare_and_swap_session_refresh_nonce<'a>(
+        &'a self,
+        session_id: &'a str,
+        expected: &'a str,
+        new_nonce: &'a str,
+    ) -> BoxFuture<'a, AppResult<bool>>;
 
     /// Mark a specific refresh nonce for a session as used (so that later reuse can be detected).
-    async fn mark_session_refresh_nonce_used(&self, session_id: &str, nonce: &str)
-    -> AppResult<()>;
+    fn mark_session_refresh_nonce_used<'a>(
+        &'a self,
+        session_id: &'a str,
+        nonce: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>>;
 
     /// Return true if the given nonce for the session has been used before.
-    async fn is_session_refresh_nonce_used(&self, session_id: &str, nonce: &str)
-    -> AppResult<bool>;
+    fn is_session_refresh_nonce_used<'a>(
+        &'a self,
+        session_id: &'a str,
+        nonce: &'a str,
+    ) -> BoxFuture<'a, AppResult<bool>>;
 }
 
-#[async_trait]
 pub trait SessionMetadataStore: Send + Sync {
     /// Track that a session id belongs to a user (used for per-user session listing and bulk revocation).
-    async fn add_session_for_user(&self, user_id: i64, session_id: &str) -> AppResult<()>;
+    fn add_session_for_user<'a>(
+        &'a self,
+        user_id: i64,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>>;
 
     /// Remove the association of a session id from a user.
-    async fn remove_session_for_user(&self, user_id: i64, session_id: &str) -> AppResult<()>;
+    fn remove_session_for_user<'a>(
+        &'a self,
+        user_id: i64,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>>;
 
     /// List session ids for a given user.
-    async fn list_sessions_for_user(&self, user_id: i64) -> AppResult<Vec<String>>;
+    fn list_sessions_for_user(&self, user_id: i64) -> BoxFuture<'_, AppResult<Vec<String>>>;
 
     /// List sessions for a given user including stored metadata.
     ///
     /// The returned entries include user agent, `IP` address, `created_at`,
     /// and revocation state.
-    async fn list_sessions_for_user_with_meta(&self, user_id: i64) -> AppResult<Vec<SessionInfo>>;
-
-    /// Store or update session metadata. `created_at_unix` is seconds since epoch UTC.
-    async fn set_session_metadata(
+    fn list_sessions_for_user_with_meta(
         &self,
         user_id: i64,
-        session_id: &str,
-        user_agent: Option<&str>,
-        ip_address: Option<&str>,
+    ) -> BoxFuture<'_, AppResult<Vec<SessionInfo>>>;
+
+    /// Store or update session metadata. `created_at_unix` is seconds since epoch UTC.
+    fn set_session_metadata<'a>(
+        &'a self,
+        user_id: i64,
+        session_id: &'a str,
+        user_agent: Option<&'a str>,
+        ip_address: Option<&'a str>,
         created_at_unix: i64,
-    ) -> AppResult<()>;
+    ) -> BoxFuture<'a, AppResult<()>>;
 
     /// Get session metadata for a given session id.
-    async fn get_session_metadata(&self, session_id: &str) -> AppResult<Option<SessionInfo>>;
+    fn get_session_metadata<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<Option<SessionInfo>>>;
 
     /// Delete session metadata (e.g. when a session is removed from the user's list).
-    async fn delete_session_metadata(&self, session_id: &str) -> AppResult<()>;
+    fn delete_session_metadata<'a>(&'a self, session_id: &'a str) -> BoxFuture<'a, AppResult<()>>;
 }
 
-#[async_trait]
 pub trait OpaqueRefreshTokenStore: Send + Sync {
     /// Store the server-side record for an opaque refresh token handle.
-    async fn store_refresh_token_record(
-        &self,
-        token_id: &str,
-        record: &RefreshTokenRecord,
-    ) -> AppResult<()>;
+    fn store_refresh_token_record<'a>(
+        &'a self,
+        token_id: &'a str,
+        record: &'a RefreshTokenRecord,
+    ) -> BoxFuture<'a, AppResult<()>>;
 
     /// Load the stored record for an opaque refresh token handle.
-    async fn get_refresh_token_record(
-        &self,
-        token_id: &str,
-    ) -> AppResult<Option<RefreshTokenRecord>>;
+    fn get_refresh_token_record<'a>(
+        &'a self,
+        token_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<Option<RefreshTokenRecord>>>;
 
     /// Delete a single opaque refresh token handle.
-    async fn delete_refresh_token_record(&self, token_id: &str) -> AppResult<()>;
+    fn delete_refresh_token_record<'a>(&'a self, token_id: &'a str)
+    -> BoxFuture<'a, AppResult<()>>;
 
     /// Delete every opaque refresh token handle associated with a session.
-    async fn delete_refresh_tokens_for_session(&self, session_id: &str) -> AppResult<()>;
+    fn delete_refresh_tokens_for_session<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>>;
 }
 
 pub trait Store:

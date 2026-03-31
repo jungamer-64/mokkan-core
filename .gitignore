@@ -1,3 +1,4 @@
+.github/instructions/
 # Build outputs
 /target/
 
@@ -20,3 +21,7 @@ Thumbs.db
 *.swp
 *.swo
 *~
+.codex
+.serena
+
+docs/product-direction

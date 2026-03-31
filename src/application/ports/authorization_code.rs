@@ -1,6 +1,6 @@
 // src/application/ports/authorization_code.rs
 use crate::application::{AppResult, TokenSubject};
-use async_trait::async_trait;
+use crate::async_support::BoxFuture;
 use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone)]
@@ -16,10 +16,9 @@ pub struct Code {
     pub expires_at: DateTime<Utc>,
 }
 
-#[async_trait]
 pub trait CodeStore: Send + Sync {
-    async fn create_code(&self, code: Code) -> AppResult<()>;
-    async fn get_code(&self, code: &str) -> AppResult<Option<Code>>;
+    fn create_code(&self, code: Code) -> BoxFuture<'_, AppResult<()>>;
+    fn get_code<'a>(&'a self, code: &'a str) -> BoxFuture<'a, AppResult<Option<Code>>>;
     /// Consume (atomically remove) the code and return the stored value if present.
-    async fn consume_code(&self, code: &str) -> AppResult<Option<Code>>;
+    fn consume_code<'a>(&'a self, code: &'a str) -> BoxFuture<'a, AppResult<Option<Code>>>;
 }

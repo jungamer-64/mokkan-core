@@ -1,58 +1,74 @@
 // tests/support/mocks/user_repo.rs
-use async_trait::async_trait;
+use mokkan_core::async_support::{BoxFuture, boxed};
 
 /// ダミーのユーザーリポジトリ（最小限の実装）
 pub struct DummyRepo;
 
-#[async_trait]
 impl mokkan_core::domain::UserRepository for DummyRepo {
-    async fn count(&self) -> mokkan_core::domain::errors::DomainResult<u64> {
-        Ok(0)
+    fn count(&self) -> BoxFuture<'_, mokkan_core::domain::errors::DomainResult<u64>> {
+        boxed(async move { Ok(0) })
     }
 
-    async fn insert(
+    fn insert(
         &self,
         _new_user: mokkan_core::domain::user::entity::NewUser,
-    ) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User> {
-        Err(mokkan_core::domain::errors::DomainError::NotFound(
-            "not implemented".into(),
-        ))
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User>,
+    > {
+        boxed(async move {
+            Err(mokkan_core::domain::errors::DomainError::NotFound(
+                "not implemented".into(),
+            ))
+        })
     }
 
-    async fn find_by_username(
-        &self,
+    fn find_by_username<'a>(
+        &'a self,
         _username: &mokkan_core::domain::user::value_objects::Username,
-    ) -> mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>>
-    {
-        Ok(None)
+    ) -> BoxFuture<
+        'a,
+        mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>>,
+    > {
+        boxed(async move { Ok(None) })
     }
 
-    async fn find_by_id(
+    fn find_by_id(
         &self,
         _id: mokkan_core::domain::user::value_objects::UserId,
-    ) -> mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>>
-    {
-        Ok(None)
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<Option<mokkan_core::domain::user::entity::User>>,
+    > {
+        boxed(async move { Ok(None) })
     }
 
-    async fn update(
+    fn update(
         &self,
         _update: mokkan_core::domain::user::entity::UserUpdate,
-    ) -> mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User> {
-        Err(mokkan_core::domain::errors::DomainError::NotFound(
-            "not implemented".into(),
-        ))
+    ) -> BoxFuture<
+        '_,
+        mokkan_core::domain::errors::DomainResult<mokkan_core::domain::user::entity::User>,
+    > {
+        boxed(async move {
+            Err(mokkan_core::domain::errors::DomainError::NotFound(
+                "not implemented".into(),
+            ))
+        })
     }
 
-    async fn list_page(
-        &self,
+    fn list_page<'a>(
+        &'a self,
         _limit: u32,
         _cursor: Option<mokkan_core::domain::user::value_objects::UserListCursor>,
-        _search: Option<&str>,
-    ) -> mokkan_core::domain::errors::DomainResult<(
-        Vec<mokkan_core::domain::user::entity::User>,
-        Option<mokkan_core::domain::user::value_objects::UserListCursor>,
-    )> {
-        Ok((vec![], None))
+        _search: Option<&'a str>,
+    ) -> BoxFuture<
+        'a,
+        mokkan_core::domain::errors::DomainResult<(
+            Vec<mokkan_core::domain::user::entity::User>,
+            Option<mokkan_core::domain::user::value_objects::UserListCursor>,
+        )>,
+    > {
+        boxed(async move { Ok((vec![], None)) })
     }
 }

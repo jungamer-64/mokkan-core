@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
 use chrono::{Duration, Utc};
+use mokkan_core::async_support::{BoxFuture, boxed};
 
 mod support;
 
@@ -31,72 +31,88 @@ impl InMemoryUserRepo {
     }
 }
 
-#[async_trait]
 impl UserRepository for InMemoryUserRepo {
-    async fn count(&self) -> mokkan_core::domain::errors::DomainResult<u64> {
-        let map = self.inner.lock().unwrap();
-        Ok(map.len() as u64)
-    }
-
-    async fn insert(&self, _new_user: NewUser) -> mokkan_core::domain::errors::DomainResult<User> {
-        Err(mokkan_core::domain::errors::DomainError::NotFound(
-            "not implemented".into(),
-        ))
-    }
-
-    async fn find_by_username(
-        &self,
-        username: &Username,
-    ) -> mokkan_core::domain::errors::DomainResult<Option<User>> {
-        let found = {
+    fn count(&self) -> BoxFuture<'_, mokkan_core::domain::errors::DomainResult<u64>> {
+        boxed(async move {
             let map = self.inner.lock().unwrap();
-            map.values()
-                .find(|u| u.username.as_str() == username.as_str())
-                .cloned()
-        };
-        Ok(found)
+            Ok(map.len() as u64)
+        })
     }
 
-    async fn find_by_id(
+    fn insert(
+        &self,
+        _new_user: NewUser,
+    ) -> BoxFuture<'_, mokkan_core::domain::errors::DomainResult<User>> {
+        boxed(async move {
+            Err(mokkan_core::domain::errors::DomainError::NotFound(
+                "not implemented".into(),
+            ))
+        })
+    }
+
+    fn find_by_username<'a>(
+        &'a self,
+        username: &'a Username,
+    ) -> BoxFuture<'a, mokkan_core::domain::errors::DomainResult<Option<User>>> {
+        boxed(async move {
+            let found = {
+                let map = self.inner.lock().unwrap();
+                map.values()
+                    .find(|u| u.username.as_str() == username.as_str())
+                    .cloned()
+            };
+            Ok(found)
+        })
+    }
+
+    fn find_by_id(
         &self,
         id: UserId,
-    ) -> mokkan_core::domain::errors::DomainResult<Option<User>> {
-        let map = self.inner.lock().unwrap();
-        Ok(map.get(&i64::from(id)).cloned())
+    ) -> BoxFuture<'_, mokkan_core::domain::errors::DomainResult<Option<User>>> {
+        boxed(async move {
+            let map = self.inner.lock().unwrap();
+            Ok(map.get(&i64::from(id)).cloned())
+        })
     }
 
-    async fn update(&self, update: UserUpdate) -> mokkan_core::domain::errors::DomainResult<User> {
-        {
-            let mut map = self.inner.lock().unwrap();
-            let id = i64::from(update.id);
-            match map.get_mut(&id) {
-                Some(user) => {
-                    if let Some(is_active) = update.is_active {
-                        user.is_active = is_active;
-                    }
-                    if let Some(role) = update.role {
-                        user.role = role;
-                    }
-                    if let Some(password_hash) = update.password_hash {
-                        user.password_hash = password_hash;
-                    }
-
-                    Ok(user.clone())
-                }
-                None => Err(mokkan_core::domain::errors::DomainError::NotFound(
-                    "user not found".into(),
-                )),
-            }
-        }
-    }
-
-    async fn list_page(
+    fn update(
         &self,
+        update: UserUpdate,
+    ) -> BoxFuture<'_, mokkan_core::domain::errors::DomainResult<User>> {
+        boxed(async move {
+            {
+                let mut map = self.inner.lock().unwrap();
+                let id = i64::from(update.id);
+                match map.get_mut(&id) {
+                    Some(user) => {
+                        if let Some(is_active) = update.is_active {
+                            user.is_active = is_active;
+                        }
+                        if let Some(role) = update.role {
+                            user.role = role;
+                        }
+                        if let Some(password_hash) = update.password_hash {
+                            user.password_hash = password_hash;
+                        }
+
+                        Ok(user.clone())
+                    }
+                    None => Err(mokkan_core::domain::errors::DomainError::NotFound(
+                        "user not found".into(),
+                    )),
+                }
+            }
+        })
+    }
+
+    fn list_page<'a>(
+        &'a self,
         _limit: u32,
         _cursor: Option<UserListCursor>,
-        _search: Option<&str>,
-    ) -> mokkan_core::domain::errors::DomainResult<(Vec<User>, Option<UserListCursor>)> {
-        Ok((vec![], None))
+        _search: Option<&'a str>,
+    ) -> BoxFuture<'a, mokkan_core::domain::errors::DomainResult<(Vec<User>, Option<UserListCursor>)>>
+    {
+        boxed(async move { Ok((vec![], None)) })
     }
 }
 
@@ -104,41 +120,48 @@ impl UserRepository for InMemoryUserRepo {
 #[derive(Clone, Debug, Default)]
 struct FakeTokenManager;
 
-#[async_trait]
 impl mokkan_core::application::ports::security::TokenManager for FakeTokenManager {
-    async fn issue(
+    fn issue(
         &self,
         subject: mokkan_core::application::TokenSubject,
-    ) -> mokkan_core::application::AppResult<mokkan_core::application::AuthTokenDto> {
-        let issued_at = chrono::Utc::now();
-        let expires_at = issued_at + Duration::hours(1);
-        let expires_in = (expires_at.signed_duration_since(issued_at)).num_seconds();
-        let sid = subject.session_id.clone();
-        Ok(mokkan_core::application::AuthTokenDto {
-            token: format!(
-                "access-{}-{}",
-                i64::from(subject.user_id),
-                sid.clone().unwrap_or_default()
-            ),
-            issued_at,
-            expires_at,
-            expires_in,
-            session_id: sid,
-            refresh_token: None,
+    ) -> BoxFuture<'_, mokkan_core::application::AppResult<mokkan_core::application::AuthTokenDto>>
+    {
+        boxed(async move {
+            let issued_at = chrono::Utc::now();
+            let expires_at = issued_at + Duration::hours(1);
+            let expires_in = expires_at.signed_duration_since(issued_at).num_seconds();
+            let sid = subject.session_id.clone();
+            Ok(mokkan_core::application::AuthTokenDto {
+                token: format!(
+                    "access-{}-{}",
+                    i64::from(subject.user_id),
+                    sid.clone().unwrap_or_default()
+                ),
+                issued_at,
+                expires_at,
+                expires_in,
+                session_id: sid,
+                refresh_token: None,
+            })
         })
     }
 
-    async fn authenticate(
-        &self,
-        _token: &str,
-    ) -> mokkan_core::application::AppResult<mokkan_core::application::AuthenticatedUser> {
-        Err(mokkan_core::application::error::AppError::unauthorized(
-            "not implemented for test",
-        ))
+    fn authenticate<'a>(
+        &'a self,
+        _token: &'a str,
+    ) -> BoxFuture<
+        'a,
+        mokkan_core::application::AppResult<mokkan_core::application::AuthenticatedUser>,
+    > {
+        boxed(async move {
+            Err(mokkan_core::application::error::AppError::unauthorized(
+                "not implemented for test",
+            ))
+        })
     }
 
-    async fn public_jwk(&self) -> mokkan_core::application::AppResult<serde_json::Value> {
-        Ok(serde_json::json!({"keys":[]}))
+    fn public_jwk(&self) -> BoxFuture<'_, mokkan_core::application::AppResult<serde_json::Value>> {
+        boxed(async move { Ok(serde_json::json!({"keys":[]})) })
     }
 }
 
